@@ -1,27 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Check, CreditCard, Sparkles, Loader2 } from "lucide-react"
 import { createCheckoutSession } from "@/app/actions/stripe"
+import { getCurrentUserPricing } from "@/app/actions/pricing"
 import { useToast } from "@/hooks/use-toast"
-
-type CreditPackage = {
-  id: string
-  name: string
-  credits: number
-  price: number
-  price_per_lesson: number
-  popular?: boolean
-}
-
-const creditPackages: CreditPackage[] = [
-  { id: "single", name: "Single Lesson", credits: 1, price: 50, price_per_lesson: 50 },
-  { id: "4-pack", name: "4-Lesson Package", credits: 4, price: 200, price_per_lesson: 50, popular: true },
-  { id: "8-pack", name: "8-Lesson Package", credits: 8, price: 400, price_per_lesson: 50 },
-]
 
 interface PurchaseCreditsModalProps {
   open: boolean
@@ -30,16 +16,29 @@ interface PurchaseCreditsModalProps {
 
 export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModalProps) {
   const { toast } = useToast()
-  const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(
-    creditPackages.find((p) => p.popular) || null,
-  )
+  const [selectedQuantity, setSelectedQuantity] = useState<1 | 4>(4)
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingPricing, setIsLoadingPricing] = useState(true)
+  const [lessonDuration, setLessonDuration] = useState<number>(30)
+  const [pricing, setPricing] = useState<{ single_price: number; pack_price: number } | null>(null)
+
+  // Fetch user's pricing on modal open
+  useEffect(() => {
+    if (open) {
+      setIsLoadingPricing(true)
+      getCurrentUserPricing().then(({ lessonDuration: duration, pricing: userPricing }) => {
+        setLessonDuration(duration || 30)
+        setPricing(userPricing)
+        setIsLoadingPricing(false)
+      })
+    }
+  }, [open])
 
   const handleCheckout = async () => {
-    if (!selectedPackage) return
+    if (!pricing) return
 
     setIsLoading(true)
-    const result = await createCheckoutSession(selectedPackage.credits)
+    const result = await createCheckoutSession(selectedQuantity)
 
     if (result.error) {
       setIsLoading(false)
@@ -49,90 +48,124 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
         description: result.error
       })
     } else if (result.url) {
-      // Redirect to Stripe Checkout
       window.location.href = result.url
     }
   }
+
+  const singlePrice = pricing?.single_price ? pricing.single_price / 100 : 0
+  const packPrice = pricing?.pack_price ? pricing.pack_price / 100 : 0
+  const packPricePerLesson = packPrice / 4
+  const savings = (singlePrice * 4) - packPrice
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-2xl font-serif">Buy Lesson Credits</DialogTitle>
-          <DialogDescription>Choose a package that works for your schedule</DialogDescription>
+          <DialogDescription>
+            Your {lessonDuration}-minute lesson packages
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {creditPackages.map((pkg) => {
-            const isSelected = selectedPackage?.id === pkg.id
-            const savings = pkg.credits > 1 ? creditPackages[0].price * pkg.credits - pkg.price : 0
-
-            return (
+        {isLoadingPricing ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : !pricing ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>Pricing not available. Please contact your teacher.</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4 py-4">
+              {/* Single Lesson Option */}
               <button
-                key={pkg.id}
-                onClick={() => setSelectedPackage(pkg)}
-                className={`w-full text-left p-4 rounded-lg border-2 transition-all ${isSelected ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                onClick={() => setSelectedQuantity(1)}
+                className={`w-full text-left p-4 rounded-lg border-2 transition-all ${selectedQuantity === 1 ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <span className="font-semibold text-lg">Single Lesson</span>
+                    <p className="text-sm text-muted-foreground">
+                      1 x {lessonDuration}-minute lesson
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl font-bold">${singlePrice}</span>
+                    <div
+                      className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${selectedQuantity === 1 ? "border-primary bg-primary" : "border-muted-foreground"
+                        }`}
+                    >
+                      {selectedQuantity === 1 && <Check className="h-4 w-4 text-primary-foreground" />}
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              {/* 4-Pack Option */}
+              <button
+                onClick={() => setSelectedQuantity(4)}
+                className={`w-full text-left p-4 rounded-lg border-2 transition-all ${selectedQuantity === 4 ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
                   }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-lg">{pkg.name}</span>
-                      {pkg.popular && (
-                        <Badge className="bg-primary text-primary-foreground">
-                          <Sparkles className="h-3 w-3 mr-1" />
-                          Best Value
-                        </Badge>
-                      )}
+                      <span className="font-semibold text-lg">4-Lesson Package</span>
+                      <Badge className="bg-primary text-primary-foreground">
+                        <Sparkles className="h-3 w-3 mr-1" />
+                        Best Value
+                      </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {pkg.credits} {pkg.credits === 1 ? "lesson credit" : "lesson credits"}
+                      4 x {lessonDuration}-minute lessons
                     </p>
                     {savings > 0 && (
-                      <p className="text-sm text-success font-medium">
-                        Save ${savings} (${pkg.price_per_lesson}/lesson)
+                      <p className="text-sm text-green-600 font-medium">
+                        Save ${savings.toFixed(0)} (${packPricePerLesson.toFixed(0)}/lesson)
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl font-bold">${pkg.price}</span>
+                    <span className="text-2xl font-bold">${packPrice}</span>
                     <div
-                      className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${isSelected ? "border-primary bg-primary" : "border-muted-foreground"
+                      className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${selectedQuantity === 4 ? "border-primary bg-primary" : "border-muted-foreground"
                         }`}
                     >
-                      {isSelected && <Check className="h-4 w-4 text-primary-foreground" />}
+                      {selectedQuantity === 4 && <Check className="h-4 w-4 text-primary-foreground" />}
                     </div>
                   </div>
                 </div>
               </button>
-            )
-          })}
-        </div>
+            </div>
 
-        <div className="border-t pt-4 space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Selected package</span>
-            <span className="font-medium">{selectedPackage?.name || "None"}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-semibold">Total</span>
-            <span className="text-2xl font-bold">${selectedPackage?.price || 0}</span>
-          </div>
-          <Button className="w-full" size="lg" onClick={handleCheckout} disabled={!selectedPackage || isLoading}>
-            {isLoading ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <CreditCard className="h-5 w-5 mr-2" />
-                Buy Credits (Test Mode)
-              </>
-            )}
-          </Button>
-          <p className="text-xs text-center text-muted-foreground">Test mode - credits added instantly</p>
-        </div>
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Selected</span>
+                <span className="font-medium">{selectedQuantity === 1 ? "Single Lesson" : "4-Lesson Package"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">Total</span>
+                <span className="text-2xl font-bold">${selectedQuantity === 1 ? singlePrice : packPrice}</span>
+              </div>
+              <Button className="w-full" size="lg" onClick={handleCheckout} disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="h-5 w-5 mr-2" />
+                    Proceed to Checkout
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">Secure payment via Stripe</p>
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -3452,6 +3452,20 @@
     color: var(--color-red-300);
   }
 
+  .peer-checked\:border-primary:is(:where(.peer):checked ~ *) {
+    border-color: var(--primary);
+  }
+
+  .peer-checked\:bg-primary\/5:is(:where(.peer):checked ~ *) {
+    background-color: var(--primary);
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .peer-checked\:bg-primary\/5:is(:where(.peer):checked ~ *) {
+      background-color: color-mix(in oklab, var(--primary) 5%, transparent);
+    }
+  }
+
   @media (hover: hover) {
     .peer-hover\/menu-button\:text-sidebar-accent-foreground:is(:where(.peer\/menu-button):hover ~ *) {
       color: var(--sidebar-accent-foreground);

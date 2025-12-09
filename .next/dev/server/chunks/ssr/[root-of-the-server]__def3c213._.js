@@ -595,8 +595,19 @@ async function createCheckoutSession(quantity) {
             error: 'Unauthorized'
         };
     }
-    // Get user's email for prefilling checkout
-    const { data: profile } = await supabase.from('profiles').select('email, name').eq('id', user.id).single();
+    // Get user's profile including lesson_duration
+    const { data: profile } = await supabase.from('profiles').select('email, name, lesson_duration').eq('id', user.id).single();
+    const lessonDuration = profile?.lesson_duration || 30;
+    // Get pricing for this duration
+    const { data: pricing } = await supabase.from('pricing_tiers').select('single_price, pack_price').eq('duration', lessonDuration).single();
+    if (!pricing) {
+        return {
+            error: 'Pricing not configured for your lesson duration'
+        };
+    }
+    // Determine the price based on quantity
+    const unitAmount = quantity === 1 ? pricing.single_price : pricing.pack_price / 4;
+    const totalAmount = quantity === 1 ? pricing.single_price : pricing.pack_price;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     try {
         const session = await stripe.checkout.sessions.create({
@@ -610,17 +621,18 @@ async function createCheckoutSession(quantity) {
                     price_data: {
                         currency: 'usd',
                         product_data: {
-                            name: 'Piano Lesson Credit',
-                            description: '1 credit = 1 piano lesson'
+                            name: `Piano Lesson Credit (${lessonDuration} min)`,
+                            description: quantity === 1 ? `1 x ${lessonDuration}-minute lesson` : `4 x ${lessonDuration}-minute lessons (4-Pack)`
                         },
-                        unit_amount: 5000
+                        unit_amount: totalAmount
                     },
-                    quantity
+                    quantity: 1
                 }
             ],
             metadata: {
                 userId: user.id,
-                creditAmount: quantity.toString()
+                creditAmount: quantity.toString(),
+                duration: lessonDuration.toString()
             },
             success_url: `${appUrl}/student?success=true`,
             cancel_url: `${appUrl}/student?canceled=true`

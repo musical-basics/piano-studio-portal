@@ -123,14 +123,40 @@ export interface Database {
                     created_at?: string
                 }
             }
+            pricing_tiers: {
+                Row: {
+                    duration: number
+                    single_price: number
+                    pack_price: number
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    duration: number
+                    single_price: number
+                    pack_price: number
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    duration?: number
+                    single_price?: number
+                    pack_price?: number
+                    created_at?: string
+                    updated_at?: string
+                }
+            }
         }
     }
 }
 
 // Convenience types
-export type Profile = Database['public']['Tables']['profiles']['Row']
+export type Profile = Database['public']['Tables']['profiles']['Row'] & {
+    lesson_duration?: number
+}
 export type Lesson = Database['public']['Tables']['lessons']['Row']
 export type Message = Database['public']['Tables']['messages']['Row']
+export type PricingTier = Database['public']['Tables']['pricing_tiers']['Row']
 
 // Extended types for UI components (matching mock-data structure)
 export type StudentProfile = Profile & {
@@ -146,3 +172,4 @@ export type LessonWithDetails = Lesson & {
     teacher_notes?: string
     homework?: string
 }
+

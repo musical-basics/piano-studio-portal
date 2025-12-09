@@ -12,6 +12,7 @@ export async function createStudent(formData: FormData) {
     const email = formData.get('email') as string
     const phone = formData.get('phone') as string | null
     const credits = parseInt(formData.get('credits') as string) || 0
+    const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
     const password = formData.get('password') as string || 'piano123'
 
     // Validate required fields
@@ -23,6 +24,11 @@ export async function createStudent(formData: FormData) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
         return { error: 'Invalid email format' }
+    }
+
+    // Validate lesson duration
+    if (![30, 45, 60].includes(lessonDuration)) {
+        return { error: 'Invalid lesson duration. Must be 30, 45, or 60 minutes.' }
     }
 
     // Create admin client with service key
@@ -69,7 +75,8 @@ export async function createStudent(formData: FormData) {
                 role: 'student',
                 credits,
                 credits_total: credits,
-                balance_due: 0
+                balance_due: 0,
+                lesson_duration: lessonDuration
             })
 
         if (profileError) {

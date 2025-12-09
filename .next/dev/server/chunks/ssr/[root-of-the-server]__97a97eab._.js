@@ -560,6 +560,7 @@ async function createStudent(formData) {
     const email = formData.get('email');
     const phone = formData.get('phone');
     const credits = parseInt(formData.get('credits')) || 0;
+    const lessonDuration = parseInt(formData.get('lessonDuration')) || 30;
     const password = formData.get('password') || 'piano123';
     // Validate required fields
     if (!name || !email) {
@@ -572,6 +573,16 @@ async function createStudent(formData) {
     if (!emailRegex.test(email)) {
         return {
             error: 'Invalid email format'
+        };
+    }
+    // Validate lesson duration
+    if (![
+        30,
+        45,
+        60
+    ].includes(lessonDuration)) {
+        return {
+            error: 'Invalid lesson duration. Must be 30, 45, or 60 minutes.'
         };
     }
     // Create admin client with service key
@@ -616,7 +627,8 @@ async function createStudent(formData) {
             role: 'student',
             credits,
             credits_total: credits,
-            balance_due: 0
+            balance_due: 0,
+            lesson_duration: lessonDuration
         });
         if (profileError) {
             console.error('Profile creation error:', profileError);

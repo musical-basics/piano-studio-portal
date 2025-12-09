@@ -123,6 +123,27 @@ export function AddStudentModal() {
                         />
                     </div>
 
+                    <div className="space-y-2">
+                        <Label>Lesson Duration</Label>
+                        <div className="flex gap-2">
+                            {[30, 45, 60].map((mins) => (
+                                <label key={mins} className="flex-1">
+                                    <input
+                                        type="radio"
+                                        name="lessonDuration"
+                                        value={mins}
+                                        defaultChecked={mins === 30}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="text-center py-2 px-3 rounded-md border-2 cursor-pointer transition-all peer-checked:border-primary peer-checked:bg-primary/5 hover:border-primary/50">
+                                        <span className="font-medium">{mins}</span>
+                                        <span className="text-muted-foreground text-sm"> min</span>
+                                    </div>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
                     <input type="hidden" name="password" value="piano123" />
 
                     <div className="pt-4">
