@@ -3,6 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import type { Message } from '@/lib/supabase/database.types'
+import { Resend } from 'resend'
+import { MessageNotification } from '@/components/emails/message-notification'
+
+// Initialize Resend (will be undefined if no API key)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 export type MessageWithProfile = Message & {
     sender_profile?: {
@@ -38,6 +43,42 @@ export async function sendMessage(recipientId: string, content: string) {
     if (error) {
         console.error('Send message error:', error)
         return { error: error.message }
+    }
+
+    // Send email notification (non-blocking, with error handling)
+    if (resend) {
+        try {
+            // Get sender's profile (current user)
+            const { data: senderProfile } = await supabase
+                .from('profiles')
+                .select('name')
+                .eq('id', user.id)
+                .single()
+
+            // Get recipient's profile
+            const { data: recipientProfile } = await supabase
+                .from('profiles')
+                .select('name, email')
+                .eq('id', recipientId)
+                .single()
+
+            if (recipientProfile?.email) {
+                await resend.emails.send({
+                    from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: recipientProfile.email,
+                    subject: `New message from ${senderProfile?.name || 'Piano Studio'}`,
+                    react: MessageNotification({
+                        senderName: senderProfile?.name || 'Piano Studio',
+                        messageContent: content.length > 200 ? content.substring(0, 200) + '...' : content,
+                        recipientName: recipientProfile.name || 'Student',
+                    }),
+                })
+                console.log('Email notification sent to:', recipientProfile.email)
+            }
+        } catch (emailError) {
+            // Log error but don't block the message from being sent
+            console.error('Failed to send email notification:', emailError)
+        }
     }
 
     revalidatePath('/student')

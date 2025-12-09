@@ -1,8 +1,5 @@
 {
   "/admin/page": "app/admin/page.js",
-  "/auth/callback/route": "app/auth/callback/route.js",
-  "/forgot-password/page": "app/forgot-password/page.js",
   "/login/page": "app/login/page.js",
-  "/reset-password/page": "app/reset-password/page.js",
   "/student/page": "app/student/page.js"
 }
