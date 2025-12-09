@@ -9,7 +9,7 @@
           "filename": "app/login/actions.ts"
         },
         "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
           "async": false,
           "exportedName": "logout",
           "filename": "app/login/actions.ts"
@@ -106,7 +106,7 @@
           "filename": "app/messages/actions.ts"
         },
         "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
           "async": false,
           "exportedName": "sendMessage",
           "filename": "app/messages/actions.ts"
@@ -128,7 +128,7 @@
           "filename": "app/messages/actions.ts"
         },
         "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
           "async": false,
           "exportedName": "getConversation",
           "filename": "app/messages/actions.ts"
@@ -150,7 +150,7 @@
           "filename": "app/messages/actions.ts"
         },
         "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
           "async": false,
           "exportedName": "markMessagesAsRead",
           "filename": "app/messages/actions.ts"
@@ -178,51 +178,6 @@
       "filename": "app/messages/actions.ts",
       "exportedName": "getStudentsWithMessages"
     },
-    "40d8d0016c6102c13b5c77e3787f64d07a6b658ace": {
-      "workers": {
-        "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
-          "async": false,
-          "exportedName": "cancelLesson",
-          "filename": "app/actions/lessons.ts"
-        }
-      },
-      "layer": {
-        "app/student/page": "action-browser"
-      },
-      "filename": "app/actions/lessons.ts",
-      "exportedName": "cancelLesson"
-    },
-    "400c680dfbbc66365afdbbb20468c83e8b2cabc142": {
-      "workers": {
-        "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
-          "async": false,
-          "exportedName": "purchaseCredits",
-          "filename": "app/actions/lessons.ts"
-        }
-      },
-      "layer": {
-        "app/student/page": "action-browser"
-      },
-      "filename": "app/actions/lessons.ts",
-      "exportedName": "purchaseCredits"
-    },
-    "0076f25eb31f28b8758c8fc295882eb2698da5fb07": {
-      "workers": {
-        "app/student/page": {
-          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
-          "async": false,
-          "exportedName": "getAdminProfile",
-          "filename": "app/messages/actions.ts"
-        }
-      },
-      "layer": {
-        "app/student/page": "action-browser"
-      },
-      "filename": "app/messages/actions.ts",
-      "exportedName": "getAdminProfile"
-    },
     "40307c4105ce5a4a4dcc0c9caf3b365b14b9498222": {
       "workers": {
         "app/login/page": {
@@ -237,6 +192,51 @@
       },
       "filename": "app/login/actions.ts",
       "exportedName": "login"
+    },
+    "40d8d0016c6102c13b5c77e3787f64d07a6b658ace": {
+      "workers": {
+        "app/student/page": {
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "cancelLesson",
+          "filename": "app/actions/lessons.ts"
+        }
+      },
+      "layer": {
+        "app/student/page": "action-browser"
+      },
+      "filename": "app/actions/lessons.ts",
+      "exportedName": "cancelLesson"
+    },
+    "4023ff12c20b8171294b3805b284725abc5ce25aa5": {
+      "workers": {
+        "app/student/page": {
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "createCheckoutSession",
+          "filename": "app/actions/stripe.ts"
+        }
+      },
+      "layer": {
+        "app/student/page": "action-browser"
+      },
+      "filename": "app/actions/stripe.ts",
+      "exportedName": "createCheckoutSession"
+    },
+    "0076f25eb31f28b8758c8fc295882eb2698da5fb07": {
+      "workers": {
+        "app/student/page": {
+          "moduleId": "[project]/.next-internal/server/app/student/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/stripe.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "getAdminProfile",
+          "filename": "app/messages/actions.ts"
+        }
+      },
+      "layer": {
+        "app/student/page": "action-browser"
+      },
+      "filename": "app/messages/actions.ts",
+      "exportedName": "getAdminProfile"
     }
   },
   "edge": {},

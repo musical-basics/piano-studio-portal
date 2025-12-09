@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Check, CreditCard, Sparkles, Loader2 } from "lucide-react"
-import { purchaseCredits } from "@/app/actions/lessons"
+import { createCheckoutSession } from "@/app/actions/stripe"
 import { useToast } from "@/hooks/use-toast"
 
 type CreditPackage = {
@@ -18,9 +18,9 @@ type CreditPackage = {
 }
 
 const creditPackages: CreditPackage[] = [
-  { id: "single", name: "Single Lesson", credits: 1, price: 75, price_per_lesson: 75 },
-  { id: "4-pack", name: "4-Lesson Package", credits: 4, price: 260, price_per_lesson: 65, popular: true },
-  { id: "8-pack", name: "8-Lesson Package", credits: 8, price: 480, price_per_lesson: 60 },
+  { id: "single", name: "Single Lesson", credits: 1, price: 50, price_per_lesson: 50 },
+  { id: "4-pack", name: "4-Lesson Package", credits: 4, price: 200, price_per_lesson: 50, popular: true },
+  { id: "8-pack", name: "8-Lesson Package", credits: 8, price: 400, price_per_lesson: 50 },
 ]
 
 interface PurchaseCreditsModalProps {
@@ -39,21 +39,18 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
     if (!selectedPackage) return
 
     setIsLoading(true)
-    const result = await purchaseCredits(selectedPackage.credits)
-    setIsLoading(false)
+    const result = await createCheckoutSession(selectedPackage.credits)
 
     if (result.error) {
+      setIsLoading(false)
       toast({
         variant: "destructive",
-        title: "Purchase Failed",
+        title: "Checkout Failed",
         description: result.error
       })
-    } else {
-      toast({
-        title: "Credits Added!",
-        description: result.message
-      })
-      onOpenChange(false)
+    } else if (result.url) {
+      // Redirect to Stripe Checkout
+      window.location.href = result.url
     }
   }
 
