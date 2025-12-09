@@ -1,0 +1,20 @@
+{
+  "node": {
+    "40f6190cc3f11b673ebc92a5d8a775eba836768932": {
+      "workers": {
+        "app/reset-password/page": {
+          "moduleId": "[project]/.next-internal/server/app/reset-password/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "updatePassword",
+          "filename": "app/login/actions.ts"
+        }
+      },
+      "layer": {
+        "app/reset-password/page": "action-browser"
+      },
+      "exportedName": "updatePassword",
+      "filename": "app/login/actions.ts"
+    }
+  },
+  "edge": {}
+}
