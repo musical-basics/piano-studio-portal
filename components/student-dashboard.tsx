@@ -26,7 +26,6 @@ import {
     mockEvents,
     mockDownloads,
     mockTutorials,
-    type MakeupSlot,
     type Download as DownloadType,
     type Tutorial,
 } from "@/lib/mock-data"
@@ -50,10 +49,12 @@ type UILesson = Lesson & {
 export interface StudentDashboardProps {
     profile: Profile
     lessons: Lesson[]
-    nextLesson: { date: string; time: string; duration: number } | null
+    nextLesson: { id?: string; date: string; time: string; duration: number } | null
+    zoomLink?: string | null
+    todayDate?: string
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Transform lessons to UI format
@@ -110,14 +111,6 @@ export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashbo
         }
     }
 
-    const handleSelectMakeupSlot = (slot: MakeupSlot | null) => {
-        if (slot) {
-            alert(`Makeup lesson scheduled for ${slot.day}, ${slot.date} at ${slot.time}`)
-        } else {
-            alert("Credit preserved for next package.")
-        }
-    }
-
     const handleSignUpEvent = (eventId: string) => {
         alert(`Successfully signed up for event!`)
     }
@@ -157,7 +150,6 @@ export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashbo
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Header */}
             <header className="border-b bg-card sticky top-0 z-10">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
@@ -170,12 +162,25 @@ export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashbo
                                 <p className="text-sm text-muted-foreground">{profile.name || 'Student'}</p>
                             </div>
                         </div>
-                        <form action={logout}>
-                            <Button variant="outline" type="submit">
-                                Sign Out
-                            </Button>
-                        </form>
+                        <div className="flex items-center gap-4">
+                            {todayDate && (
+                                <div className="hidden md:block text-right">
+                                    <p className="text-sm text-muted-foreground">Today is</p>
+                                    <p className="font-medium">{todayDate}</p>
+                                </div>
+                            )}
+                            <form action={logout}>
+                                <Button variant="outline" type="submit">
+                                    Sign Out
+                                </Button>
+                            </form>
+                        </div>
                     </div>
+                    {todayDate && (
+                        <div className="md:hidden mt-3 pt-3 border-t">
+                            <p className="text-sm text-muted-foreground">Today is <span className="font-medium text-foreground">{todayDate}</span></p>
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -242,12 +247,19 @@ export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashbo
                                 <Separator />
 
                                 <div className="flex flex-wrap gap-3">
-                                    <Button size="lg" className="flex-1 min-w-[200px]" asChild>
-                                        <a href={profile.zoom_link || "#"} target="_blank" rel="noopener noreferrer">
+                                    {zoomLink ? (
+                                        <Button size="lg" className="flex-1 min-w-[200px]" asChild>
+                                            <a href={zoomLink} target="_blank" rel="noopener noreferrer">
+                                                <Video className="h-5 w-5 mr-2" />
+                                                Join Zoom Lesson
+                                            </a>
+                                        </Button>
+                                    ) : (
+                                        <Button size="lg" className="flex-1 min-w-[200px]" disabled>
                                             <Video className="h-5 w-5 mr-2" />
-                                            Join Zoom Lesson
-                                        </a>
-                                    </Button>
+                                            Zoom Link Not Available
+                                        </Button>
+                                    )}
                                     <Button size="lg" variant="outline" onClick={handleReschedule}>
                                         <CalendarClock className="h-5 w-5 mr-2" />
                                         Reschedule
@@ -507,7 +519,8 @@ export function StudentDashboard({ profile, lessons, nextLesson }: StudentDashbo
             <MakeupScheduler
                 open={showMakeupScheduler}
                 onOpenChange={setShowMakeupScheduler}
-                onSelectSlot={handleSelectMakeupSlot}
+                lessonId={nextLesson?.id}
+                onSuccess={() => window.location.reload()}
             />
 
             <CancellationModal

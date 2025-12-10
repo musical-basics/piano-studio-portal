@@ -74,6 +74,8 @@ async function StudentPage() {
         console.error("Profile fetch error:", profileError);
         (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$client$2f$components$2f$navigation$2e$react$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["redirect"])("/login");
     }
+    // Fetch teacher/admin profile for default Zoom link
+    const { data: teacher } = await supabase.from("profiles").select("zoom_link").eq("role", "admin").limit(1).single();
     // Fetch lessons for this student
     const { data: lessons, error: lessonsError } = await supabase.from("lessons").select("*").eq("student_id", user.id).order("date", {
         ascending: false
@@ -87,17 +89,29 @@ async function StudentPage() {
     const nextScheduledLesson = upcomingLessons[0];
     // Format next lesson for UI
     const nextLesson = nextScheduledLesson ? {
+        id: nextScheduledLesson.id,
         date: nextScheduledLesson.date,
         time: formatTimeForDisplay(nextScheduledLesson.time),
-        duration: 60 // Default duration
+        duration: nextScheduledLesson.duration || 60
     } : null;
+    // Determine Zoom link: lesson-specific > student's profile > teacher's default
+    const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null;
+    // Format today's date for display
+    const todayFormatted = new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$student$2d$dashboard$2e$tsx__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["StudentDashboard"], {
         profile: profile,
         lessons: lessons || [],
-        nextLesson: nextLesson
+        nextLesson: nextLesson,
+        zoomLink: zoomLink,
+        todayDate: todayFormatted
     }, void 0, false, {
         fileName: "[project]/app/student/page.tsx",
-        lineNumber: 54,
+        lineNumber: 74,
         columnNumber: 5
     }, this);
 }

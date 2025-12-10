@@ -24,6 +24,14 @@ export default async function StudentPage() {
     redirect("/login")
   }
 
+  // Fetch teacher/admin profile for default Zoom link
+  const { data: teacher } = await supabase
+    .from("profiles")
+    .select("zoom_link")
+    .eq("role", "admin")
+    .limit(1)
+    .single()
+
   // Fetch lessons for this student
   const { data: lessons, error: lessonsError } = await supabase
     .from("lessons")
@@ -45,16 +53,30 @@ export default async function StudentPage() {
 
   // Format next lesson for UI
   const nextLesson = nextScheduledLesson ? {
+    id: nextScheduledLesson.id,
     date: nextScheduledLesson.date,
     time: formatTimeForDisplay(nextScheduledLesson.time),
-    duration: 60 // Default duration
+    duration: nextScheduledLesson.duration || 60
   } : null
+
+  // Determine Zoom link: lesson-specific > student's profile > teacher's default
+  const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null
+
+  // Format today's date for display
+  const todayFormatted = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
 
   return (
     <StudentDashboard
       profile={profile}
       lessons={lessons || []}
       nextLesson={nextLesson}
+      zoomLink={zoomLink}
+      todayDate={todayFormatted}
     />
   )
 }
@@ -66,3 +88,4 @@ function formatTimeForDisplay(timeStr: string): string {
   const displayHours = hours % 12 || 12
   return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
 }
+

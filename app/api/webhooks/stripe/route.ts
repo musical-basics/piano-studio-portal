@@ -16,6 +16,10 @@ const supabaseAdmin = createClient(
     }
 )
 
+// Simple in-memory cache to prevent duplicate processing
+// In production, use Redis or database for this
+const processedEvents = new Set<string>()
+
 export async function POST(request: Request) {
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')
@@ -37,9 +41,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
     }
 
+    // Idempotency check - prevent duplicate processing
+    if (processedEvents.has(event.id)) {
+        console.log(`Event ${event.id} already processed, skipping`)
+        return NextResponse.json({ received: true, duplicate: true })
+    }
+
     // Handle the event
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object as Stripe.Checkout.Session
+
+        // Also check by session ID for extra safety
+        if (processedEvents.has(session.id)) {
+            console.log(`Session ${session.id} already processed, skipping`)
+            return NextResponse.json({ received: true, duplicate: true })
+        }
 
         const userId = session.metadata?.userId
         const creditAmount = parseInt(session.metadata?.creditAmount || '0', 10)
@@ -49,7 +65,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing metadata' }, { status: 400 })
         }
 
-        console.log(`Processing credit purchase: ${creditAmount} credits for user ${userId}`)
+        console.log(`Processing credit purchase: ${creditAmount} credits for user ${userId} (session: ${session.id})`)
 
         try {
             // Get current credits
@@ -81,6 +97,10 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
             }
 
+            // Mark as processed AFTER successful update
+            processedEvents.add(event.id)
+            processedEvents.add(session.id)
+
             console.log(`Successfully added ${creditAmount} credits to user ${userId}`)
         } catch (error) {
             console.error('Webhook processing error:', error)
@@ -90,3 +110,4 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ received: true })
 }
+
