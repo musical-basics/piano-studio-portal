@@ -90,6 +90,21 @@
       "exportedName": "createStudent",
       "filename": "app/actions/users.ts"
     },
+    "40f9cc1968d45efe8a9efe6e89bb578ab38341c1bf": {
+      "workers": {
+        "app/admin/page": {
+          "moduleId": "[project]/.next-internal/server/app/admin/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/users.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "updateStudent",
+          "filename": "app/actions/users.ts"
+        }
+      },
+      "layer": {
+        "app/admin/page": "action-browser"
+      },
+      "exportedName": "updateStudent",
+      "filename": "app/actions/users.ts"
+    },
     "60cfba80153e6d9e3238b1a802d0edda5ba901fad8": {
       "workers": {
         "app/admin/page": {

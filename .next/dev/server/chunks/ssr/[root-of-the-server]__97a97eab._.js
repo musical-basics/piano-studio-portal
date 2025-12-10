@@ -544,9 +544,11 @@ async function uploadFile(formData) {
 "[project]/app/actions/users.ts [app-rsc] (ecmascript)", ((__turbopack_context__) => {
 "use strict";
 
-/* __next_internal_action_entry_do_not_use__ [{"407ef1096ee4d6de9c502631843369e97a60bb0f08":"createStudent"},"",""] */ __turbopack_context__.s([
+/* __next_internal_action_entry_do_not_use__ [{"407ef1096ee4d6de9c502631843369e97a60bb0f08":"createStudent","40f9cc1968d45efe8a9efe6e89bb578ab38341c1bf":"updateStudent"},"",""] */ __turbopack_context__.s([
     "createStudent",
-    ()=>createStudent
+    ()=>createStudent,
+    "updateStudent",
+    ()=>updateStudent
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$build$2f$webpack$2f$loaders$2f$next$2d$flight$2d$loader$2f$server$2d$reference$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@16.0.7_react-dom@19.2.0_react@19.2.0__react@19.2.0/node_modules/next/dist/build/webpack/loaders/next-flight-loader/server-reference.js [app-rsc] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$cache$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/.pnpm/next@16.0.7_react-dom@19.2.0_react@19.2.0__react@19.2.0/node_modules/next/cache.js [app-rsc] (ecmascript)");
@@ -651,11 +653,92 @@ async function createStudent(formData) {
         };
     }
 }
+async function updateStudent(formData) {
+    const id = formData.get('id');
+    const name = formData.get('name');
+    const email = formData.get('email');
+    const lessonDuration = parseInt(formData.get('lessonDuration')) || 30;
+    // Validate required fields
+    if (!id) {
+        return {
+            error: 'Student ID is required'
+        };
+    }
+    if (!name || !email) {
+        return {
+            error: 'Name and email are required'
+        };
+    }
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return {
+            error: 'Invalid email format'
+        };
+    }
+    // Validate lesson duration
+    if (![
+        30,
+        45,
+        60
+    ].includes(lessonDuration)) {
+        return {
+            error: 'Invalid lesson duration. Must be 30, 45, or 60 minutes.'
+        };
+    }
+    // Create admin client with service key
+    const supabaseAdmin = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$supabase$2b$supabase$2d$js$40$2$2e$87$2e$0$2f$node_modules$2f40$supabase$2f$supabase$2d$js$2f$dist$2f$esm$2f$wrapper$2e$mjs__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["createClient"])(("TURBOPACK compile-time value", "https://dmbnstbteqlhxyczlcst.supabase.co"), process.env.SUPABASE_SERVICE_KEY, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false
+        }
+    });
+    try {
+        // Step 1: Update user email in Auth system
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+            email
+        });
+        if (authError) {
+            console.error('Auth update error:', authError);
+            // Continue if it's just an email conflict (might be same email)
+            if (!authError.message.includes('email already exists')) {
+                return {
+                    error: authError.message
+                };
+            }
+        }
+        // Step 2: Update profile in public.profiles
+        const { error: profileError } = await supabaseAdmin.from('profiles').update({
+            name,
+            email,
+            lesson_duration: lessonDuration,
+            updated_at: new Date().toISOString()
+        }).eq('id', id);
+        if (profileError) {
+            console.error('Profile update error:', profileError);
+            return {
+                error: 'Failed to update student profile: ' + profileError.message
+            };
+        }
+        (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$cache$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["revalidatePath"])('/admin');
+        return {
+            success: true,
+            message: `Student "${name}" updated successfully!`
+        };
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        return {
+            error: 'An unexpected error occurred'
+        };
+    }
+}
 ;
 (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$build$2f$webpack$2f$loaders$2f$next$2d$flight$2d$loader$2f$action$2d$validate$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["ensureServerEntryExports"])([
-    createStudent
+    createStudent,
+    updateStudent
 ]);
 (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$build$2f$webpack$2f$loaders$2f$next$2d$flight$2d$loader$2f$server$2d$reference$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["registerServerReference"])(createStudent, "407ef1096ee4d6de9c502631843369e97a60bb0f08", null);
+(0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$0$2e$7_react$2d$dom$40$19$2e$2$2e$0_react$40$19$2e$2$2e$0_$5f$react$40$19$2e$2$2e$0$2f$node_modules$2f$next$2f$dist$2f$build$2f$webpack$2f$loaders$2f$next$2d$flight$2d$loader$2f$server$2d$reference$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["registerServerReference"])(updateStudent, "40f9cc1968d45efe8a9efe6e89bb578ab38341c1bf", null);
 }),
 "[externals]/node:crypto [external] (node:crypto, cjs)", ((__turbopack_context__, module, exports) => {
 
@@ -1114,6 +1197,7 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$messages$2f$actions$2
 ;
 ;
 ;
+;
 }),
 "[project]/.next-internal/server/app/admin/page/actions.js { ACTIONS_MODULE0 => \"[project]/app/login/actions.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE1 => \"[project]/app/actions/lessons.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE2 => \"[project]/app/actions/users.ts [app-rsc] (ecmascript)\", ACTIONS_MODULE3 => \"[project]/app/messages/actions.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)", ((__turbopack_context__) => {
 "use strict";
@@ -1131,6 +1215,8 @@ __turbopack_context__.s([
     ()=>__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$actions$2f$users$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["createStudent"],
     "40b09136422a7ed59599b353ab81d2bbf807edf770",
     ()=>__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$messages$2f$actions$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["markMessagesAsRead"],
+    "40f9cc1968d45efe8a9efe6e89bb578ab38341c1bf",
+    ()=>__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$actions$2f$users$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["updateStudent"],
     "60cfba80153e6d9e3238b1a802d0edda5ba901fad8",
     ()=>__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$messages$2f$actions$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["sendMessage"],
     "782a49bd8edfc20a07812c049eedb3cb0b8d572aa7",

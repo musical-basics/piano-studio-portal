@@ -1,5 +1,6 @@
 "use client"
 import { AddStudentModal } from "@/components/add-student-modal"
+import { EditStudentModal } from "@/components/edit-student-modal"
 import { useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -491,14 +492,17 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                             )}
                                                         </TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                onClick={() => handleOpenSchedule(student)}
-                                                            >
-                                                                <Plus className="h-4 w-4 mr-1" />
-                                                                Schedule
-                                                            </Button>
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <EditStudentModal student={student} />
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    onClick={() => handleOpenSchedule(student)}
+                                                                >
+                                                                    <Plus className="h-4 w-4 mr-1" />
+                                                                    Schedule
+                                                                </Button>
+                                                            </div>
                                                         </TableCell>
                                                     </TableRow>
                                                 ))
