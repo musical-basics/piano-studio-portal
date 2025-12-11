@@ -20,11 +20,15 @@ import { createClient } from "@/lib/supabase/client"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 
 // Types for the component props
-export type TodayLesson = Lesson & {
+export type TodayLesson = LessonWithZoom & {
     student: Profile
 }
 
-export type LessonWithStudent = Lesson & {
+// Extends Lesson type to safely handle zoom_link until types are regenerated
+type LessonWithZoom = Lesson & { zoom_link?: string | null }
+
+
+export type LessonWithStudent = LessonWithZoom & {
     student: Profile
 }
 
@@ -49,12 +53,18 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
     const [selectedLesson, setSelectedLesson] = useState<TodayLesson | null>(null)
     const [editingLesson, setEditingLesson] = useState<LessonWithStudent | null>(null)
     const [selectedStudent, setSelectedStudent] = useState<StudentRoster | null>(null)
+    const [selectedStudentForLog, setSelectedStudentForLog] = useState<StudentRoster | null>(null)
     const [lessonNotes, setLessonNotes] = useState("")
     const [videoUrl, setVideoUrl] = useState("")
     const [sheetMusicUrl, setSheetMusicUrl] = useState("")
     const [scheduleDate, setScheduleDate] = useState("")
     const [scheduleTime, setScheduleTime] = useState("15:00")
     const [scheduleDuration, setScheduleDuration] = useState<number>(60)
+    const [isRescheduling, setIsRescheduling] = useState(false)
+    const [rescheduleLessonId, setRescheduleLessonId] = useState<string | null>(null)
+    const [logDate, setLogDate] = useState("")
+    const [logTime, setLogTime] = useState("12:00")
+    const [logDuration, setLogDuration] = useState<number>(60)
     const [isLoading, setIsLoading] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -62,22 +72,52 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
 
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
+        setSelectedStudentForLog(null)
+        setShowLogLessonModal(true)
+    }
+
+    const handleLogPastLesson = (student: StudentRoster) => {
+        setSelectedStudentForLog(student)
+        setSelectedLesson(null)
+        // Set default date to today
+        const today = new Date().toISOString().split('T')[0]
+        setLogDate(today)
+        setLogTime("12:00")
+        setLogDuration(60)
         setShowLogLessonModal(true)
     }
 
     const handleSaveLesson = async () => {
-        if (!selectedLesson) return
+        if (!selectedLesson && !selectedStudentForLog) return
 
         setIsLoading(true)
-        const result = await logLesson(
-            selectedLesson.id,
-            lessonNotes,
-            videoUrl || undefined,
-            sheetMusicUrl || undefined
-        )
+
+        let result;
+
+        if (selectedLesson) {
+            result = await logLesson(
+                selectedLesson.id,
+                lessonNotes,
+                videoUrl || undefined,
+                sheetMusicUrl || undefined
+            )
+        } else if (selectedStudentForLog) {
+            // Import dynamically to handle the new action
+            const { logPastLesson } = await import("@/app/actions/lessons")
+            result = await logPastLesson(
+                selectedStudentForLog.id,
+                logDate,
+                logTime,
+                logDuration,
+                lessonNotes,
+                videoUrl || undefined,
+                sheetMusicUrl || undefined
+            )
+        }
+
         setIsLoading(false)
 
-        if (result.error) {
+        if (result?.error) {
             toast({
                 variant: "destructive",
                 title: "Error",
@@ -86,13 +126,14 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
         } else {
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson for ${selectedLesson.student.name}. Credit deducted.`
+                description: `Successfully logged lesson. Credit deducted.`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
             setVideoUrl("")
             setSheetMusicUrl("")
             setSelectedLesson(null)
+            setSelectedStudentForLog(null)
         }
     }
 
@@ -125,6 +166,8 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
         setScheduleDate(tomorrow.toISOString().split('T')[0])
         setScheduleTime("15:00")
         setScheduleDuration(60)
+        setIsRescheduling(false)
+        setRescheduleLessonId(null)
         setShowScheduleModal(true)
     }
 
@@ -135,30 +178,99 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
         setScheduleDate(tomorrow.toISOString().split('T')[0])
         setScheduleTime("15:00")
         setScheduleDuration(60)
+        setIsRescheduling(false)
+        setRescheduleLessonId(null)
         setShowScheduleModal(true)
     }
 
-    const handleScheduleLesson = async () => {
+    const handleReschedule = (lesson: LessonWithStudent) => {
+        // Pre-fill modal with lesson details
+        setIsRescheduling(true)
+        setRescheduleLessonId(lesson.id)
+
+        // Find the student object from the roster to ensure we have the full StudentRoster object if possible,
+        // otherwise construct a minimal one or use the lesson.student
+        const studentFromRoster = students.find(s => s.id === lesson.student_id)
+        // We need a StudentRoster object (Profile + last_lesson_date), but lesson.student is just Profile.
+        // Casting is safe enough here since we mainly need id and name for display/logic
+        setSelectedStudent(studentFromRoster || (lesson.student as StudentRoster))
+
+        setScheduleDate(lesson.date)
+        setScheduleTime(lesson.time)
+        setScheduleDuration(lesson.duration || 60)
+
+        setShowScheduleModal(true)
+    }
+
+    const handleCancelLesson = async (lessonId: string, studentName: string) => {
+        if (confirm(`Are you sure you want to cancel the lesson for ${studentName}? The student will be fully refunded.`)) {
+            setIsLoading(true)
+            // Import dynamically or pass as prop if import fails, but since this is client component in app router we can use server actions directly
+            const { cancelLesson } = await import("@/app/actions/lessons")
+
+            const result = await cancelLesson(lessonId)
+            setIsLoading(false)
+
+            if (result.error) {
+                toast({
+                    variant: "destructive",
+                    title: "Cancellation Failed",
+                    description: result.error
+                })
+            } else {
+                toast({
+                    title: "Lesson Cancelled",
+                    description: result.message
+                })
+            }
+        }
+    }
+
+    const handleScheduleSubmit = async () => {
         if (!selectedStudent || !scheduleDate || !scheduleTime) return
 
         setIsLoading(true)
-        const result = await scheduleLesson(selectedStudent.id, scheduleDate, scheduleTime, scheduleDuration)
-        setIsLoading(false)
 
-        if (result.error) {
-            toast({
-                variant: "destructive",
-                title: "Scheduling Failed",
-                description: result.error
-            })
+        if (isRescheduling && rescheduleLessonId) {
+            // Import dynamically to avoid circular dependencies if any (though unlikely here)
+            const { rescheduleLesson } = await import("@/app/actions/lessons")
+            const result = await rescheduleLesson(rescheduleLessonId, scheduleDate, scheduleTime, scheduleDuration)
+
+            if (result.error) {
+                toast({
+                    variant: "destructive",
+                    title: "Rescheduling Failed",
+                    description: result.error
+                })
+            } else {
+                toast({
+                    title: "Lesson Rescheduled",
+                    description: result.message
+                })
+                setShowScheduleModal(false)
+                setSelectedStudent(null)
+                setIsRescheduling(false)
+                setRescheduleLessonId(null)
+            }
         } else {
-            toast({
-                title: "Lesson Scheduled",
-                description: result.message
-            })
-            setShowScheduleModal(false)
-            setSelectedStudent(null)
+            const result = await scheduleLesson(selectedStudent.id, scheduleDate, scheduleTime, scheduleDuration)
+
+            if (result.error) {
+                toast({
+                    variant: "destructive",
+                    title: "Scheduling Failed",
+                    description: result.error
+                })
+            } else {
+                toast({
+                    title: "Lesson Scheduled",
+                    description: result.message
+                })
+                setShowScheduleModal(false)
+                setSelectedStudent(null)
+            }
         }
+        setIsLoading(false)
     }
 
     const handleEditLesson = (lesson: LessonWithStudent) => {
@@ -214,7 +326,22 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
         }
 
         // Get the lesson ID for the file path
+        // If ad-hoc logging, we don't have a lesson ID yet to upload to. 
+        // We'll need to prevent upload until save, OR (simpler for now) just disable upload for ad-hoc logging
+        // A better UX would be to allow it, upload to a temp location, then move it. 
+        // For now, let's warn the user or just disable it if !lessonId
+
         const lessonId = isEdit ? editingLesson?.id : selectedLesson?.id
+
+        if (!lessonId && selectedStudentForLog) {
+            toast({
+                variant: "destructive",
+                title: "Upload not supported yet",
+                description: "Please save the lesson first, then edit it to upload materials."
+            })
+            return
+        }
+
         if (!lessonId) {
             toast({
                 variant: "destructive",
@@ -397,14 +524,39 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-2">
+                                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
+                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-blue-600 hover:bg-blue-700"
+                                                                asChild
+                                                            >
+                                                                <a
+                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                >
+                                                                    <Video className="h-4 w-4 mr-1" />
+                                                                    Zoom
+                                                                </a>
+                                                            </Button>
+                                                        )}
                                                         <Button
                                                             size="sm"
                                                             onClick={() => handleLogLesson(lesson)}
                                                             disabled={isLoading}
                                                         >
                                                             <Upload className="h-4 w-4 mr-1" />
-                                                            Log Lesson
+                                                            Log
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleReschedule(({ ...lesson, student_id: lesson.student.id } as any))}
+                                                            disabled={isLoading}
+                                                        >
+                                                            <Calendar className="h-4 w-4 mr-1" />
+                                                            Resched
                                                         </Button>
                                                         <Button
                                                             size="sm"
@@ -414,6 +566,15 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                         >
                                                             <XCircle className="h-4 w-4 mr-1" />
                                                             No-Show
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="secondary"
+                                                            className="text-destructive hover:text-destructive"
+                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
+                                                            disabled={isLoading}
+                                                        >
+                                                            Cancel
                                                         </Button>
                                                     </div>
                                                 </CardContent>
@@ -497,6 +658,14 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                                 <Button
                                                                     size="sm"
                                                                     variant="outline"
+                                                                    onClick={() => handleLogPastLesson(student)}
+                                                                >
+                                                                    <Upload className="h-4 w-4 mr-1" />
+                                                                    Log
+                                                                </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="default"
                                                                     onClick={() => handleOpenSchedule(student)}
                                                                 >
                                                                     <Plus className="h-4 w-4 mr-1" />
@@ -566,6 +735,40 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                         </div>
                                                     </div>
                                                     <Badge variant="outline">Scheduled</Badge>
+                                                    <div className="flex gap-2 ml-4">
+                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                            <Button
+                                                                size="sm"
+                                                                className="bg-blue-600 hover:bg-blue-700"
+                                                                asChild
+                                                            >
+                                                                <a
+                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                >
+                                                                    <Video className="h-4 w-4 mr-1" />
+                                                                    Zoom
+                                                                </a>
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => handleReschedule(lesson)}
+                                                        >
+                                                            <Calendar className="h-4 w-4 mr-1" />
+                                                            Reschedule
+                                                        </Button>
+                                                        <Button
+                                                            variant="destructive"
+                                                            size="sm"
+                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
+                                                        >
+                                                            <XCircle className="h-4 w-4 mr-1" />
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
                                                 </CardContent>
                                             </Card>
                                         ))
@@ -673,20 +876,45 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                     <TabsContent value="messages">
                         <AdminChat />
                     </TabsContent>
-                </Tabs>
-            </main>
+                </Tabs >
+            </main >
 
             {/* Log Lesson Modal */}
-            <Dialog open={showLogLessonModal} onOpenChange={setShowLogLessonModal}>
+            < Dialog open={showLogLessonModal} onOpenChange={setShowLogLessonModal} >
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-serif">Log Lesson</DialogTitle>
                         <DialogDescription>
-                            Record notes and upload materials for {selectedLesson?.student.name}
+                            Record notes and upload materials for {selectedLesson?.student.name || selectedStudentForLog?.name}
                         </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-6 py-4">
+                        {/* Date/Time selectors for Ad-Hoc Logging */}
+                        {selectedStudentForLog && (
+                            <div className="grid grid-cols-2 gap-4 border-b pb-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="log-date" className="text-base">Date</Label>
+                                    <Input
+                                        id="log-date"
+                                        type="date"
+                                        value={logDate}
+                                        onChange={(e) => setLogDate(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="log-time" className="text-base">Time</Label>
+                                    <Input
+                                        id="log-time"
+                                        type="time"
+                                        value={logTime}
+                                        onChange={(e) => setLogTime(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+
                         <div className="space-y-2">
                             <Label htmlFor="notes" className="text-base">
                                 Teacher Notes
@@ -700,6 +928,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                 className="resize-none"
                             />
                         </div>
+
 
                         <div className="space-y-2">
                             <Label htmlFor="video" className="text-base">
@@ -770,17 +999,21 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Schedule Lesson Modal */}
-            <Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal}>
+            < Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal} >
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-serif">Schedule Lesson</DialogTitle>
+                        <DialogTitle className="text-2xl font-serif">
+                            {isRescheduling ? 'Reschedule Lesson' : 'Schedule Lesson'}
+                        </DialogTitle>
                         <DialogDescription>
-                            {selectedStudent
-                                ? `Schedule a new lesson for ${selectedStudent.name}`
-                                : 'Select a student and choose lesson details'
+                            {isRescheduling
+                                ? `Update lesson details for ${selectedStudent?.name || 'Student'}`
+                                : selectedStudent
+                                    ? `Schedule a new lesson for ${selectedStudent.name}`
+                                    : 'Select a student and choose lesson details'
                             }
                         </DialogDescription>
                     </DialogHeader>
@@ -798,59 +1031,59 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                     const student = students.find(s => s.id === e.target.value)
                                     setSelectedStudent(student || null)
                                 }}
-                                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isRescheduling}
                             >
                                 <option value="">Select a student...</option>
                                 {students.map((student) => (
                                     <option key={student.id} value={student.id}>
-                                        {student.name} ({student.email})
+                                        {student.name} ({student.credits} credits)
                                     </option>
                                 ))}
                             </select>
                         </div>
 
-                        {/* Date */}
-                        <div className="space-y-2">
-                            <Label htmlFor="schedule-date" className="text-base">
-                                Date
-                            </Label>
-                            <Input
-                                id="schedule-date"
-                                type="date"
-                                value={scheduleDate}
-                                onChange={(e) => setScheduleDate(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Time */}
-                        <div className="space-y-2">
-                            <Label htmlFor="schedule-time" className="text-base">
-                                Time
-                            </Label>
-                            <Input
-                                id="schedule-time"
-                                type="time"
-                                value={scheduleTime}
-                                onChange={(e) => setScheduleTime(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Duration */}
-                        <div className="space-y-2">
-                            <Label className="text-base">Duration</Label>
-                            <div className="flex gap-2">
-                                {[30, 45, 60].map((duration) => (
-                                    <Button
-                                        key={duration}
-                                        type="button"
-                                        variant={scheduleDuration === duration ? "default" : "outline"}
-                                        className="flex-1"
-                                        onClick={() => setScheduleDuration(duration)}
-                                    >
-                                        {duration} min
-                                    </Button>
-                                ))}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="date" className="text-base">
+                                    Date
+                                </Label>
+                                <Input
+                                    id="date"
+                                    type="date"
+                                    value={scheduleDate}
+                                    onChange={(e) => setScheduleDate(e.target.value)}
+                                    min={new Date().toISOString().split('T')[0]}
+                                />
                             </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="time" className="text-base">
+                                    Time
+                                </Label>
+                                <Input
+                                    id="time"
+                                    type="time"
+                                    value={scheduleTime}
+                                    onChange={(e) => setScheduleTime(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="duration" className="text-base">
+                                Duration (minutes)
+                            </Label>
+                            <select
+                                id="duration"
+                                value={scheduleDuration}
+                                onChange={(e) => setScheduleDuration(Number(e.target.value))}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option value="30">30 minutes</option>
+                                <option value="45">45 minutes</option>
+                                <option value="60">60 minutes</option>
+                                <option value="90">90 minutes</option>
+                            </select>
                         </div>
                     </div>
 
@@ -858,25 +1091,22 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                         <Button variant="outline" onClick={() => setShowScheduleModal(false)} disabled={isLoading}>
                             Cancel
                         </Button>
-                        <Button onClick={handleScheduleLesson} disabled={isLoading || !selectedStudent || !scheduleDate || !scheduleTime}>
+                        <Button onClick={handleScheduleSubmit} disabled={isLoading}>
                             {isLoading ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Scheduling...
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Saving...
                                 </>
                             ) : (
-                                <>
-                                    <Calendar className="h-4 w-4 mr-2" />
-                                    Schedule Lesson
-                                </>
+                                isRescheduling ? 'Update Lesson' : 'Schedule Lesson'
                             )}
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* Edit Lesson Modal */}
-            <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+            < Dialog open={showEditModal} onOpenChange={setShowEditModal} >
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-serif">Edit Lesson</DialogTitle>
@@ -978,7 +1208,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
-        </div>
+            </Dialog >
+        </div >
     )
 }
