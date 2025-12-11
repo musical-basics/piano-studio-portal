@@ -13,6 +13,7 @@ export async function createStudent(formData: FormData) {
     const phone = formData.get('phone') as string | null
     const credits = parseInt(formData.get('credits') as string) || 0
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
+    const lessonDay = formData.get('lessonDay') as string || null
     const password = formData.get('password') as string || 'piano123'
 
     // Validate required fields
@@ -76,7 +77,8 @@ export async function createStudent(formData: FormData) {
                 credits,
                 credits_total: credits,
                 balance_due: 0,
-                lesson_duration: lessonDuration
+                lesson_duration: lessonDuration,
+                lesson_day: lessonDay
             })
 
         if (profileError) {
@@ -108,6 +110,18 @@ export async function updateStudent(formData: FormData) {
     const name = formData.get('name') as string
     const email = formData.get('email') as string
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
+    const lessonDay = formData.get('lessonDay') as string || null
+
+    // Parse credits if present
+    const creditsRaw = formData.get('credits')
+    let credits: number | undefined = undefined
+    if (creditsRaw !== null && creditsRaw !== '') {
+        const parsed = parseInt(creditsRaw as string)
+        if (!isNaN(parsed)) {
+            credits = parsed
+        }
+    }
+
 
     // Validate required fields
     if (!id) {
@@ -162,6 +176,8 @@ export async function updateStudent(formData: FormData) {
                 name,
                 email,
                 lesson_duration: lessonDuration,
+                lesson_day: lessonDay,
+                ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })
             .eq('id', id)

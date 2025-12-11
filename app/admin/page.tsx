@@ -100,6 +100,23 @@ export default async function AdminPage() {
 
   const students: StudentRoster[] = studentsRaw || []
 
+  // Sort students by lesson_day (Sunday -> Saturday, then others)
+  const dayOrder: Record<string, number> = {
+    'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+    'Thursday': 4, 'Friday': 5, 'Saturday': 6
+  }
+
+  students.sort((a, b) => {
+    const dayA = a.lesson_day ? dayOrder[a.lesson_day] : 99
+    const dayB = b.lesson_day ? dayOrder[b.lesson_day] : 99
+
+    if (dayA !== dayB) {
+      return dayA - dayB
+    }
+    // Secondary sort by name
+    return (a.name || '').localeCompare(b.name || '')
+  })
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 

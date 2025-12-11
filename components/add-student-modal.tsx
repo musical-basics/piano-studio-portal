@@ -144,6 +144,20 @@ export function AddStudentModal() {
                         </div>
                     </div>
 
+                    <div className="space-y-2">
+                        <Label htmlFor="lessonDay">Recurring Lesson Day</Label>
+                        <select
+                            id="lessonDay"
+                            name="lessonDay"
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option value="">None</option>
+                            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                                <option key={day} value={day}>{day}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <input type="hidden" name="password" value="piano123" />
 
                     <div className="pt-4">

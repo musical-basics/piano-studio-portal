@@ -34,6 +34,7 @@ export type LessonWithStudent = LessonWithZoom & {
 
 export type StudentRoster = Profile & {
     last_lesson_date?: string
+    lesson_day?: string | null
 }
 
 export interface AdminDashboardProps {
@@ -603,6 +604,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                             <TableRow>
                                                 <TableHead className="font-semibold">Name</TableHead>
                                                 <TableHead className="font-semibold">Contact</TableHead>
+                                                <TableHead className="font-semibold">Weekday</TableHead>
                                                 <TableHead className="font-semibold text-center">Credits</TableHead>
                                                 <TableHead className="font-semibold text-center">Balance Due</TableHead>
                                                 <TableHead className="font-semibold">Status</TableHead>
@@ -612,7 +614,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                         <TableBody>
                                             {students.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                                         No students found
                                                     </TableCell>
                                                 </TableRow>
@@ -626,9 +628,16 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                                 <div className="text-muted-foreground">{student.phone}</div>
                                                             </div>
                                                         </TableCell>
+                                                        <TableCell>
+                                                            {student.lesson_day ? (
+                                                                <Badge variant="outline">{student.lesson_day}</Badge>
+                                                            ) : (
+                                                                <span className="text-muted-foreground text-sm">-</span>
+                                                            )}
+                                                        </TableCell>
                                                         <TableCell className="text-center">
                                                             <Badge variant={student.credits <= 1 ? "destructive" : "secondary"}>
-                                                                {student.credits}/{student.credits_total}
+                                                                {student.credits}
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell className="text-center">

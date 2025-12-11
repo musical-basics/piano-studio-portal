@@ -59,24 +59,34 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
     const router = useRouter()
 
     async function handleSubmit(formData: FormData) {
-        // Add lesson duration from state (since Select doesn't work with native form)
+        // Add lesson duration from state
         formData.set('lessonDuration', lessonDuration)
 
-        const result = await updateStudent(formData)
+        try {
+            const result = await updateStudent(formData)
+            console.log("Update result:", result)
 
-        if (result.error) {
+            if (result.error) {
+                toast({
+                    variant: "destructive",
+                    title: "Error",
+                    description: result.error
+                })
+            } else if (result.success) {
+                toast({
+                    title: "Student Updated",
+                    description: result.message
+                })
+                setOpen(false)
+                router.refresh()
+            }
+        } catch (e) {
+            console.error("Submission error:", e)
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: result.error
+                description: "Failed to submit updates"
             })
-        } else if (result.success) {
-            toast({
-                title: "Student Updated",
-                description: result.message
-            })
-            setOpen(false)
-            router.refresh()
         }
     }
 
@@ -118,6 +128,32 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                             defaultValue={student.email || ''}
                             required
                         />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="credits">Current Credits</Label>
+                        <Input
+                            id="credits"
+                            name="credits"
+                            type="number"
+                            defaultValue={student.credits}
+                            required
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="lessonDay">Recurring Lesson Day</Label>
+                        <select
+                            id="lessonDay"
+                            name="lessonDay"
+                            defaultValue={(student as any).lesson_day || ""}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option value="">None</option>
+                            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                                <option key={day} value={day}>{day}</option>
+                            ))}
+                        </select>
                     </div>
 
                     <div className="space-y-2">

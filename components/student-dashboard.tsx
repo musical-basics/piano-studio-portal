@@ -296,7 +296,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                             <div>
                                 <p className="text-xs text-muted-foreground mb-0.5">Credits Remaining</p>
                                 <p className="text-xl font-bold">
-                                    {profile.credits}/{profile.credits_total}
+                                    {profile.credits}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
