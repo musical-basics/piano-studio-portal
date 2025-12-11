@@ -49,7 +49,7 @@ type UILesson = Lesson & {
 export interface StudentDashboardProps {
     profile: Profile
     lessons: Lesson[]
-    nextLesson: { id?: string; date: string; time: string; duration: number } | null
+    nextLesson: { id?: string; date: string; time: string; duration: number; rawTime?: string } | null
     zoomLink?: string | null
     todayDate?: string
 }
@@ -66,8 +66,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
 
     const completedLessons = uiLessons.filter((l) => l.status === "completed")
 
+
     // Find next scheduled lesson for cancellation
-    const nextScheduledLesson = uiLessons.find(l => l.status === 'scheduled')
+    // We use the nextLesson prop passed from the server which is already calculated correctly
+    // The uiLessons array is sorted by date descending, so finding the first 'scheduled' one there would be wrong (it would be the latest one)
 
     // Mock messages for now (will be replaced with real data later)
     const unreadMessages = 1
@@ -88,10 +90,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
     }
 
     const handleConfirmCancel = async () => {
-        if (!nextScheduledLesson) return
+        if (!nextLesson?.id) return
 
         setIsCancelling(true)
-        const result = await cancelLesson(nextScheduledLesson.id)
+        const result = await cancelLesson(nextLesson.id)
         setIsCancelling(false)
         setShowCancellationModal(false)
 
@@ -531,12 +533,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                 onSuccess={() => window.location.reload()}
             />
 
+
             <CancellationModal
                 open={showCancellationModal}
                 onOpenChange={setShowCancellationModal}
                 onConfirmCancel={handleConfirmCancel}
-                lessonDate={nextScheduledLesson?.date}
-                lessonTime={nextScheduledLesson?.time}
+                lessonDate={nextLesson?.date}
+                lessonTime={nextLesson?.rawTime || nextLesson?.time}
                 isLoading={isCancelling}
             />
 

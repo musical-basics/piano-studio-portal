@@ -56,7 +56,8 @@ export default async function StudentPage() {
     id: nextScheduledLesson.id,
     date: nextScheduledLesson.date,
     time: formatTimeForDisplay(nextScheduledLesson.time),
-    duration: nextScheduledLesson.duration || 60
+    duration: nextScheduledLesson.duration || 60,
+    rawTime: nextScheduledLesson.time
   } : null
 
   // Determine Zoom link: lesson-specific > student's profile > teacher's default
