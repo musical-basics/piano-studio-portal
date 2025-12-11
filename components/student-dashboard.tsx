@@ -137,9 +137,17 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
         return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
     }
 
-    // Format date for display
+    // Format date for display - parse as local time to avoid timezone shift
     const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr)
+        // If date is in YYYY-MM-DD format (no time), parse as local time
+        // to avoid UTC midnight conversion shifting to previous day
+        let date: Date
+        if (dateStr.length === 10 && dateStr.includes('-')) {
+            // Parse YYYY-MM-DD as local time by adding T12:00:00
+            date = new Date(dateStr + 'T12:00:00')
+        } else {
+            date = new Date(dateStr)
+        }
         return date.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
@@ -526,7 +534,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
             <CancellationModal
                 open={showCancellationModal}
                 onOpenChange={setShowCancellationModal}
-                onAcceptFee={handleConfirmCancel}
+                onConfirmCancel={handleConfirmCancel}
+                lessonDate={nextScheduledLesson?.date}
+                lessonTime={nextScheduledLesson?.time}
+                isLoading={isCancelling}
             />
 
             {selectedLesson && (

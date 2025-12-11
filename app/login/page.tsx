@@ -127,7 +127,7 @@ export default function LoginPage() {
                 <strong>Student:</strong> student@demo.com / password123
               </p>
               <p>
-                <strong>Teacher:</strong> admin@piano.com
+                <strong>Teacher:</strong> admin@demo.com / password123
               </p>
             </div>
           </form>

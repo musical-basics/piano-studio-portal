@@ -150,6 +150,7 @@ export async function markNoShow(lessonId: string) {
 
 /**
  * Cancel a lesson - refunds credit only if cancelled >24 hours in advance
+ * Uses admin client to bypass RLS for updates
  */
 export async function cancelLesson(lessonId: string) {
     const supabase = await createClient()
@@ -185,47 +186,72 @@ export async function cancelLesson(lessonId: string) {
         return { error: 'You can only cancel your own lessons' }
     }
 
+    // CRITICAL: Check if already cancelled to prevent duplicate refunds
+    if (lesson.status === 'cancelled') {
+        return { error: 'This lesson has already been cancelled' }
+    }
+
     if (lesson.status !== 'scheduled') {
         return { error: 'Can only cancel scheduled lessons' }
     }
 
-    // Check if lesson is more than 24 hours away
-    const lessonDateTime = new Date(`${lesson.date}T${lesson.time}`)
+    // Create admin client to bypass RLS
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+
+    // Check if lesson is more than 24 hours away (use local time)
+    const timeStr = lesson.time || '12:00'
+    const lessonDateTime = new Date(`${lesson.date}T${timeStr}:00`)
     const now = new Date()
     const hoursUntilLesson = (lessonDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-    const isWithin24Hours = hoursUntilLesson < 24
+    const isWithin24Hours = hoursUntilLesson > 0 && hoursUntilLesson < 24
 
-    // Update the lesson status
-    const { error: lessonError } = await supabase
+    // Step 1: DELETE the lesson row (prevents duplicate cancellation)
+    const { error: deleteError } = await supabaseAdmin
         .from('lessons')
-        .update({
-            status: 'cancelled',
-            notes: isWithin24Hours
-                ? 'Cancelled within 24 hours. Credit forfeited per cancellation policy.'
-                : 'Cancelled by student. Credit refunded.'
-        })
+        .delete()
         .eq('id', lessonId)
 
-    if (lessonError) {
-        return { error: lessonError.message }
+    if (deleteError) {
+        console.error('Delete lesson error:', deleteError)
+        return { error: 'Failed to cancel lesson: ' + deleteError.message }
     }
 
-    // Only refund credit if cancelled more than 24 hours in advance
+    console.log(`Lesson ${lessonId} deleted. Refund: ${!isWithin24Hours}`)
+
+    // Step 2: Only refund credit if cancelled more than 24 hours in advance
     if (!isWithin24Hours) {
-        const { data: student } = await supabase
+        const { data: student } = await supabaseAdmin
             .from('profiles')
-            .select('credits, credits_total')
+            .select('credits')
             .eq('id', lesson.student_id)
             .single()
 
         if (student) {
-            await supabase
+            const { error: creditError } = await supabaseAdmin
                 .from('profiles')
                 .update({ credits: student.credits + 1 })
                 .eq('id', lesson.student_id)
+
+            if (creditError) {
+                console.error('Credit refund error:', creditError)
+                // Lesson already deleted, but log the error
+            } else {
+                console.log(`Refunded 1 credit to student ${lesson.student_id}`)
+            }
         }
     }
 
+    // Step 3: Revalidate paths to refresh UI
     revalidatePath('/admin')
     revalidatePath('/student')
 
@@ -326,6 +352,20 @@ export async function scheduleLesson(
         return { error: 'Student not found' }
     }
 
+    // CONFLICT CHECK: Prevent duplicate bookings for same student/date/time
+    const { data: existingLesson } = await supabase
+        .from('lessons')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('date', date)
+        .eq('time', time)
+        .eq('status', 'scheduled')
+        .maybeSingle()
+
+    if (existingLesson) {
+        return { error: 'Student already has a lesson scheduled for this time.' }
+    }
+
     // Create the lesson - try with duration first
     let lesson = null
     let lessonError = null
@@ -365,6 +405,42 @@ export async function scheduleLesson(
     if (lessonError) {
         console.error('Schedule lesson error:', lessonError)
         return { error: lessonError.message }
+    }
+
+    // CREDIT DEDUCTION: Deduct 1 credit from student when lesson is booked
+    // This ensures the credit loop is balanced (book = -1, cancel = +1)
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+
+    // Get current credits and deduct 1
+    const { data: studentCredits } = await supabaseAdmin
+        .from('profiles')
+        .select('credits')
+        .eq('id', studentId)
+        .single()
+
+    if (studentCredits) {
+        const newCredits = Math.max(0, studentCredits.credits - 1) // Don't go negative
+        const { error: creditError } = await supabaseAdmin
+            .from('profiles')
+            .update({ credits: newCredits })
+            .eq('id', studentId)
+
+        if (creditError) {
+            console.error('Credit deduction error:', creditError)
+            // Don't fail - lesson is already created
+        } else {
+            console.log(`Deducted 1 credit from student ${studentId}. New balance: ${newCredits}`)
+        }
     }
 
     revalidatePath('/admin')
