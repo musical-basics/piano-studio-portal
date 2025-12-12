@@ -30,6 +30,22 @@ export default function LoginPage() {
     // If successful, the server action will redirect
   }
 
+  const handleTestLogin = async (email: string, pass: string) => {
+    setIsLoading(true)
+    setError(null)
+
+    const formData = new FormData()
+    formData.append('email', email)
+    formData.append('password', pass)
+
+    const result = await login(formData)
+
+    if (result?.error) {
+      setError(result.error)
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/30 to-background p-4">
       {/* Background Piano Keys Pattern */}
@@ -120,6 +136,36 @@ export default function LoginPage() {
             <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
+
+            <div className="space-y-3 pt-2">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or test with</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleTestLogin('admin@demo.com', 'password123')}
+                  disabled={isLoading}
+                >
+                  Admin Login
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleTestLogin('student@demo.com', 'password123')}
+                  disabled={isLoading}
+                >
+                  Student Login
+                </Button>
+              </div>
+            </div>
 
             <div className="pt-4 text-center text-xs text-muted-foreground border-t">
               <p className="mb-2">Demo Credentials:</p>

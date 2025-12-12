@@ -52,9 +52,11 @@ export interface StudentDashboardProps {
     nextLesson: { id?: string; date: string; time: string; duration: number; rawTime?: string } | null
     zoomLink?: string | null
     todayDate?: string
+    studioName?: string
+    teacherName?: string
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate, studioName = "Piano Studio", teacherName }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Transform lessons to UI format
@@ -168,7 +170,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                 <Music className="h-5 w-5 text-primary-foreground" />
                             </div>
                             <div>
-                                <h1 className="text-xl font-serif font-semibold">Piano Studio</h1>
+                                <h1 className="text-xl font-serif font-semibold">{studioName}</h1>
                                 <p className="text-sm text-muted-foreground">{profile.name || 'Student'}</p>
                             </div>
                         </div>

@@ -4,6 +4,78 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
 /**
+ * Check if a time slot is available (not booked by ANY student)
+ */
+export async function checkAvailability(date: string, time: string, duration: number = 60, excludeLessonId?: string) {
+    const supabase = await createClient()
+
+    // Calculate end time of the proposed slot
+    const startDateTime = new Date(`${date}T${time}`)
+    const endDateTime = new Date(startDateTime.getTime() + duration * 60000)
+
+    // We need to check for overlaps. 
+    // A lesson overlaps if:
+    // (StartA < EndB) AND (EndA > StartB)
+
+    // Simplified: Check for exact match first (most common case in grid system)
+    // For a real grid system, we usually stick to fixed slots.
+    // Querying for *overlapping* intervals in SQL is cleaner but 'time' is stored as string 'HH:MM'.
+    // So we fetch lessons on that date and filter in JS for overlap to be safe and simple given the schema.
+
+    const { data: lessons } = await supabase
+        .from('lessons')
+        .select('id, time, duration, status')
+        .eq('date', date)
+        .neq('status', 'cancelled') // Cancelled lessons don't block
+
+    if (!lessons) return true
+
+    const isTaken = lessons.some(lesson => {
+        if (excludeLessonId && lesson.id === excludeLessonId) return false
+
+        const lessonStart = new Date(`${date}T${lesson.time}`)
+        const lessonDuration = lesson.duration || 60
+        const lessonEnd = new Date(lessonStart.getTime() + lessonDuration * 60000)
+
+        // Check overlap
+        const overlaps = (startDateTime < lessonEnd) && (endDateTime > lessonStart)
+        return overlaps
+    })
+
+    return !isTaken
+}
+
+/**
+ * Get all lessons within a specific date range (inclusive), joined with student profile
+ */
+export async function getLessonsForDateRange(startDate: string, endDate: string) {
+    const supabase = await createClient()
+
+    const { data: lessons, error } = await supabase
+        .from('lessons')
+        .select(`
+            *,
+            student:profiles!lessons_student_id_fkey (
+                id,
+                name,
+                email
+            )
+        `)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .neq('status', 'cancelled') // Exclude cancelled lessons
+        .order('date', { ascending: true })
+        .order('time', { ascending: true })
+
+    if (error) {
+        console.error('Error fetching lessons range:', error)
+        return { lessons: [] }
+    }
+
+    return { lessons: lessons || [] }
+}
+
+/**
  * Log a completed lesson - updates status to 'completed' and deducts 1 credit
  */
 export async function logLesson(
@@ -392,20 +464,10 @@ export async function rescheduleLesson(
         return { error: 'Lesson not found' }
     }
 
-    // CONFLICT CHECK: Prevent duplicate bookings for same student/date/time
-    // exclude current lesson from check
-    const { data: existingLesson } = await supabase
-        .from('lessons')
-        .select('id')
-        .eq('student_id', lesson.student_id)
-        .eq('date', newDate)
-        .eq('time', newTime)
-        .eq('status', 'scheduled')
-        .neq('id', lessonId)
-        .maybeSingle()
-
-    if (existingLesson) {
-        return { error: 'Student already has a lesson scheduled for this time.' }
+    // CONFLICT CHECK: Master Calendar
+    const isAvailable = await checkAvailability(newDate, newTime, newDuration, lessonId)
+    if (!isAvailable) {
+        return { error: 'This time slot is already booked by another student.' }
     }
 
     // Update the lesson
@@ -517,18 +579,10 @@ export async function scheduleLesson(
         return { error: 'Student not found' }
     }
 
-    // CONFLICT CHECK: Prevent duplicate bookings for same student/date/time
-    const { data: existingLesson } = await supabase
-        .from('lessons')
-        .select('id')
-        .eq('student_id', studentId)
-        .eq('date', date)
-        .eq('time', time)
-        .eq('status', 'scheduled')
-        .maybeSingle()
-
-    if (existingLesson) {
-        return { error: 'Student already has a lesson scheduled for this time.' }
+    // CONFLICT CHECK: Master Calendar
+    const isAvailable = await checkAvailability(date, time, duration)
+    if (!isAvailable) {
+        return { error: 'This time slot is already booked by another student.' }
     }
 
     // Create Zoom meeting (Best Effort)

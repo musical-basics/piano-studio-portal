@@ -20,6 +20,7 @@ export function ChatWidget({ studentId, teacherName = "Professor Williams", unre
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
+  const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
@@ -40,6 +41,9 @@ export function ChatWidget({ studentId, teacherName = "Professor Williams", unre
       const { admin } = await getAdminProfile()
       if (admin) {
         setAdminId(admin.id)
+        if (admin.name) {
+          setCurrentTeacherName(admin.name)
+        }
 
         // Get conversation with admin
         const { messages: conversationMessages } = await getConversation(admin.id)
@@ -149,7 +153,7 @@ export function ChatWidget({ studentId, teacherName = "Professor Williams", unre
                 <Music className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-serif font-semibold">{teacherName}</h3>
+                <h3 className="font-serif font-semibold">{currentTeacherName}</h3>
                 <p className="text-xs text-primary-foreground/70">Your Instructor</p>
               </div>
             </div>
@@ -184,8 +188,8 @@ export function ChatWidget({ studentId, teacherName = "Professor Williams", unre
                 >
                   <div
                     className={`max-w-[80%] rounded-2xl px-3 py-2 ${isFromStudent(message)
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-muted rounded-bl-sm"
+                      ? "bg-primary text-primary-foreground rounded-br-sm"
+                      : "bg-muted rounded-bl-sm"
                       }`}
                   >
                     <p className="text-sm leading-relaxed">{message.content}</p>

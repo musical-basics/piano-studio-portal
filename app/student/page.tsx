@@ -27,7 +27,7 @@ export default async function StudentPage() {
   // Fetch teacher/admin profile for default Zoom link
   const { data: teacher } = await supabase
     .from("profiles")
-    .select("zoom_link")
+    .select("zoom_link, studio_name, name")
     .eq("role", "admin")
     .limit(1)
     .single()
@@ -78,6 +78,8 @@ export default async function StudentPage() {
       nextLesson={nextLesson}
       zoomLink={zoomLink}
       todayDate={todayFormatted}
+      studioName={teacher?.studio_name || "Piano Studio"}
+      teacherName={teacher?.name || "Professor"}
     />
   )
 }

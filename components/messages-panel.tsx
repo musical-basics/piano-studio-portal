@@ -20,6 +20,7 @@ export function MessagesPanel({ studentId, teacherName = "Professor Williams" }:
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
+  const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -37,6 +38,9 @@ export function MessagesPanel({ studentId, teacherName = "Professor Williams" }:
       const { admin } = await getAdminProfile()
       if (admin) {
         setAdminId(admin.id)
+        if (admin.name) {
+          setCurrentTeacherName(admin.name)
+        }
 
         // Get conversation with admin
         const { messages: conversationMessages } = await getConversation(admin.id)
@@ -120,7 +124,7 @@ export function MessagesPanel({ studentId, teacherName = "Professor Williams" }:
               <Music className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle className="text-lg font-serif">{teacherName}</CardTitle>
+              <CardTitle className="text-lg font-serif">{currentTeacherName}</CardTitle>
               <p className="text-sm text-muted-foreground">Your Instructor</p>
             </div>
           </div>
@@ -145,8 +149,8 @@ export function MessagesPanel({ studentId, teacherName = "Professor Williams" }:
             <div key={message.id} className={`flex ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isFromStudent(message)
-                    ? "bg-primary text-primary-foreground rounded-br-md"
-                    : "bg-muted rounded-bl-md"
+                  ? "bg-primary text-primary-foreground rounded-br-md"
+                  : "bg-muted rounded-bl-md"
                   }`}
               >
                 <p className="text-sm leading-relaxed">{message.content}</p>

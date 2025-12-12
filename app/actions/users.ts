@@ -1,7 +1,8 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 /**
  * Create a new student (Admin only)
@@ -33,7 +34,7 @@ export async function createStudent(formData: FormData) {
     }
 
     // Create admin client with service key
-    const supabaseAdmin = createClient(
+    const supabaseAdmin = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_KEY!,
         {
@@ -143,8 +144,8 @@ export async function updateStudent(formData: FormData) {
         return { error: 'Invalid lesson duration. Must be 30, 45, or 60 minutes.' }
     }
 
-    // Create admin client with service key
-    const supabaseAdmin = createClient(
+    // Create admin client for sensitive updates
+    const supabaseAdmin = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_KEY!,
         {
@@ -199,3 +200,76 @@ export async function updateStudent(formData: FormData) {
     }
 }
 
+/**
+ * Update teacher profile settings (Admin only via UI, checks auth)
+ */
+export async function updateProfileSettings(formData: FormData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+        return { error: 'Not authenticated' }
+    }
+
+    const name = formData.get('name') as string
+    const email = formData.get('email') as string
+    const timezone = formData.get('timezone') as string
+    const availableHoursStr = formData.get('availableHours') as string
+    const studioName = formData.get('studioName') as string
+    const password = formData.get('password') as string
+
+    // Create admin client for sensitive updates
+    const supabaseAdmin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+
+    try {
+        const updates: any = {}
+        const authUpdates: any = {}
+
+        // 1. Update Profile Data
+        if (name) updates.name = name
+        if (timezone) updates.timezone = timezone
+        if (studioName !== undefined) updates.studio_name = studioName
+        if (availableHoursStr) {
+            try {
+                updates.available_hours = JSON.parse(availableHoursStr)
+            } catch (e) {
+                console.error("Invalid JSON for available_hours")
+            }
+        }
+
+        const { error: profileError } = await supabaseAdmin
+            .from('profiles')
+            .update({
+                ...updates,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id)
+
+        if (profileError) throw new Error('Profile update failed: ' + profileError.message)
+
+        // 2. Update Auth Data (Email/Password)
+        if (email && email !== user.email) authUpdates.email = email
+        if (password) authUpdates.password = password
+
+        if (Object.keys(authUpdates).length > 0) {
+            const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(user.id, authUpdates)
+            if (authError) throw new Error('Auth update failed: ' + authError.message)
+        }
+
+        revalidatePath('/admin')
+        return { success: true, message: 'Settings updated successfully' }
+
+    } catch (error: any) {
+        console.error('Update settings error:', error)
+        return { error: error.message || 'Failed to update settings' }
+    }
+}

@@ -24,6 +24,9 @@ export interface Database {
                     balance_due: number
                     zoom_link: string | null
                     stripe_customer_id: string | null
+                    available_hours: Json | null
+                    timezone: string | null
+                    studio_name: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -38,6 +41,9 @@ export interface Database {
                     balance_due?: number
                     zoom_link?: string | null
                     stripe_customer_id?: string | null
+                    available_hours?: Json | null
+                    timezone?: string | null
+                    studio_name?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -52,6 +58,9 @@ export interface Database {
                     balance_due?: number
                     zoom_link?: string | null
                     stripe_customer_id?: string | null
+                    available_hours?: Json | null
+                    timezone?: string | null
+                    studio_name?: string | null
                     created_at?: string
                     updated_at?: string
                 }

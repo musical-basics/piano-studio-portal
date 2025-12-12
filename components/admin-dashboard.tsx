@@ -1,7 +1,9 @@
 "use client"
 import { AddStudentModal } from "@/components/add-student-modal"
 import { EditStudentModal } from "@/components/edit-student-modal"
-import { useState, useRef } from "react"
+import { MasterCalendar } from "./master-calendar"
+import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
+import { useState, useRef, Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -127,7 +129,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
         } else {
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson. Credit deducted.`
+                description: `Successfully logged lesson.Credit deducted.`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
@@ -139,7 +141,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
     }
 
     const handleMarkNoShow = async (lesson: TodayLesson) => {
-        if (confirm(`Mark ${lesson.student.name} as No-Show? This will deduct 1 credit without refund or makeup option.`)) {
+        if (confirm(`Mark ${lesson.student.name} as No - Show ? This will deduct 1 credit without refund or makeup option.`)) {
             setIsLoading(true)
             const result = await markNoShow(lesson.id)
             setIsLoading(false)
@@ -153,7 +155,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
             } else {
                 toast({
                     title: "No-Show Recorded",
-                    description: `${lesson.student.name} marked as No-Show. Credit forfeited.`
+                    description: `${lesson.student.name} marked as No - Show.Credit forfeited.`
                 })
             }
         }
@@ -204,7 +206,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
     }
 
     const handleCancelLesson = async (lessonId: string, studentName: string) => {
-        if (confirm(`Are you sure you want to cancel the lesson for ${studentName}? The student will be fully refunded.`)) {
+        if (confirm(`Are you sure you want to cancel the lesson for ${studentName} ? The student will be fully refunded.`)) {
             setIsLoading(true)
             // Import dynamically or pass as prop if import fails, but since this is client component in app router we can use server actions directly
             const { cancelLesson } = await import("@/app/actions/lessons")
@@ -360,7 +362,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
             // Create unique filename with timestamp
             const timestamp = Date.now()
             const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-            const filePath = `sheet_music/${lessonId}/${timestamp}_${safeName}`
+            const filePath = `sheet_music / ${lessonId}/${timestamp}_${safeName}`
 
             // Upload to Supabase Storage
             const { data, error: uploadError } = await supabase.storage
@@ -437,29 +439,43 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                 <Music className="h-5 w-5 text-primary-foreground" />
                             </div>
                             <div>
-                                <h1 className="text-xl font-serif font-semibold">Teacher Admin Portal</h1>
+                                <h1 className="text-xl font-serif font-semibold">{admin.studio_name || "Teacher Admin Portal"}</h1>
                                 <p className="text-sm text-muted-foreground">{admin.name || 'Admin'}</p>
                             </div>
                         </div>
-                        <form action={logout}>
-                            <Button variant="outline" type="submit">
-                                Sign Out
-                            </Button>
-                        </form>
+                        <div className="flex items-center gap-2">
+                            <ProfileSettingsDialog
+                                profile={admin}
+                                trigger={
+                                    <Button variant="outline">
+                                        Profile Settings
+                                    </Button>
+                                }
+                            />
+                            <form action={logout}>
+                                <Button variant="ghost" type="submit">
+                                    Sign Out
+                                </Button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </header>
 
             <main className="container mx-auto px-4 py-8">
                 <Tabs defaultValue="dashboard" className="space-y-8">
-                    <TabsList className="grid w-full max-w-2xl grid-cols-4">
+                    <TabsList className="grid w-full max-w-3xl grid-cols-5">
                         <TabsTrigger value="dashboard" className="gap-2">
                             <LayoutDashboard className="h-4 w-4" />
                             <span className="hidden sm:inline">Today</span>
                         </TabsTrigger>
-                        <TabsTrigger value="scheduled" className="gap-2">
+                        <TabsTrigger value="calendar" className="gap-2">
                             <Calendar className="h-4 w-4" />
-                            <span className="hidden sm:inline">Scheduled</span>
+                            <span className="hidden sm:inline">Calendar</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="scheduled" className="gap-2">
+                            <Clock className="h-4 w-4" />
+                            <span className="hidden sm:inline">List</span>
                         </TabsTrigger>
                         <TabsTrigger value="completed" className="gap-2">
                             <Music className="h-4 w-4" />
@@ -884,6 +900,16 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
 
                     <TabsContent value="messages">
                         <AdminChat />
+                    </TabsContent>
+
+                    <TabsContent value="calendar">
+                        <Suspense fallback={
+                            <div className="flex justify-center p-8">
+                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                            </div>
+                        }>
+                            <MasterCalendar />
+                        </Suspense>
                     </TabsContent>
                 </Tabs >
             </main >
