@@ -51,7 +51,8 @@ export async function checkAvailability(date: string, time: string, duration: nu
 export async function getLessonsForDateRange(startDate: string, endDate: string) {
     const supabase = await createClient()
 
-    const { data: lessons, error } = await supabase
+    // Fetch lessons
+    const { data: lessons, error: lessonsError } = await supabase
         .from('lessons')
         .select(`
             *,
@@ -63,16 +64,37 @@ export async function getLessonsForDateRange(startDate: string, endDate: string)
         `)
         .gte('date', startDate)
         .lte('date', endDate)
-        .neq('status', 'cancelled') // Exclude cancelled lessons
+        .neq('status', 'cancelled')
         .order('date', { ascending: true })
         .order('time', { ascending: true })
 
-    if (error) {
-        console.error('Error fetching lessons range:', error)
-        return { lessons: [] }
+    if (lessonsError) {
+        console.error('Error fetching lessons range:', lessonsError)
     }
 
-    return { lessons: lessons || [] }
+    // Fetch events
+    // converting startDate/endDate strings to ISO for comparison if needed, 
+    // but Postgres matches string YYYY-MM-DD against timestamptz often fine. 
+    // Safest is to explicitly cast or use range.
+    // Events have 'start_time' (timestamptz).
+    const startIso = `${startDate}T00:00:00`
+    const endIso = `${endDate}T23:59:59`
+
+    const { data: events, error: eventsError } = await supabase
+        .from('events')
+        .select('*')
+        .gte('start_time', startIso)
+        .lte('start_time', endIso)
+        .order('start_time', { ascending: true })
+
+    if (eventsError) {
+        console.error('Error fetching events range:', eventsError)
+    }
+
+    return {
+        lessons: lessons || [],
+        events: events || []
+    }
 }
 
 /**

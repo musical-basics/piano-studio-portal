@@ -20,11 +20,22 @@ type CalendarLesson = Lesson & {
         name: string | null
         email: string | null
     } | null
+    type: 'lesson'
 }
+
+type CalendarEvent = {
+    id: string
+    title: string
+    start_time: string // ISO
+    duration: number
+    type: 'event'
+}
+
+type CalendarItem = CalendarLesson | CalendarEvent
 
 export function MasterCalendar() {
     const [currentDate, setCurrentDate] = useState(new Date())
-    const [lessons, setLessons] = useState<CalendarLesson[]>([])
+    const [items, setItems] = useState<CalendarItem[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
     // Get start/end of current month view (including padding days from prev/next months)
@@ -58,8 +69,23 @@ export function MasterCalendar() {
         const endStr = formatDateKey(endDate)
 
         const result = await getLessonsForDateRange(startStr, endStr)
-        // Cast the result to match our type (Supabase types can be tricky with joins)
-        setLessons((result.lessons as unknown) as CalendarLesson[])
+
+        // Process Lessons
+        const loadedLessons = (result.lessons as any[]).map(l => ({
+            ...l,
+            type: 'lesson'
+        })) as CalendarLesson[]
+
+        // Process Events
+        const loadedEvents = (result.events || []).map((e: any) => ({
+            id: e.id,
+            title: e.title,
+            start_time: e.start_time,
+            duration: e.duration,
+            type: 'event'
+        })) as CalendarEvent[]
+
+        setItems([...loadedLessons, ...loadedEvents])
         setIsLoading(false)
     }
 
@@ -126,7 +152,15 @@ export function MasterCalendar() {
                         const isCurrentMonth = date.getMonth() === currentDate.getMonth()
                         const isToday = formatDateKey(new Date()) === dateKey
 
-                        const dayLessons = lessons.filter(l => l.date === dateKey)
+                        // Filter items for this day
+                        const dayItems = items.filter(item => {
+                            if (item.type === 'lesson') {
+                                return item.date === dateKey
+                            } else {
+                                // Event start_time is ISO, convert to YYYY-MM-DD
+                                return item.start_time.startsWith(dateKey)
+                            }
+                        })
 
                         return (
                             <div
@@ -142,9 +176,9 @@ export function MasterCalendar() {
                     `}>
                                         {date.getDate()}
                                     </span>
-                                    {dayLessons.length > 0 && (
+                                    {dayItems.length > 0 && (
                                         <span className="text-xs text-muted-foreground font-mono">
-                                            {dayLessons.length}
+                                            {dayItems.length}
                                         </span>
                                     )}
                                 </div>
@@ -155,21 +189,43 @@ export function MasterCalendar() {
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                         </div>
                                     ) : (
-                                        dayLessons.map(lesson => (
-                                            <div
-                                                key={lesson.id}
-                                                className="text-xs p-1.5 rounded bg-secondary/50 border border-secondary hover:bg-secondary truncate"
-                                                title={`${lesson.time} - ${lesson.student?.name || 'Unknown Student'}`}
-                                            >
-                                                <div className="flex items-center gap-1 font-semibold text-primary/80">
-                                                    <Clock className="h-3 w-3" />
-                                                    {lesson.time}
-                                                </div>
-                                                <div className="truncate">
-                                                    {lesson.student?.name}
-                                                </div>
-                                            </div>
-                                        ))
+                                        dayItems.map(item => {
+                                            if (item.type === 'lesson') {
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        className="text-xs p-1.5 rounded bg-secondary/50 border border-secondary hover:bg-secondary truncate"
+                                                        title={`${item.time} - ${item.student?.name || 'Unknown Student'}`}
+                                                    >
+                                                        <div className="flex items-center gap-1 font-semibold text-primary/80">
+                                                            <Clock className="h-3 w-3" />
+                                                            {item.time}
+                                                        </div>
+                                                        <div className="truncate">
+                                                            {item.student?.name}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            } else {
+                                                // Event Rendering
+                                                const time = new Date(item.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        className="text-xs p-1.5 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 truncate"
+                                                        title={`${time} - ${item.title}`}
+                                                    >
+                                                        <div className="flex items-center gap-1 font-semibold text-primary">
+                                                            <CalendarIcon className="h-3 w-3" />
+                                                            {time}
+                                                        </div>
+                                                        <div className="truncate font-medium">
+                                                            {item.title}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            }
+                                        })
                                     )}
                                 </div>
                             </div>
