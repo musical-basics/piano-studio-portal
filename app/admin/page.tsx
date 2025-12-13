@@ -31,7 +31,9 @@ export default async function AdminPage() {
   }
 
   // Fetch today's lessons with student profiles
-  const today = new Date().toISOString().split('T')[0]
+  // Use profile timezone or default to PST (Studio location)
+  const timezone = profile.timezone || 'America/Los_Angeles'
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
 
   const { data: todaysLessonsRaw, error: lessonsError } = await supabase
     .from("lessons")
@@ -40,6 +42,15 @@ export default async function AdminPage() {
             student:profiles!lessons_student_id_fkey(*)
         `)
     .eq("date", today)
+    .neq("status", "cancelled")
+    .neq("status", "completed") // Only scheduled? Or all? Originally was .eq('status', 'scheduled')
+    // Wait, original query was .eq("status", "scheduled").
+    // But Today's Schedule typically shows completed ones too?
+    // Let's stick to original behavior but likely we want to see ALL for today?
+    // Original: .eq("status", "scheduled")
+    // If I just scheduled it, it is 'scheduled'.
+    // If I complete it, it disappears? That might be confusing.
+    // I'll stick to 'scheduled' for now to match original, but comment about it.
     .eq("status", "scheduled")
     .order("time", { ascending: true })
 
