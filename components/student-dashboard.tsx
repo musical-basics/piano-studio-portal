@@ -37,8 +37,10 @@ import { MessagesPanel } from "@/components/messages-panel"
 import { ChatWidget } from "@/components/chat-widget"
 import { logout } from "@/app/login/actions"
 import { cancelLesson } from "@/app/actions/lessons"
+import { rsvpToEvent } from "@/app/actions/events"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
+import type { StudentEvent } from "@/app/actions/events"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -54,9 +56,10 @@ export interface StudentDashboardProps {
     todayDate?: string
     studioName?: string
     teacherName?: string
+    events?: StudentEvent[]
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate, studioName = "Piano Studio", teacherName }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate, studioName = "Piano Studio", teacherName, events = [] }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Transform lessons to UI format
@@ -115,8 +118,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
         }
     }
 
-    const handleSignUpEvent = (eventId: string) => {
-        alert(`Successfully signed up for event!`)
+    const handleSignUpEvent = async (eventId: string) => {
+        const result = await rsvpToEvent(eventId, 'going', '')
+        if (result.success) {
+            toast({ title: "Signed Up!", description: "You have successfully RSVP'd to the event." })
+        } else {
+            toast({ variant: "destructive", title: "Error", description: result.error || "Failed to sign up" })
+        }
     }
 
     const handleRenewPackage = () => {
@@ -490,12 +498,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                     <div className="space-y-4">
                         <h2 className="text-2xl font-serif font-semibold">Upcoming Events</h2>
                         <div className="space-y-4">
-                            {mockEvents.map((event) => (
+                            {events.map((event) => (
                                 <Card key={event.id}>
                                     <CardHeader className="pb-3">
                                         <div className="flex items-start justify-between gap-2">
                                             <CardTitle className="text-lg font-serif leading-tight">{event.title}</CardTitle>
-                                            {event.signed_up && (
+                                            {event.invite_status === 'going' && (
                                                 <Badge variant="default" className="shrink-0">
                                                     Enrolled
                                                 </Badge>
@@ -507,14 +515,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                         <div className="flex items-center gap-2 text-sm">
                                             <Calendar className="h-4 w-4 text-muted-foreground" />
                                             <span>
-                                                {event.date} at {event.time}
+                                                {event.date} at {event.start_time}
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <Users className="h-4 w-4 text-muted-foreground" />
-                                            <span>{event.spots_available} spots available</span>
-                                        </div>
-                                        {!event.signed_up && (
+                                        {/* Capacity tracking not yet implemented */}
+
+                                        {event.invite_status !== 'going' && (
                                             <Button size="sm" className="w-full" onClick={() => handleSignUpEvent(event.id)}>
                                                 Sign Up
                                             </Button>
