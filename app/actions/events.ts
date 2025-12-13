@@ -234,8 +234,21 @@ export async function createEvent(
 /**
  * deleteEvent
  */
-export async function deleteEvent(eventId: string): Promise<{ success: boolean }> {
+export async function deleteEvent(eventId: string): Promise<{ success: boolean; error?: string }> {
     const supabase = await createClient()
+
+    // Explicitly delete invites first (in case cascade is missing on older data)
+    const { error: inviteError } = await supabase
+        .from('event_invites')
+        .delete()
+        .eq('event_id', eventId)
+
+    if (inviteError) {
+        console.error('Delete invites error:', inviteError)
+        // We continue? No, if we can't delete invites, we probably can't delete event if FK restricts.
+        // But if invites are deleted, we proceed.
+        return { success: false, error: 'Failed to clear event invites: ' + inviteError.message }
+    }
 
     const { error } = await supabase
         .from('events')
@@ -244,7 +257,7 @@ export async function deleteEvent(eventId: string): Promise<{ success: boolean }
 
     if (error) {
         console.error('Delete event error:', error)
-        return { success: false }
+        return { success: false, error: 'Failed to delete event: ' + error.message }
     }
 
     revalidatePath('/admin/events')
@@ -368,6 +381,96 @@ export async function rsvpToEvent(
 
     revalidatePath('/student/events')
     revalidatePath('/admin/events')
+
+    return { success: true }
+}
+
+/**
+ * updateEvent
+ * Updates an existing event and its invites.
+ */
+export async function updateEvent(
+    eventId: string,
+    input: CreateEventInput
+): Promise<{ success: boolean; error?: string }> {
+    const supabase = await createClient()
+
+    // 1. Zoom Logic (if changed to virtual, or updating details)
+    let locationDetails = input.location_address || ''
+    if (input.location_type === 'virtual') {
+        // Construct full ISO string for Zoom
+        // Note: Ideally we update the existing meeting rather than creating new, but for now this ensures link is valid.
+        const isoDateTime = new Date(`${input.date}T${input.start_time}`).toISOString()
+        const zoomLink = await createZoomMeeting(
+            input.title,
+            isoDateTime,
+            input.duration_minutes
+        )
+        if (zoomLink) {
+            locationDetails = zoomLink
+        } else if (!locationDetails) {
+            // Keep existing if we didn't get a new one and have none? 
+            // Actually input.location_address likely contains the existing link if we prefilled it.
+        }
+    }
+
+    // 2. Update Event
+    const fullStartTime = new Date(`${input.date}T${input.start_time}`).toISOString()
+    const fullRsvpDeadline = new Date(`${input.rsvp_deadline}T23:59:59`).toISOString()
+
+    const { error: eventError } = await supabase
+        .from('events')
+        .update({
+            title: input.title,
+            description: input.description,
+            start_time: fullStartTime,
+            duration: input.duration_minutes,
+            location_type: input.location_type,
+            location_details: locationDetails,
+            rsvp_deadline: fullRsvpDeadline,
+        })
+        .eq('id', eventId)
+
+    if (eventError) {
+        console.error('Error updating event:', eventError)
+        return { success: false, error: 'Failed to update event' }
+    }
+
+    // 3. Update Invites (Sync logic)
+    if (input.invited_student_ids) {
+        // Get existing invites
+        const { data: existingInvites } = await supabase
+            .from('event_invites')
+            .select('student_id')
+            .eq('event_id', eventId)
+
+        const existingIds = existingInvites?.map(i => i.student_id) || []
+
+        // To Add
+        const toAdd = input.invited_student_ids.filter(id => !existingIds.includes(id))
+        // To Remove
+        const toRemove = existingIds.filter(id => !input.invited_student_ids.includes(id))
+
+        if (toAdd.length > 0) {
+            const newInvites = toAdd.map(sid => ({
+                event_id: eventId,
+                student_id: sid,
+                status: 'pending' // Default status for new invites
+            }))
+            await supabase.from('event_invites').insert(newInvites)
+        }
+
+        if (toRemove.length > 0) {
+            await supabase
+                .from('event_invites')
+                .delete()
+                .eq('event_id', eventId)
+                .in('student_id', toRemove)
+        }
+    }
+
+    revalidatePath('/admin/events')
+    revalidatePath('/student/events')
 
     return { success: true }
 }

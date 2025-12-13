@@ -41,6 +41,7 @@ import { rsvpToEvent } from "@/app/actions/events"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { StudentEvent } from "@/app/actions/events"
+import { EventSignupModal } from "@/components/student/event-signup-modal"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -86,6 +87,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
     const [showPurchaseModal, setShowPurchaseModal] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
 
+    // Event Signup State
+    const [showEventSignup, setShowEventSignup] = useState(false)
+    const [selectedEvent, setSelectedEvent] = useState<StudentEvent | null>(null)
+
     const handleReschedule = () => {
         setShowMakeupScheduler(true)
     }
@@ -99,34 +104,49 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
 
         setIsCancelling(true)
         const result = await cancelLesson(nextLesson.id)
-        setIsCancelling(false)
-        setShowCancellationModal(false)
-
-        if (result.error) {
-            toast({
-                variant: "destructive",
-                title: "Cancellation Failed",
-                description: result.error
-            })
-        } else {
+        if (result.success) {
             toast({
                 title: "Lesson Cancelled",
-                description: result.message || (result.refunded
-                    ? "Your credit has been refunded."
-                    : "Credit forfeited due to 24-hour policy.")
+                description: result.message
+            })
+            setShowCancellationModal(false)
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: result.error
             })
         }
+        setIsCancelling(false)
     }
 
-    const handleSignUpEvent = async (eventId: string) => {
-        const result = await rsvpToEvent(eventId, 'going', '')
+    const handleSignUpClick = (event: StudentEvent) => {
+        setSelectedEvent(event)
+        setShowEventSignup(true)
+    }
+
+    const handleSignupConfirm = async (eventId: string, message: string) => {
+        const result = await rsvpToEvent(eventId, 'going', message)
         if (result.success) {
             toast({ title: "Signed Up!", description: "You have successfully RSVP'd to the event." })
+            setShowEventSignup(false)
+            setSelectedEvent(null)
         } else {
             toast({ variant: "destructive", title: "Error", description: result.error || "Failed to sign up" })
+            throw new Error(result.error)
         }
     }
 
+    const handleUnenroll = async (eventId: string) => {
+        if (!confirm("Are you sure you want to unenroll from this event?")) return
+
+        const result = await rsvpToEvent(eventId, 'not_going', '')
+        if (result.success) {
+            toast({ title: "Unenrolled", description: "You have been removed from the event." })
+        } else {
+            toast({ variant: "destructive", title: "Error", description: result.error || "Failed to unenroll" })
+        }
+    }
     const handleRenewPackage = () => {
         setShowPurchaseModal(true)
     }
@@ -503,11 +523,6 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                     <CardHeader className="pb-3">
                                         <div className="flex items-start justify-between gap-2">
                                             <CardTitle className="text-lg font-serif leading-tight">{event.title}</CardTitle>
-                                            {event.invite_status === 'going' && (
-                                                <Badge variant="default" className="shrink-0">
-                                                    Enrolled
-                                                </Badge>
-                                            )}
                                         </div>
                                         <CardDescription className="text-sm">{event.description}</CardDescription>
                                     </CardHeader>
@@ -520,8 +535,23 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                         </div>
                                         {/* Capacity tracking not yet implemented */}
 
-                                        {event.invite_status !== 'going' && (
-                                            <Button size="sm" className="w-full" onClick={() => handleSignUpEvent(event.id)}>
+                                        {event.invite_status === 'going' ? (
+                                            <div className="flex items-center gap-2 w-full">
+                                                <div className="flex-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 py-2 rounded-md text-center text-sm font-medium border border-green-200 dark:border-green-800">
+                                                    ✅ Enrolled
+                                                </div>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="px-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/50"
+                                                    onClick={() => handleUnenroll(event.id)}
+                                                    title="Unenroll from event"
+                                                >
+                                                    Unenroll
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <Button size="sm" className="w-full" onClick={() => handleSignUpClick(event)}>
                                                 Sign Up
                                             </Button>
                                         )}
@@ -541,29 +571,17 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                 onSuccess={() => window.location.reload()}
             />
 
-
             <CancellationModal
                 open={showCancellationModal}
                 onOpenChange={setShowCancellationModal}
-                onConfirmCancel={handleConfirmCancel}
-                lessonDate={nextLesson?.date}
-                lessonTime={nextLesson?.rawTime || nextLesson?.time}
+                onConfirm={handleConfirmCancel}
                 isLoading={isCancelling}
+                lesson={nextLesson || undefined}
             />
 
             {selectedLesson && (
                 <LessonDetailModal
-                    lesson={{
-                        id: selectedLesson.id,
-                        student_id: selectedLesson.student_id,
-                        date: selectedLesson.date,
-                        time: selectedLesson.time,
-                        duration: selectedLesson.duration || 60,
-                        status: selectedLesson.status,
-                        teacher_notes: selectedLesson.teacher_notes,
-                        video_url: selectedLesson.video_url || undefined,
-                        sheet_music_url: selectedLesson.sheet_music_url || undefined
-                    }}
+                    lesson={selectedLesson}
                     open={showLessonDetail}
                     onOpenChange={setShowLessonDetail}
                 />
@@ -572,6 +590,14 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
             <PurchaseCreditsModal open={showPurchaseModal} onOpenChange={setShowPurchaseModal} />
 
             <ChatWidget studentId={profile.id} unreadCount={unreadMessages} />
+
+            <EventSignupModal
+                event={selectedEvent}
+                studentName={profile.name || "Student"}
+                open={showEventSignup}
+                onOpenChange={setShowEventSignup}
+                onConfirm={handleSignupConfirm}
+            />
         </div>
     )
 }

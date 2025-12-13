@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, Clock } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, Clock, Pencil, Trash2, MoreHorizontal } from "lucide-react"
 import { getLessonsForDateRange } from "@/app/actions/lessons"
 import type { Lesson, Profile } from "@/lib/supabase/database.types"
+import type { AdminEvent, EventInvite } from "@/app/actions/events"
 
 // Helper to format date as YYYY-MM-DD for comparison/filtering
 const formatDateKey = (date: Date) => {
@@ -15,7 +17,7 @@ const formatDateKey = (date: Date) => {
     return `${year}-${month}-${day}`
 }
 
-type CalendarLesson = Lesson & {
+export type CalendarLesson = Lesson & {
     student: {
         name: string | null
         email: string | null
@@ -23,17 +25,21 @@ type CalendarLesson = Lesson & {
     type: 'lesson'
 }
 
-type CalendarEvent = {
-    id: string
-    title: string
-    start_time: string // ISO
-    duration: number
+type CalendarEvent = AdminEvent & {
     type: 'event'
 }
 
 type CalendarItem = CalendarLesson | CalendarEvent
 
-export function MasterCalendar() {
+interface MasterCalendarProps {
+    onEditLesson?: (lesson: CalendarLesson) => void
+    onDeleteLesson?: (lesson: CalendarLesson) => void
+    onEditEvent?: (event: AdminEvent) => void
+    onDeleteEvent?: (event: AdminEvent) => void
+    refreshTrigger?: number
+}
+
+export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDeleteEvent, refreshTrigger = 0 }: MasterCalendarProps) {
     const [currentDate, setCurrentDate] = useState(new Date())
     const [items, setItems] = useState<CalendarItem[]>([])
     const [isLoading, setIsLoading] = useState(true)
@@ -77,13 +83,36 @@ export function MasterCalendar() {
         })) as CalendarLesson[]
 
         // Process Events
-        const loadedEvents = (result.events || []).map((e: any) => ({
-            id: e.id,
-            title: e.title,
-            start_time: e.start_time,
-            duration: e.duration,
-            type: 'event'
-        })) as CalendarEvent[]
+        const loadedEvents = (result.events || []).map((e: any) => {
+            // Map invites individually
+            const invites: EventInvite[] = e.event_invites?.map((invite: any) => ({
+                student_id: invite.student_id,
+                student_name: invite.profiles?.name || 'Unknown',
+                status: invite.status,
+                responded_at: invite.updated_at,
+                student_notes: invite.student_notes
+            })) || []
+
+            const startDateTime = new Date(e.start_time)
+            const dateStr = startDateTime.toISOString().split('T')[0]
+            const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+
+            return {
+                id: e.id,
+                title: e.title,
+                description: e.description || '',
+                date: dateStr,
+                start_time: timeStr,
+                duration_minutes: e.duration,
+                location_type: e.location_type,
+                location_address: e.location_details, // or logic from getAdminEvents
+                zoom_link: e.location_type === 'virtual' ? e.location_details : undefined,
+                rsvp_deadline: e.rsvp_deadline?.split('T')[0] || '',
+                invites: invites,
+                created_at: e.created_at,
+                type: 'event'
+            }
+        }) as CalendarEvent[]
 
         setItems([...loadedLessons, ...loadedEvents])
         setIsLoading(false)
@@ -91,7 +120,7 @@ export function MasterCalendar() {
 
     useEffect(() => {
         loadLessons()
-    }, [currentDate])
+    }, [currentDate, refreshTrigger])
 
     const handlePrevMonth = () => {
         setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
@@ -157,8 +186,9 @@ export function MasterCalendar() {
                             if (item.type === 'lesson') {
                                 return item.date === dateKey
                             } else {
-                                // Event start_time is ISO, convert to YYYY-MM-DD
-                                return item.start_time.startsWith(dateKey)
+                                // Event start_time is ISO, checks were dateKey
+                                // We parsed dateStr in map
+                                return item.date === dateKey
                             }
                         })
 
@@ -191,38 +221,88 @@ export function MasterCalendar() {
                                     ) : (
                                         dayItems.map(item => {
                                             if (item.type === 'lesson') {
+                                                const timeDisplay = item.time.substring(0, 5) // HH:MM
                                                 return (
-                                                    <div
-                                                        key={item.id}
-                                                        className="text-xs p-1.5 rounded bg-secondary/50 border border-secondary hover:bg-secondary truncate"
-                                                        title={`${item.time} - ${item.student?.name || 'Unknown Student'}`}
-                                                    >
-                                                        <div className="flex items-center gap-1 font-semibold text-primary/80">
-                                                            <Clock className="h-3 w-3" />
-                                                            {item.time}
-                                                        </div>
-                                                        <div className="truncate">
-                                                            {item.student?.name}
-                                                        </div>
-                                                    </div>
+                                                    <Popover key={item.id}>
+                                                        <PopoverTrigger asChild>
+                                                            <div
+                                                                className="text-xs p-1.5 rounded bg-secondary/50 border border-secondary hover:bg-secondary truncate cursor-pointer transition-colors"
+                                                                title={`${timeDisplay} - ${item.student?.name || 'Unknown Student'}`}
+                                                            >
+                                                                <div className="flex items-center gap-1 font-semibold text-primary/80">
+                                                                    <Clock className="h-3 w-3" />
+                                                                    {timeDisplay}
+                                                                </div>
+                                                                <div className="truncate">
+                                                                    {item.student?.name}
+                                                                </div>
+                                                            </div>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-40 p-1" align="start">
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="justify-start h-8 px-2 font-normal"
+                                                                    onClick={() => onEditLesson?.(item)}
+                                                                >
+                                                                    <Pencil className="h-3 w-3 mr-2" />
+                                                                    Edit
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="justify-start h-8 px-2 font-normal text-destructive hover:text-destructive"
+                                                                    onClick={() => onDeleteLesson?.(item)}
+                                                                >
+                                                                    <Trash2 className="h-3 w-3 mr-2" />
+                                                                    Delete
+                                                                </Button>
+                                                            </div>
+                                                        </PopoverContent>
+                                                    </Popover>
                                                 )
                                             } else {
                                                 // Event Rendering
-                                                const time = new Date(item.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
                                                 return (
-                                                    <div
-                                                        key={item.id}
-                                                        className="text-xs p-1.5 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 truncate"
-                                                        title={`${time} - ${item.title}`}
-                                                    >
-                                                        <div className="flex items-center gap-1 font-semibold text-primary">
-                                                            <CalendarIcon className="h-3 w-3" />
-                                                            {time}
-                                                        </div>
-                                                        <div className="truncate font-medium">
-                                                            {item.title}
-                                                        </div>
-                                                    </div>
+                                                    <Popover key={item.id}>
+                                                        <PopoverTrigger asChild>
+                                                            <div
+                                                                className="text-xs p-1.5 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 truncate cursor-pointer transition-colors"
+                                                                title={`${item.start_time} - ${item.title}`}
+                                                            >
+                                                                <div className="flex items-center gap-1 font-semibold text-primary">
+                                                                    <CalendarIcon className="h-3 w-3" />
+                                                                    {item.start_time}
+                                                                </div>
+                                                                <div className="truncate font-medium">
+                                                                    {item.title}
+                                                                </div>
+                                                            </div>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-40 p-1" align="start">
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="justify-start h-8 px-2 font-normal"
+                                                                    onClick={() => onEditEvent?.(item)}
+                                                                >
+                                                                    <Pencil className="h-3 w-3 mr-2" />
+                                                                    Edit
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="justify-start h-8 px-2 font-normal text-destructive hover:text-destructive"
+                                                                    onClick={() => onDeleteEvent?.(item)}
+                                                                >
+                                                                    <Trash2 className="h-3 w-3 mr-2" />
+                                                                    Delete
+                                                                </Button>
+                                                            </div>
+                                                        </PopoverContent>
+                                                    </Popover>
                                                 )
                                             }
                                         })

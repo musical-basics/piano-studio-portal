@@ -13,13 +13,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil } from "lucide-react"
+import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2 } from "lucide-react"
 import { AdminChat } from "@/components/admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
+import { deleteStudent } from "@/app/actions/users"
+import { deleteEvent, type AdminEvent } from "@/app/actions/events"
+import { CreateEventModal } from "@/components/admin/create-event-modal"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
+import type { CalendarLesson } from "./master-calendar"
 
 // Types for the component props
 export type TodayLesson = LessonWithZoom & {
@@ -70,6 +74,9 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
     const [logDuration, setLogDuration] = useState<number>(60)
     const [isLoading, setIsLoading] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
+    const [showEventModal, setShowEventModal] = useState(false)
+    const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null)
+    const [calendarVersion, setCalendarVersion] = useState(0)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const editFileInputRef = useRef<HTMLInputElement>(null)
 
@@ -137,6 +144,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
             setSheetMusicUrl("")
             setSelectedLesson(null)
             setSelectedStudentForLog(null)
+            setCalendarVersion(v => v + 1)
         }
     }
 
@@ -225,6 +233,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                     title: "Lesson Cancelled",
                     description: result.message
                 })
+                setCalendarVersion(v => v + 1)
             }
         }
     }
@@ -254,6 +263,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                 setSelectedStudent(null)
                 setIsRescheduling(false)
                 setRescheduleLessonId(null)
+                setCalendarVersion(v => v + 1)
             }
         } else {
             const result = await scheduleLesson(selectedStudent.id, scheduleDate, scheduleTime, scheduleDuration)
@@ -271,6 +281,7 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                 })
                 setShowScheduleModal(false)
                 setSelectedStudent(null)
+                setCalendarVersion(v => v + 1)
             }
         }
         setIsLoading(false)
@@ -312,7 +323,73 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
             setLessonNotes('')
             setVideoUrl('')
             setSheetMusicUrl('')
+            setCalendarVersion(v => v + 1)
         }
+    }
+
+    const handleDeleteStudent = async (student: StudentRoster) => {
+        if (confirm(`Are you sure you want to remove ${student.name}? This will delete all data associated with the student.`)) {
+            setIsLoading(true)
+            const result = await deleteStudent(student.id)
+            setIsLoading(false)
+
+            if (result.error) {
+                toast({
+                    variant: "destructive",
+                    title: "Delete Failed",
+                    description: result.error
+                })
+            } else {
+                toast({
+                    title: "Student Removed",
+                    description: result.message
+                })
+                // Usually the revalidatePath in action handles refresh, but if not we might need router.refresh()
+            }
+        }
+    }
+
+    const handleEditEvent = (event: AdminEvent) => {
+        setEditingEvent(event)
+        setShowEventModal(true)
+    }
+
+    const handleDeleteEvent = async (event: AdminEvent) => {
+        if (confirm(`Are you sure you want to delete "${event.title}"? This will remove all student invites.`)) {
+            setIsLoading(true)
+            const result = await deleteEvent(event.id)
+            setIsLoading(false)
+
+            if (!result.success) {
+                toast({
+                    variant: "destructive",
+                    title: "Delete Failed",
+                    description: result.error || "Unknown error"
+                })
+            } else {
+                toast({
+                    title: "Event Deleted",
+                    description: "Event and invites have been removed."
+                })
+                setCalendarVersion(v => v + 1)
+            }
+        }
+    }
+
+    const onEditCalendarLesson = (lesson: CalendarLesson) => {
+        // Adapt CalendarLesson to LessonWithStudent?
+        // CalendarLesson has user (student) as {name, email}. LessonWithStudent expects Profile.
+        // But handleReschedule mainly uses student_id.
+        // And it tries to find student in 'students' array.
+        // So passing the lesson object is sufficient if types align or we cast.
+        // CalendarLesson extends Lesson.
+        const lessonWithId = { ...lesson } as any
+        handleReschedule(lessonWithId)
+    }
+
+    const onDeleteCalendarLesson = (lesson: CalendarLesson) => {
+        const studentName = lesson.student?.name || 'Student'
+        handleCancelLesson(lesson.id, studentName)
     }
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
@@ -708,6 +785,14 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                                                     <Plus className="h-4 w-4 mr-1" />
                                                                     Schedule
                                                                 </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="destructive"
+                                                                    className="px-2"
+                                                                    onClick={() => handleDeleteStudent(student)}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
                                                             </div>
                                                         </TableCell>
                                                     </TableRow>
@@ -920,7 +1005,32 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                             </div>
                         }>
-                            <MasterCalendar />
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-2xl font-serif">Master Calendar</CardTitle>
+                                            <CardDescription>View all lessons and events</CardDescription>
+                                        </div>
+                                        <Button onClick={() => {
+                                            setEditingEvent(null)
+                                            setShowEventModal(true)
+                                        }}>
+                                            <Plus className="h-4 w-4 mr-2" />
+                                            Create Event
+                                        </Button>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <MasterCalendar
+                                        onEditLesson={onEditCalendarLesson}
+                                        onDeleteLesson={onDeleteCalendarLesson}
+                                        onEditEvent={handleEditEvent}
+                                        onDeleteEvent={handleDeleteEvent}
+                                        refreshTrigger={calendarVersion}
+                                    />
+                                </CardContent>
+                            </Card>
                         </Suspense>
                     </TabsContent>
                 </Tabs >
@@ -1256,6 +1366,17 @@ export function AdminDashboard({ admin, todaysLessons, scheduledLessons, complet
                     </div>
                 </DialogContent>
             </Dialog >
+            {/* Event Modal */}
+            <CreateEventModal
+                open={showEventModal}
+                onOpenChange={setShowEventModal}
+                eventToEdit={editingEvent}
+                onEventCreated={() => {
+                    // Refresh is handled by revalidatePath in action, but we might want to ensure state is clear
+                    setEditingEvent(null)
+                    setCalendarVersion(v => v + 1)
+                }}
+            />
         </div >
     )
 }

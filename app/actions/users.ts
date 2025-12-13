@@ -273,3 +273,41 @@ export async function updateProfileSettings(formData: FormData) {
         return { error: error.message || 'Failed to update settings' }
     }
 }
+
+/**
+ * Delete a student (Admin only)
+ * Uses SUPABASE_SERVICE_KEY to remove from auth and database
+ */
+export async function deleteStudent(studentId: string) {
+    if (!studentId) {
+        return { error: 'Student ID is required' }
+    }
+
+    // Create admin client with service key
+    const supabaseAdmin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+
+    try {
+        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(studentId)
+
+        if (deleteError) {
+            console.error('Delete user error:', deleteError)
+            return { error: 'Failed to delete user: ' + deleteError.message }
+        }
+
+        revalidatePath('/admin')
+        return { success: true, message: 'Student and associated data deleted successfully' }
+
+    } catch (error) {
+        console.error('Unexpected error:', error)
+        return { error: 'An unexpected error occurred during deletion' }
+    }
+}

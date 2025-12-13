@@ -82,7 +82,18 @@ export async function getLessonsForDateRange(startDate: string, endDate: string)
 
     const { data: events, error: eventsError } = await supabase
         .from('events')
-        .select('*')
+        .select(`
+            *,
+            event_invites (
+                student_id,
+                status,
+                updated_at,
+                student_notes,
+                profiles (
+                   name
+                )
+            )
+        `)
         .gte('start_time', startIso)
         .lte('start_time', endIso)
         .order('start_time', { ascending: true })
@@ -411,39 +422,14 @@ export async function cancelLesson(lessonId: string) {
 
     console.log(`Lesson ${lessonId} deleted. Refund: ${shouldRefund}`)
 
-    // Step 2: Refund credit if applicable
-    if (shouldRefund) {
-        const { data: student } = await supabaseAdmin
-            .from('profiles')
-            .select('credits')
-            .eq('id', lesson.student_id)
-            .single()
-
-        if (student) {
-            const { error: creditError } = await supabaseAdmin
-                .from('profiles')
-                .update({ credits: student.credits + 1 })
-                .eq('id', lesson.student_id)
-
-            if (creditError) {
-                console.error('Credit refund error:', creditError)
-                // Lesson already deleted, but log the error
-            } else {
-                console.log(`Refunded 1 credit to student ${lesson.student_id}`)
-            }
-        }
-    }
-
-    // Step 3: Revalidate paths to refresh UI
+    // Step 2: Revalidate paths to refresh UI
     revalidatePath('/admin')
     revalidatePath('/student')
 
     return {
         success: true,
-        refunded: shouldRefund,
-        message: shouldRefund
-            ? 'Lesson cancelled. Credit has been refunded.'
-            : 'Lesson cancelled. Credit forfeited due to 24-hour policy.'
+        refunded: false,
+        message: 'Lesson cancelled.'
     }
 }
 
@@ -673,41 +659,8 @@ export async function scheduleLesson(
         return { error: lessonError.message }
     }
 
-    // CREDIT DEDUCTION: Deduct 1 credit from student when lesson is booked
-    // This ensures the credit loop is balanced (book = -1, cancel = +1)
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
-    const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_KEY!,
-        {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false
-            }
-        }
-    )
-
-    // Get current credits and deduct 1
-    const { data: studentCredits } = await supabaseAdmin
-        .from('profiles')
-        .select('credits')
-        .eq('id', studentId)
-        .single()
-
-    if (studentCredits) {
-        const newCredits = Math.max(0, studentCredits.credits - 1) // Don't go negative
-        const { error: creditError } = await supabaseAdmin
-            .from('profiles')
-            .update({ credits: newCredits })
-            .eq('id', studentId)
-
-        if (creditError) {
-            console.error('Credit deduction error:', creditError)
-            // Don't fail - lesson is already created
-        } else {
-            console.log(`Deducted 1 credit from student ${studentId}. New balance: ${newCredits}`)
-        }
-    }
+    // CREDIT DEDUCTION REMOVED per requirements.
+    // Credits are now only deducted when a lesson is logged (completed) or marked no-show.
 
     revalidatePath('/admin')
     revalidatePath('/student')

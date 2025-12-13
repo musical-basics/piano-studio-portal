@@ -11,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Video, MapPin, Sparkles, Users } from "lucide-react"
-import { getActiveStudents, createEvent, type CreateEventInput } from "@/app/actions/events"
+import { getActiveStudents, createEvent, updateEvent, type CreateEventInput, type AdminEvent } from "@/app/actions/events"
 
 type Student = {
   id: string
@@ -22,10 +22,11 @@ type Student = {
 type CreateEventModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onEventCreated: () => void
+  onEventCreated?: () => void
+  eventToEdit?: AdminEvent | null
 }
 
-export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateEventModalProps) {
+export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEdit }: CreateEventModalProps) {
   const [students, setStudents] = useState<Student[]>([])
   const [isLoadingStudents, setIsLoadingStudents] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -48,8 +49,24 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
         setStudents(data)
         setIsLoadingStudents(false)
       })
+
+      if (eventToEdit) {
+        setTitle(eventToEdit.title)
+        setDescription(eventToEdit.description)
+        setDate(eventToEdit.date)
+        setStartTime(eventToEdit.start_time)
+        setDuration(eventToEdit.duration_minutes.toString())
+        setLocationType(eventToEdit.location_type)
+        setLocationAddress(eventToEdit.location_address || "")
+        setRsvpDeadline(eventToEdit.rsvp_deadline)
+        // Invitees
+        const invitedIds = eventToEdit.invites.map(i => i.student_id)
+        setSelectedStudents(invitedIds)
+      } else {
+        resetForm()
+      }
     }
-  }, [open])
+  }, [open, eventToEdit])
 
   const handleSelectAll = () => {
     if (selectedStudents.length === students.length) {
@@ -96,14 +113,19 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
       invited_student_ids: selectedStudents,
     }
 
-    const result = await createEvent(input)
+    let result
+    if (eventToEdit) {
+      result = await updateEvent(eventToEdit.id, input)
+    } else {
+      result = await createEvent(input)
+    }
 
     setIsSubmitting(false)
 
     if (result.success) {
-      resetForm()
+      if (!eventToEdit) resetForm()
       onOpenChange(false)
-      onEventCreated()
+      onEventCreated?.()
     }
   }
 
@@ -114,8 +136,10 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-serif">Create Event</DialogTitle>
-          <DialogDescription>Schedule a recital, workshop, or group class for your students</DialogDescription>
+          <DialogTitle className="text-2xl font-serif">{eventToEdit ? 'Edit Event' : 'Create Event'}</DialogTitle>
+          <DialogDescription>
+            {eventToEdit ? 'Update event details and manage invites' : 'Schedule a recital, workshop, or group class for your students'}
+          </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="flex-1 pr-4">
@@ -197,7 +221,7 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
               {locationType === "virtual" ? (
                 <Badge variant="secondary" className="gap-1">
                   <Sparkles className="h-3 w-3" />
-                  Zoom link will be auto-generated
+                  Zoom link will be {eventToEdit?.zoom_link ? 'updated' : 'auto-generated'}
                 </Badge>
               ) : (
                 <Input
@@ -249,6 +273,11 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
                         <p className="font-medium text-sm">{student.name}</p>
                         <p className="text-xs text-muted-foreground truncate">{student.email}</p>
                       </div>
+                      {eventToEdit?.invites.find(i => i.student_id === student.id) && (
+                        <div className="text-xs text-muted-foreground mr-2">
+                          {eventToEdit.invites.find(i => i.student_id === student.id)?.status}
+                        </div>
+                      )}
                     </label>
                   ))}
                 </div>
@@ -276,10 +305,10 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated }: CreateE
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Creating...
+                {eventToEdit ? 'Updating...' : 'Creating...'}
               </>
             ) : (
-              "Create Event"
+              eventToEdit ? "Update Event" : "Create Event"
             )}
           </Button>
         </div>
