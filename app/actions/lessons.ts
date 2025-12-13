@@ -382,7 +382,7 @@ export async function cancelLesson(lessonId: string) {
         return { error: 'This lesson has already been cancelled' }
     }
 
-    if (lesson.status !== 'scheduled') {
+    if (lesson.status !== 'scheduled' && !isAdmin) {
         return { error: 'Can only cancel scheduled lessons' }
     }
 
