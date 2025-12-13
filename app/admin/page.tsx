@@ -30,41 +30,13 @@ export default async function AdminPage() {
     redirect("/student")
   }
 
-  // Fetch today's lessons with student profiles
-  // Use profile timezone or default to PST (Studio location)
-  const timezone = profile.timezone || 'America/Los_Angeles'
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  // Fetch scheduled lessons (future, including today and recent past to account for timezone)
+  // We fetch starting from 7 days ago to cover any timezone offsets and ensuring "Today" is always included.
 
-  const { data: todaysLessonsRaw, error: lessonsError } = await supabase
-    .from("lessons")
-    .select(`
-            *,
-            student:profiles!lessons_student_id_fkey(*)
-        `)
-    .eq("date", today)
-    .neq("status", "cancelled")
-    .neq("status", "completed") // Only scheduled? Or all? Originally was .eq('status', 'scheduled')
-    // Wait, original query was .eq("status", "scheduled").
-    // But Today's Schedule typically shows completed ones too?
-    // Let's stick to original behavior but likely we want to see ALL for today?
-    // Original: .eq("status", "scheduled")
-    // If I just scheduled it, it is 'scheduled'.
-    // If I complete it, it disappears? That might be confusing.
-    // I'll stick to 'scheduled' for now to match original, but comment about it.
-    .eq("status", "scheduled")
-    .order("time", { ascending: true })
+  const pastDate = new Date()
+  pastDate.setDate(pastDate.getDate() - 7)
+  const queryDate = pastDate.toISOString().split('T')[0]
 
-  if (lessonsError) {
-    console.error("Lessons fetch error:", lessonsError)
-  }
-
-  // Transform lessons data for the component
-  const todaysLessons: TodayLesson[] = (todaysLessonsRaw || []).map(lesson => ({
-    ...lesson,
-    student: lesson.student
-  }))
-
-  // Fetch all scheduled lessons (future, including today)
   const { data: scheduledLessonsRaw } = await supabase
     .from("lessons")
     .select(`
@@ -72,7 +44,7 @@ export default async function AdminPage() {
             student:profiles!lessons_student_id_fkey(*)
         `)
     .eq("status", "scheduled")
-    .gte("date", today)
+    .gte("date", queryDate)
     .order("date", { ascending: true })
     .order("time", { ascending: true })
 
@@ -134,7 +106,6 @@ export default async function AdminPage() {
   return (
     <AdminDashboard
       admin={profile}
-      todaysLessons={todaysLessons}
       scheduledLessons={scheduledLessons}
       completedLessons={completedLessons}
       students={students}

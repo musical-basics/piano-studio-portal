@@ -45,15 +45,34 @@ export type StudentRoster = Profile & {
 
 export interface AdminDashboardProps {
     admin: Profile
-    todaysLessons: TodayLesson[]
+    // todaysLessons removed - derived from scheduledLessons
     scheduledLessons: LessonWithStudent[]
     completedLessons: LessonWithStudent[]
     students: StudentRoster[]
     totalUnread: number
 }
 
-export function AdminDashboard({ admin, todaysLessons, scheduledLessons, completedLessons, students, totalUnread }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread }: AdminDashboardProps) {
     const { toast } = useToast()
+
+    // Client-side date calculation for robust timezone handling
+    // We want YYYY-MM-DD in local time
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    const todayStr = `${year}-${month}-${day}`
+
+    // Derive Today's Lessons from the superset
+    // Note: scheduleLessons from server should include "yesterday" (UTC) to safely cover "today" (PST)
+    const todaysLessons = scheduledLessons
+        .filter(l => l.date === todayStr)
+        .map(l => ({ ...l, student: l.student })) // Ensure shape matches TodayLesson if needed
+
+    // Filter "Upcoming" to likely show today + future
+    const upcomingLessons = scheduledLessons.filter(l => l.date >= todayStr)
+
+
     const [showLogLessonModal, setShowLogLessonModal] = useState(false)
     const [showScheduleModal, setShowScheduleModal] = useState(false)
     const [showEditModal, setShowEditModal] = useState(false)
