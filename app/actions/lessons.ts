@@ -172,7 +172,7 @@ export async function logLesson(
         .eq('id', lesson.student_id)
         .single()
 
-    if (student && student.credits > 0) {
+    if (student) {
         await supabase
             .from('profiles')
             .update({ credits: student.credits - 1 })
@@ -248,7 +248,7 @@ export async function logPastLesson(
     }
 
     // Deduct 1 credit
-    if (student.credits > 0) {
+    if (student) {
         const { error: creditError } = await supabase
             .from('profiles')
             .update({ credits: student.credits - 1 })
@@ -327,7 +327,7 @@ export async function markNoShow(lessonId: string) {
         .eq('id', lesson.student_id)
         .single()
 
-    if (student && student.credits > 0) {
+    if (student) {
         await supabase
             .from('profiles')
             .update({ credits: student.credits - 1 })
