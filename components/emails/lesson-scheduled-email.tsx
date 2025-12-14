@@ -30,7 +30,7 @@ export function LessonScheduledEmail({
     recipientName,
     studioName = 'Piano Studio',
 }: LessonScheduledEmailProps) {
-    const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
     return (
         <Html>
