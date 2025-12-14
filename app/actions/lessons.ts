@@ -215,15 +215,10 @@ export async function logPastLesson(
         .select('role')
         .eq('id', user.id)
         .single()
-
-    if (adminProfile?.role !== 'admin') {
-        return { error: 'Only admins can log lessons' }
-    }
-
     // Verify student exists and get credits
     const { data: student, error: studentError } = await supabase
         .from('profiles')
-        .select('name, credits')
+        .select('name, credits, email')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -583,7 +578,7 @@ export async function scheduleLesson(
     // Verify student exists
     const { data: student, error: studentError } = await supabase
         .from('profiles')
-        .select('id, name')
+        .select('id, name, email')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -668,6 +663,10 @@ export async function scheduleLesson(
     // Credits are now only deducted when a lesson is logged (completed) or marked no-show.
 
     // Send Email Notifications
+    console.log('Attempting to send email notifications...')
+    console.log('Resend initialized:', !!resend)
+    console.log('Student Email:', student.email)
+
     if (resend && student.email) {
         try {
             // Get Admin Profile for studio name (or use default)
@@ -681,7 +680,8 @@ export async function scheduleLesson(
             const adminName = adminProfile?.name || 'Teacher'
 
             // Email to Student
-            await resend.emails.send({
+            console.log('Sending email to student:', student.email)
+            const studentEmailResult = await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
                 to: student.email,
                 subject: `Lesson Scheduled: ${date} at ${time}`,
@@ -695,11 +695,13 @@ export async function scheduleLesson(
                     studioName
                 })
             })
+            console.log('Student email result:', studentEmailResult)
 
             // Email to Teacher (Confirmation)
             // We use user.email which is the admin's email since they are the one scheduling
+            console.log('User (Teacher) Email:', user.email)
             if (user.email) {
-                await resend.emails.send({
+                const teacherEmailResult = await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
                     to: user.email,
                     subject: `Lesson Scheduled: ${student.name} - ${date} ${time}`,
@@ -713,6 +715,9 @@ export async function scheduleLesson(
                         studioName
                     })
                 })
+                console.log('Teacher email result:', teacherEmailResult)
+            } else {
+                console.warn('Teacher email not found (user.email is null)')
             }
 
             console.log(`Emails sent for lesson: ${date} ${time}`)
