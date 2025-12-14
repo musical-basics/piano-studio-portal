@@ -589,7 +589,11 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
 
             <PurchaseCreditsModal open={showPurchaseModal} onOpenChange={setShowPurchaseModal} />
 
-            <ChatWidget studentId={profile.id} unreadCount={unreadMessages} />
+            <ChatWidget
+                studentId={profile.id}
+                unreadCount={unreadMessages}
+                teacherName={teacherName}
+            />
 
             <EventSignupModal
                 event={selectedEvent}
