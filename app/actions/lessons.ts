@@ -679,16 +679,44 @@ export async function scheduleLesson(
             const studioName = adminProfile?.studio_name || 'Piano Studio'
             const adminName = adminProfile?.name || 'Teacher'
 
+            // Format Date and Time for Email
+            // Input date: YYYY-MM-DD
+            // Input time: HH:MM (24h)
+            const dateObj = new Date(`${date}T00:00:00`)
+            const formattedDate = dateObj.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            }) // e.g., "Saturday, December 14, 2025" or we can construct manually to match user exact request "December 14, 2025"
+
+            // Should strictly follow "December 14, 2025" as requested?
+            // User said: "date should be December 14, 2025"
+            const formattedDateStrict = dateObj.toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            })
+
+            // Format Time: 20:00 -> 8:00pm
+            const [hours, minutes] = time.split(':')
+            const hourNum = parseInt(hours, 10)
+            const ampm = hourNum >= 12 ? 'pm' : 'am'
+            const hour12 = hourNum % 12 || 12
+            const formattedTime = `${hour12}:${minutes}${ampm} PST` // Adding PST as requested. Ideally dynamic but hardcoded for now is safer for exact request.
+
+            const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDateStrict} at ${formattedTime}`
+
             // Email to Student
             console.log('Sending email to student:', student.email)
             const studentEmailResult = await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
                 to: student.email,
-                subject: `Lesson Scheduled: ${date} at ${time}`,
+                subject: emailSubject,
                 react: LessonScheduledEmail({
                     studentName: student.name || 'Student',
-                    date,
-                    time,
+                    date: formattedDateStrict,
+                    time: formattedTime,
                     duration,
                     zoomLink,
                     recipientName: student.name || 'Student',
@@ -704,11 +732,11 @@ export async function scheduleLesson(
                 const teacherEmailResult = await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
                     to: user.email,
-                    subject: `Lesson Scheduled: ${student.name} - ${date} ${time}`,
+                    subject: emailSubject,
                     react: LessonScheduledEmail({
                         studentName: student.name || 'Student',
-                        date,
-                        time,
+                        date: formattedDateStrict,
+                        time: formattedTime,
                         duration,
                         zoomLink,
                         recipientName: adminName,
