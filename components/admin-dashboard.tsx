@@ -638,224 +638,312 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                                         <div>
                                                             <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
                                                             <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                                                <div className="flex items-center gap-1">
-                                                                    <Clock className="h-3 w-3" />
-                                                                    <span>60 min</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1">
-                                                                    <Music className="h-3 w-3" />
-                                                                    <span>{lesson.student.credits} credits left</span>
-                                                                </div>
+                                                                <Clock className="h-3 w-3" />
+                                                                <span>{lesson.duration || 60} min</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                <Music className="h-3 w-3" />
+                                                                <span>{lesson.student.credits} credits left</span>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
-                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                </div>
+                                                <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
+                                                    {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                        <Button
+                                                            size="sm"
+                                                            className="bg-blue-600 hover:bg-blue-700"
+                                                            asChild
+                                                        >
+                                                            <a
+                                                                href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                            >
+                                                                <Video className="h-4 w-4 mr-1" />
+                                                                Zoom
+                                                            </a>
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={() => handleLogLesson(lesson)}
+                                                        disabled={isLoading}
+                                                    >
+                                                        <Upload className="h-4 w-4 mr-1" />
+                                                        Log
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleReschedule(({ ...lesson, student_id: lesson.student.id } as any))}
+                                                        disabled={isLoading}
+                                                    >
+                                                        <Calendar className="h-4 w-4 mr-1" />
+                                                        Resched
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="destructive"
+                                                        onClick={() => handleMarkNoShow(lesson)}
+                                                        disabled={isLoading}
+                                                    >
+                                                        <XCircle className="h-4 w-4 mr-1" />
+                                                        No-Show
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        className="text-destructive hover:text-destructive"
+                                                        onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
+                                                        disabled={isLoading}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                </div>
+                                            </CardContent>
+                                            </Card>
+                                ))
+                                    )}
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Student Roster */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="text-2xl font-serif">Student Roster</CardTitle>
+                                    <CardDescription>Complete overview of all active students</CardDescription>
+                                </div>
+                                <AddStudentModal />
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="font-semibold">Name</TableHead>
+                                            <TableHead className="font-semibold">Contact</TableHead>
+                                            <TableHead className="font-semibold">Weekday</TableHead>
+                                            <TableHead className="font-semibold text-center">Credits</TableHead>
+                                            <TableHead className="font-semibold text-center">Balance Due</TableHead>
+                                            <TableHead className="font-semibold">Status</TableHead>
+                                            <TableHead className="font-semibold text-right">Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {students.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                                                    No students found
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            students.map((student) => (
+                                                <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
+                                                    <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
+                                                    <TableCell>
+                                                        <div className="text-sm">
+                                                            <div>{student.email}</div>
+                                                            <div className="text-muted-foreground">{student.phone}</div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {student.lesson_day ? (
+                                                            <Badge variant="outline">{student.lesson_day}</Badge>
+                                                        ) : (
+                                                            <span className="text-muted-foreground text-sm">-</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <Badge variant={student.credits <= 1 ? "destructive" : "secondary"}>
+                                                            {student.credits}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        {Number(student.balance_due) > 0 ? (
+                                                            <div className="flex items-center justify-center gap-1">
+                                                                <AlertCircle className="h-4 w-4 text-destructive" />
+                                                                <span className="font-semibold text-destructive">
+                                                                    ${Number(student.balance_due).toFixed(2)}
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">$0.00</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {student.credits === 0 ? (
+                                                            <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">
+                                                                Needs Renewal
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="default">Active</Badge>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <EditStudentModal student={student} />
                                                             <Button
                                                                 size="sm"
-                                                                className="bg-blue-600 hover:bg-blue-700"
-                                                                asChild
+                                                                variant="outline"
+                                                                onClick={() => handleLogPastLesson(student)}
                                                             >
-                                                                <a
-                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    <Video className="h-4 w-4 mr-1" />
-                                                                    Zoom
-                                                                </a>
+                                                                <Upload className="h-4 w-4 mr-1" />
+                                                                Log
                                                             </Button>
-                                                        )}
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => handleLogLesson(lesson)}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <Upload className="h-4 w-4 mr-1" />
-                                                            Log
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleReschedule(({ ...lesson, student_id: lesson.student.id } as any))}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <Calendar className="h-4 w-4 mr-1" />
-                                                            Resched
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            onClick={() => handleMarkNoShow(lesson)}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <XCircle className="h-4 w-4 mr-1" />
-                                                            No-Show
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="secondary"
-                                                            className="text-destructive hover:text-destructive"
-                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
-                                                            disabled={isLoading}
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Student Roster */}
-                        <Card>
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-2xl font-serif">Student Roster</CardTitle>
-                                        <CardDescription>Complete overview of all active students</CardDescription>
-                                    </div>
-                                    <AddStudentModal />
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="rounded-md border">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead className="font-semibold">Name</TableHead>
-                                                <TableHead className="font-semibold">Contact</TableHead>
-                                                <TableHead className="font-semibold">Weekday</TableHead>
-                                                <TableHead className="font-semibold text-center">Credits</TableHead>
-                                                <TableHead className="font-semibold text-center">Balance Due</TableHead>
-                                                <TableHead className="font-semibold">Status</TableHead>
-                                                <TableHead className="font-semibold text-right">Actions</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {students.length === 0 ? (
-                                                <TableRow>
-                                                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                                                        No students found
+                                                            <Button
+                                                                size="sm"
+                                                                variant="default"
+                                                                onClick={() => handleOpenSchedule(student)}
+                                                            >
+                                                                <Plus className="h-4 w-4 mr-1" />
+                                                                Schedule
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="destructive"
+                                                                className="px-2"
+                                                                onClick={() => handleDeleteStudent(student)}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
                                                     </TableCell>
                                                 </TableRow>
-                                            ) : (
-                                                students.map((student) => (
-                                                    <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
-                                                        <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
-                                                        <TableCell>
-                                                            <div className="text-sm">
-                                                                <div>{student.email}</div>
-                                                                <div className="text-muted-foreground">{student.phone}</div>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {student.lesson_day ? (
-                                                                <Badge variant="outline">{student.lesson_day}</Badge>
-                                                            ) : (
-                                                                <span className="text-muted-foreground text-sm">-</span>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            <Badge variant={student.credits <= 1 ? "destructive" : "secondary"}>
-                                                                {student.credits}
-                                                            </Badge>
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {Number(student.balance_due) > 0 ? (
-                                                                <div className="flex items-center justify-center gap-1">
-                                                                    <AlertCircle className="h-4 w-4 text-destructive" />
-                                                                    <span className="font-semibold text-destructive">
-                                                                        ${Number(student.balance_due).toFixed(2)}
-                                                                    </span>
-                                                                </div>
-                                                            ) : (
-                                                                <span className="text-muted-foreground">$0.00</span>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {student.credits === 0 ? (
-                                                                <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">
-                                                                    Needs Renewal
-                                                                </Badge>
-                                                            ) : (
-                                                                <Badge variant="default">Active</Badge>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-right">
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                <EditStudentModal student={student} />
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() => handleLogPastLesson(student)}
-                                                                >
-                                                                    <Upload className="h-4 w-4 mr-1" />
-                                                                    Log
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="default"
-                                                                    onClick={() => handleOpenSchedule(student)}
-                                                                >
-                                                                    <Plus className="h-4 w-4 mr-1" />
-                                                                    Schedule
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="destructive"
-                                                                    className="px-2"
-                                                                    onClick={() => handleDeleteStudent(student)}
-                                                                >
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
 
-                    {/* Scheduled Lessons Tab */}
-                    <TabsContent value="scheduled" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-2xl font-serif">Upcoming Lessons</CardTitle>
-                                        <CardDescription>All scheduled lessons</CardDescription>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <Badge variant="secondary" className="text-base px-4 py-2">
-                                            {scheduledLessons.length} Lessons
-                                        </Badge>
-                                        <Button onClick={openNewSchedule}>
-                                            <Plus className="h-4 w-4 mr-2" />
-                                            Schedule Lesson
-                                        </Button>
-                                    </div>
+                {/* Scheduled Lessons Tab */}
+                <TabsContent value="scheduled" className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="text-2xl font-serif">Upcoming Lessons</CardTitle>
+                                    <CardDescription>All scheduled lessons</CardDescription>
                                 </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {scheduledLessons.length === 0 ? (
-                                        <p className="text-center text-muted-foreground py-8">No scheduled lessons</p>
-                                    ) : (
-                                        scheduledLessons.map((lesson) => (
-                                            <Card key={lesson.id} className="border-2">
-                                                <CardContent className="flex items-center justify-between p-6">
+                                <div className="flex items-center gap-3">
+                                    <Badge variant="secondary" className="text-base px-4 py-2">
+                                        {scheduledLessons.length} Lessons
+                                    </Badge>
+                                    <Button onClick={openNewSchedule}>
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Schedule Lesson
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-4">
+                                {scheduledLessons.length === 0 ? (
+                                    <p className="text-center text-muted-foreground py-8">No scheduled lessons</p>
+                                ) : (
+                                    scheduledLessons.map((lesson) => (
+                                        <Card key={lesson.id} className="border-2">
+                                            <CardContent className="flex items-center justify-between p-6">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex flex-col items-center justify-center h-14 w-14 bg-primary text-primary-foreground rounded-lg">
+                                                        <span className="text-xs font-medium">{formatDate(lesson.date).split(',')[0]}</span>
+                                                        <span className="text-xs">{formatDate(lesson.date).split(' ')[1]}</span>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
+                                                        <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                                            <div className="flex items-center gap-1">
+                                                                <Calendar className="h-3 w-3" />
+                                                                <span>{formatDate(lesson.date)}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                <Clock className="h-3 w-3" />
+                                                                <span>{formatTime(lesson.time)}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                <Music className="h-3 w-3" />
+                                                                <span>{lesson.duration || 60} min</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <Badge variant="outline">Scheduled</Badge>
+                                                <div className="flex gap-2 ml-4">
+                                                    {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                        <Button
+                                                            size="sm"
+                                                            className="bg-blue-600 hover:bg-blue-700"
+                                                            asChild
+                                                        >
+                                                            <a
+                                                                href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                            >
+                                                                <Video className="h-4 w-4 mr-1" />
+                                                                Zoom
+                                                            </a>
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => handleReschedule(lesson)}
+                                                    >
+                                                        <Calendar className="h-4 w-4 mr-1" />
+                                                        Reschedule
+                                                    </Button>
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
+                                                    >
+                                                        <XCircle className="h-4 w-4 mr-1" />
+                                                        Cancel
+                                                    </Button>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    ))
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Completed Lessons Tab */}
+                <TabsContent value="completed" className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="text-2xl font-serif">Completed Lessons</CardTitle>
+                                    <CardDescription>Past lesson history</CardDescription>
+                                </div>
+                                <Badge variant="secondary" className="text-base px-4 py-2">
+                                    {completedLessons.length} Lessons
+                                </Badge>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-4">
+                                {completedLessons.length === 0 ? (
+                                    <p className="text-center text-muted-foreground py-8">No completed lessons</p>
+                                ) : (
+                                    completedLessons.map((lesson) => (
+                                        <Card key={lesson.id} className="border">
+                                            <CardContent className="p-6">
+                                                <div className="flex items-start justify-between">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-primary text-primary-foreground rounded-lg">
-                                                            <span className="text-xs font-medium">{formatDate(lesson.date).split(',')[0]}</span>
-                                                            <span className="text-xs">{formatDate(lesson.date).split(' ')[1]}</span>
+                                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-muted rounded-lg">
+                                                            <Music className="h-6 w-6 text-muted-foreground" />
                                                         </div>
                                                         <div>
                                                             <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
@@ -868,534 +956,445 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                                                     <Clock className="h-3 w-3" />
                                                                     <span>{formatTime(lesson.time)}</span>
                                                                 </div>
-                                                                <div className="flex items-center gap-1">
-                                                                    <Music className="h-3 w-3" />
-                                                                    <span>{lesson.duration || 60} min</span>
-                                                                </div>
                                                             </div>
+                                                            {lesson.notes && (
+                                                                <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                                                                    {lesson.notes}
+                                                                </p>
+                                                            )}
                                                         </div>
                                                     </div>
-                                                    <Badge variant="outline">Scheduled</Badge>
-                                                    <div className="flex gap-2 ml-4">
-                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        <div className="flex items-center gap-2">
                                                             <Button
                                                                 size="sm"
-                                                                className="bg-blue-600 hover:bg-blue-700"
-                                                                asChild
+                                                                variant="outline"
+                                                                onClick={() => handleEditLesson(lesson)}
                                                             >
-                                                                <a
-                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    <Video className="h-4 w-4 mr-1" />
-                                                                    Zoom
-                                                                </a>
+                                                                <Pencil className="h-3 w-3 mr-1" />
+                                                                Edit
                                                             </Button>
+                                                            <Badge variant="default" className="bg-green-600">Completed</Badge>
+                                                        </div>
+                                                        {(lesson.video_url || lesson.sheet_music_url) && (
+                                                            <div className="flex gap-2">
+                                                                {lesson.video_url && (
+                                                                    <a
+                                                                        href={lesson.video_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition-colors"
+                                                                    >
+                                                                        <Video className="h-3 w-3" />
+                                                                        Video
+                                                                    </a>
+                                                                )}
+                                                                {lesson.sheet_music_url && (
+                                                                    <a
+                                                                        href={lesson.sheet_music_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 text-xs font-medium transition-colors"
+                                                                    >
+                                                                        <FileText className="h-3 w-3" />
+                                                                        Sheet Music
+                                                                    </a>
+                                                                )}
+                                                            </div>
                                                         )}
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleReschedule(lesson)}
-                                                        >
-                                                            <Calendar className="h-4 w-4 mr-1" />
-                                                            Reschedule
-                                                        </Button>
-                                                        <Button
-                                                            variant="destructive"
-                                                            size="sm"
-                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
-                                                        >
-                                                            <XCircle className="h-4 w-4 mr-1" />
-                                                            Cancel
-                                                        </Button>
                                                     </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    ))
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
 
-                    {/* Completed Lessons Tab */}
-                    <TabsContent value="completed" className="space-y-4">
+                <TabsContent value="messages">
+                    <AdminChat />
+                </TabsContent>
+
+                <TabsContent value="calendar">
+                    <Suspense fallback={
+                        <div className="flex justify-center p-8">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                        </div>
+                    }>
                         <Card>
                             <CardHeader>
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <CardTitle className="text-2xl font-serif">Completed Lessons</CardTitle>
-                                        <CardDescription>Past lesson history</CardDescription>
+                                        <CardTitle className="text-2xl font-serif">Master Calendar</CardTitle>
+                                        <CardDescription>View all lessons and events</CardDescription>
                                     </div>
-                                    <Badge variant="secondary" className="text-base px-4 py-2">
-                                        {completedLessons.length} Lessons
-                                    </Badge>
+                                    <Button onClick={() => {
+                                        setEditingEvent(null)
+                                        setShowEventModal(true)
+                                    }}>
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Create Event
+                                    </Button>
                                 </div>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-4">
-                                    {completedLessons.length === 0 ? (
-                                        <p className="text-center text-muted-foreground py-8">No completed lessons</p>
-                                    ) : (
-                                        completedLessons.map((lesson) => (
-                                            <Card key={lesson.id} className="border">
-                                                <CardContent className="p-6">
-                                                    <div className="flex items-start justify-between">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="flex flex-col items-center justify-center h-14 w-14 bg-muted rounded-lg">
-                                                                <Music className="h-6 w-6 text-muted-foreground" />
-                                                            </div>
-                                                            <div>
-                                                                <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
-                                                                <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                                                    <div className="flex items-center gap-1">
-                                                                        <Calendar className="h-3 w-3" />
-                                                                        <span>{formatDate(lesson.date)}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1">
-                                                                        <Clock className="h-3 w-3" />
-                                                                        <span>{formatTime(lesson.time)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                {lesson.notes && (
-                                                                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                                                                        {lesson.notes}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex flex-col items-end gap-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() => handleEditLesson(lesson)}
-                                                                >
-                                                                    <Pencil className="h-3 w-3 mr-1" />
-                                                                    Edit
-                                                                </Button>
-                                                                <Badge variant="default" className="bg-green-600">Completed</Badge>
-                                                            </div>
-                                                            {(lesson.video_url || lesson.sheet_music_url) && (
-                                                                <div className="flex gap-2">
-                                                                    {lesson.video_url && (
-                                                                        <a
-                                                                            href={lesson.video_url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition-colors"
-                                                                        >
-                                                                            <Video className="h-3 w-3" />
-                                                                            Video
-                                                                        </a>
-                                                                    )}
-                                                                    {lesson.sheet_music_url && (
-                                                                        <a
-                                                                            href={lesson.sheet_music_url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 text-xs font-medium transition-colors"
-                                                                        >
-                                                                            <FileText className="h-3 w-3" />
-                                                                            Sheet Music
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
+                                <MasterCalendar
+                                    onEditLesson={onEditCalendarLesson}
+                                    onDeleteLesson={onDeleteCalendarLesson}
+                                    onEditEvent={handleEditEvent}
+                                    onDeleteEvent={handleDeleteEvent}
+                                    refreshTrigger={calendarVersion}
+                                />
                             </CardContent>
                         </Card>
-                    </TabsContent>
+                    </Suspense>
+                </TabsContent>
+            </Tabs >
+        </main >
 
-                    <TabsContent value="messages">
-                        <AdminChat />
-                    </TabsContent>
+            {/* Log Lesson Modal */ }
+    < Dialog open={showLogLessonModal} onOpenChange={setShowLogLessonModal} >
+        <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+                <DialogTitle className="text-2xl font-serif">Log Lesson</DialogTitle>
+                <DialogDescription>
+                    Record notes and upload materials for {selectedLesson?.student.name || selectedStudentForLog?.name}
+                </DialogDescription>
+            </DialogHeader>
 
-                    <TabsContent value="calendar">
-                        <Suspense fallback={
-                            <div className="flex justify-center p-8">
-                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                            </div>
-                        }>
-                            <Card>
-                                <CardHeader>
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <CardTitle className="text-2xl font-serif">Master Calendar</CardTitle>
-                                            <CardDescription>View all lessons and events</CardDescription>
-                                        </div>
-                                        <Button onClick={() => {
-                                            setEditingEvent(null)
-                                            setShowEventModal(true)
-                                        }}>
-                                            <Plus className="h-4 w-4 mr-2" />
-                                            Create Event
-                                        </Button>
-                                    </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <MasterCalendar
-                                        onEditLesson={onEditCalendarLesson}
-                                        onDeleteLesson={onDeleteCalendarLesson}
-                                        onEditEvent={handleEditEvent}
-                                        onDeleteEvent={handleDeleteEvent}
-                                        refreshTrigger={calendarVersion}
-                                    />
-                                </CardContent>
-                            </Card>
-                        </Suspense>
-                    </TabsContent>
-                </Tabs >
-            </main >
+            <div className="space-y-6 py-4">
+                {/* Date/Time selectors for Ad-Hoc Logging */}
+                {selectedStudentForLog && (
+                    <div className="grid grid-cols-2 gap-4 border-b pb-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="log-date" className="text-base">Date</Label>
+                            <Input
+                                id="log-date"
+                                type="date"
+                                value={logDate}
+                                onChange={(e) => setLogDate(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="log-time" className="text-base">Time</Label>
+                            <Input
+                                id="log-time"
+                                type="time"
+                                value={logTime}
+                                onChange={(e) => setLogTime(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                )}
 
-            {/* Log Lesson Modal */}
-            < Dialog open={showLogLessonModal} onOpenChange={setShowLogLessonModal} >
-                <DialogContent className="sm:max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="text-2xl font-serif">Log Lesson</DialogTitle>
-                        <DialogDescription>
-                            Record notes and upload materials for {selectedLesson?.student.name || selectedStudentForLog?.name}
-                        </DialogDescription>
-                    </DialogHeader>
 
-                    <div className="space-y-6 py-4">
-                        {/* Date/Time selectors for Ad-Hoc Logging */}
-                        {selectedStudentForLog && (
-                            <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="log-date" className="text-base">Date</Label>
-                                    <Input
-                                        id="log-date"
-                                        type="date"
-                                        value={logDate}
-                                        onChange={(e) => setLogDate(e.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="log-time" className="text-base">Time</Label>
-                                    <Input
-                                        id="log-time"
-                                        type="time"
-                                        value={logTime}
-                                        onChange={(e) => setLogTime(e.target.value)}
-                                    />
-                                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="notes" className="text-base">
+                        Teacher Notes
+                    </Label>
+                    <Textarea
+                        id="notes"
+                        placeholder="Enter your lesson notes, progress observations, and homework assignments..."
+                        value={lessonNotes}
+                        onChange={(e) => setLessonNotes(e.target.value)}
+                        rows={6}
+                        className="resize-none"
+                    />
+                </div>
+
+
+                <div className="space-y-2">
+                    <Label htmlFor="video" className="text-base">
+                        Video Recording URL
+                    </Label>
+                    <Input
+                        id="video"
+                        type="url"
+                        placeholder="https://storage.supabase.co/..."
+                        value={videoUrl}
+                        onChange={(e) => setVideoUrl(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Upload video to Supabase Storage and paste the URL here</p>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="sheet-music" className="text-base">
+                        Sheet Music PDF
+                    </Label>
+                    <div className="space-y-3">
+                        <div className="flex gap-2 items-center">
+                            <Input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".pdf"
+                                onChange={(e) => handleFileUpload(e, false)}
+                                className="flex-1"
+                                disabled={isUploading}
+                            />
+                            {isUploading && (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Or paste a URL directly:</div>
+                        <Input
+                            type="url"
+                            placeholder="https://..."
+                            value={sheetMusicUrl}
+                            onChange={(e) => setSheetMusicUrl(e.target.value)}
+                        />
+                        {sheetMusicUrl && (
+                            <div className="flex items-center gap-2 text-sm text-green-600">
+                                <FileText className="h-4 w-4" />
+                                <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
+                                    {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
+                                </a>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSheetMusicUrl('')}
+                                    className="h-6 px-2 text-red-500 hover:text-red-700"
+                                >
+                                    Remove
+                                </Button>
                             </div>
                         )}
+                    </div>
+                </div>
+            </div>
 
+            <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => setShowLogLessonModal(false)} disabled={isLoading}>
+                    Cancel
+                </Button>
+                <Button onClick={handleSaveLesson} disabled={isLoading}>
+                    {isLoading ? 'Saving...' : 'Save Lesson'}
+                </Button>
+            </div>
+        </DialogContent>
+    </Dialog >
 
-                        <div className="space-y-2">
-                            <Label htmlFor="notes" className="text-base">
-                                Teacher Notes
-                            </Label>
-                            <Textarea
-                                id="notes"
-                                placeholder="Enter your lesson notes, progress observations, and homework assignments..."
-                                value={lessonNotes}
-                                onChange={(e) => setLessonNotes(e.target.value)}
-                                rows={6}
-                                className="resize-none"
-                            />
-                        </div>
+    {/* Schedule Lesson Modal */ }
+    < Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal} >
+        <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+                <DialogTitle className="text-2xl font-serif">
+                    {isRescheduling ? 'Reschedule Lesson' : 'Schedule Lesson'}
+                </DialogTitle>
+                <DialogDescription>
+                    {isRescheduling
+                        ? `Update lesson details for ${selectedStudent?.name || 'Student'}`
+                        : selectedStudent
+                            ? `Schedule a new lesson for ${selectedStudent.name}`
+                            : 'Select a student and choose lesson details'
+                    }
+                </DialogDescription>
+            </DialogHeader>
 
+            <div className="space-y-4 py-4">
+                {/* Student Selector */}
+                <div className="space-y-2">
+                    <Label htmlFor="student-select" className="text-base">
+                        Student
+                    </Label>
+                    <select
+                        id="student-select"
+                        value={selectedStudent?.id || ''}
+                        onChange={(e) => {
+                            const student = students.find(s => s.id === e.target.value)
+                            setSelectedStudent(student || null)
+                        }}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={isRescheduling}
+                    >
+                        <option value="">Select a student...</option>
+                        {students.map((student) => (
+                            <option key={student.id} value={student.id}>
+                                {student.name} ({student.credits} credits)
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="video" className="text-base">
-                                Video Recording URL
-                            </Label>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="date" className="text-base">
+                            Date
+                        </Label>
+                        <Input
+                            id="date"
+                            type="date"
+                            value={scheduleDate}
+                            onChange={(e) => setScheduleDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="time" className="text-base">
+                            Time
+                        </Label>
+                        <Input
+                            id="time"
+                            type="time"
+                            value={scheduleTime}
+                            onChange={(e) => setScheduleTime(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="duration" className="text-base">
+                        Duration (minutes)
+                    </Label>
+                    <select
+                        id="duration"
+                        value={scheduleDuration}
+                        onChange={(e) => setScheduleDuration(Number(e.target.value))}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <option value="30">30 minutes</option>
+                        <option value="45">45 minutes</option>
+                        <option value="60">60 minutes</option>
+                        <option value="90">90 minutes</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => setShowScheduleModal(false)} disabled={isLoading}>
+                    Cancel
+                </Button>
+                <Button onClick={handleScheduleSubmit} disabled={isLoading}>
+                    {isLoading ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                        </>
+                    ) : (
+                        isRescheduling ? 'Update Lesson' : 'Schedule Lesson'
+                    )}
+                </Button>
+            </div>
+        </DialogContent>
+    </Dialog >
+
+    {/* Edit Lesson Modal */ }
+    < Dialog open={showEditModal} onOpenChange={setShowEditModal} >
+        <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+                <DialogTitle className="text-2xl font-serif">Edit Lesson</DialogTitle>
+                <DialogDescription>
+                    Update lesson notes and materials for {editingLesson?.student.name}
+                </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                    <Label htmlFor="edit-notes" className="text-base">
+                        Teacher Notes
+                    </Label>
+                    <Textarea
+                        id="edit-notes"
+                        placeholder="Enter your lesson notes, progress observations, and homework assignments..."
+                        value={lessonNotes}
+                        onChange={(e) => setLessonNotes(e.target.value)}
+                        rows={6}
+                        className="resize-none"
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="edit-video" className="text-base">
+                        Video Recording URL
+                    </Label>
+                    <Input
+                        id="edit-video"
+                        type="url"
+                        placeholder="https://..."
+                        value={videoUrl}
+                        onChange={(e) => setVideoUrl(e.target.value)}
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label htmlFor="edit-sheet-music" className="text-base">
+                        Sheet Music PDF
+                    </Label>
+                    <div className="space-y-3">
+                        <div className="flex gap-2 items-center">
                             <Input
-                                id="video"
-                                type="url"
-                                placeholder="https://storage.supabase.co/..."
-                                value={videoUrl}
-                                onChange={(e) => setVideoUrl(e.target.value)}
+                                ref={editFileInputRef}
+                                type="file"
+                                accept=".pdf"
+                                onChange={(e) => handleFileUpload(e, true)}
+                                className="flex-1"
+                                disabled={isUploading}
                             />
-                            <p className="text-xs text-muted-foreground">Upload video to Supabase Storage and paste the URL here</p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="sheet-music" className="text-base">
-                                Sheet Music PDF
-                            </Label>
-                            <div className="space-y-3">
-                                <div className="flex gap-2 items-center">
-                                    <Input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        onChange={(e) => handleFileUpload(e, false)}
-                                        className="flex-1"
-                                        disabled={isUploading}
-                                    />
-                                    {isUploading && (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">Or paste a URL directly:</div>
-                                <Input
-                                    type="url"
-                                    placeholder="https://..."
-                                    value={sheetMusicUrl}
-                                    onChange={(e) => setSheetMusicUrl(e.target.value)}
-                                />
-                                {sheetMusicUrl && (
-                                    <div className="flex items-center gap-2 text-sm text-green-600">
-                                        <FileText className="h-4 w-4" />
-                                        <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
-                                            {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
-                                        </a>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => setSheetMusicUrl('')}
-                                            className="h-6 px-2 text-red-500 hover:text-red-700"
-                                        >
-                                            Remove
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3 justify-end">
-                        <Button variant="outline" onClick={() => setShowLogLessonModal(false)} disabled={isLoading}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSaveLesson} disabled={isLoading}>
-                            {isLoading ? 'Saving...' : 'Save Lesson'}
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog >
-
-            {/* Schedule Lesson Modal */}
-            < Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal} >
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-2xl font-serif">
-                            {isRescheduling ? 'Reschedule Lesson' : 'Schedule Lesson'}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {isRescheduling
-                                ? `Update lesson details for ${selectedStudent?.name || 'Student'}`
-                                : selectedStudent
-                                    ? `Schedule a new lesson for ${selectedStudent.name}`
-                                    : 'Select a student and choose lesson details'
-                            }
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-4">
-                        {/* Student Selector */}
-                        <div className="space-y-2">
-                            <Label htmlFor="student-select" className="text-base">
-                                Student
-                            </Label>
-                            <select
-                                id="student-select"
-                                value={selectedStudent?.id || ''}
-                                onChange={(e) => {
-                                    const student = students.find(s => s.id === e.target.value)
-                                    setSelectedStudent(student || null)
-                                }}
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                disabled={isRescheduling}
-                            >
-                                <option value="">Select a student...</option>
-                                {students.map((student) => (
-                                    <option key={student.id} value={student.id}>
-                                        {student.name} ({student.credits} credits)
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="date" className="text-base">
-                                    Date
-                                </Label>
-                                <Input
-                                    id="date"
-                                    type="date"
-                                    value={scheduleDate}
-                                    onChange={(e) => setScheduleDate(e.target.value)}
-                                    min={new Date().toISOString().split('T')[0]}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="time" className="text-base">
-                                    Time
-                                </Label>
-                                <Input
-                                    id="time"
-                                    type="time"
-                                    value={scheduleTime}
-                                    onChange={(e) => setScheduleTime(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="duration" className="text-base">
-                                Duration (minutes)
-                            </Label>
-                            <select
-                                id="duration"
-                                value={scheduleDuration}
-                                onChange={(e) => setScheduleDuration(Number(e.target.value))}
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                <option value="30">30 minutes</option>
-                                <option value="45">45 minutes</option>
-                                <option value="60">60 minutes</option>
-                                <option value="90">90 minutes</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3 justify-end">
-                        <Button variant="outline" onClick={() => setShowScheduleModal(false)} disabled={isLoading}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleScheduleSubmit} disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                isRescheduling ? 'Update Lesson' : 'Schedule Lesson'
+                            {isUploading && (
+                                <Loader2 className="h-4 w-4 animate-spin" />
                             )}
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog >
-
-            {/* Edit Lesson Modal */}
-            < Dialog open={showEditModal} onOpenChange={setShowEditModal} >
-                <DialogContent className="sm:max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="text-2xl font-serif">Edit Lesson</DialogTitle>
-                        <DialogDescription>
-                            Update lesson notes and materials for {editingLesson?.student.name}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-6 py-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="edit-notes" className="text-base">
-                                Teacher Notes
-                            </Label>
-                            <Textarea
-                                id="edit-notes"
-                                placeholder="Enter your lesson notes, progress observations, and homework assignments..."
-                                value={lessonNotes}
-                                onChange={(e) => setLessonNotes(e.target.value)}
-                                rows={6}
-                                className="resize-none"
-                            />
                         </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="edit-video" className="text-base">
-                                Video Recording URL
-                            </Label>
-                            <Input
-                                id="edit-video"
-                                type="url"
-                                placeholder="https://..."
-                                value={videoUrl}
-                                onChange={(e) => setVideoUrl(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="edit-sheet-music" className="text-base">
-                                Sheet Music PDF
-                            </Label>
-                            <div className="space-y-3">
-                                <div className="flex gap-2 items-center">
-                                    <Input
-                                        ref={editFileInputRef}
-                                        type="file"
-                                        accept=".pdf"
-                                        onChange={(e) => handleFileUpload(e, true)}
-                                        className="flex-1"
-                                        disabled={isUploading}
-                                    />
-                                    {isUploading && (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">Or paste a URL directly:</div>
-                                <Input
-                                    type="url"
-                                    placeholder="https://..."
-                                    value={sheetMusicUrl}
-                                    onChange={(e) => setSheetMusicUrl(e.target.value)}
-                                />
-                                {sheetMusicUrl && (
-                                    <div className="flex items-center gap-2 text-sm text-green-600">
-                                        <FileText className="h-4 w-4" />
-                                        <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
-                                            {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
-                                        </a>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => setSheetMusicUrl('')}
-                                            className="h-6 px-2 text-red-500 hover:text-red-700"
-                                        >
-                                            Remove
-                                        </Button>
-                                    </div>
-                                )}
+                        <div className="text-xs text-muted-foreground">Or paste a URL directly:</div>
+                        <Input
+                            type="url"
+                            placeholder="https://..."
+                            value={sheetMusicUrl}
+                            onChange={(e) => setSheetMusicUrl(e.target.value)}
+                        />
+                        {sheetMusicUrl && (
+                            <div className="flex items-center gap-2 text-sm text-green-600">
+                                <FileText className="h-4 w-4" />
+                                <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
+                                    {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
+                                </a>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSheetMusicUrl('')}
+                                    className="h-6 px-2 text-red-500 hover:text-red-700"
+                                >
+                                    Remove
+                                </Button>
                             </div>
-                        </div>
+                        )}
                     </div>
+                </div>
+            </div>
 
-                    <div className="flex gap-3 justify-end">
-                        <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={isLoading}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSaveEdit} disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    Save Changes
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog >
-            {/* Event Modal */}
-            <CreateEventModal
-                open={showEventModal}
-                onOpenChange={setShowEventModal}
-                eventToEdit={editingEvent}
-                onEventCreated={() => {
-                    // Refresh is handled by revalidatePath in action, but we might want to ensure state is clear
-                    setEditingEvent(null)
-                    setCalendarVersion(v => v + 1)
-                }}
-            />
+            <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={isLoading}>
+                    Cancel
+                </Button>
+                <Button onClick={handleSaveEdit} disabled={isLoading}>
+                    {isLoading ? (
+                        <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Saving...
+                        </>
+                    ) : (
+                        <>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Save Changes
+                        </>
+                    )}
+                </Button>
+            </div>
+        </DialogContent>
+    </Dialog >
+    {/* Event Modal */ }
+    <CreateEventModal
+        open={showEventModal}
+        onOpenChange={setShowEventModal}
+        eventToEdit={editingEvent}
+        onEventCreated={() => {
+            // Refresh is handled by revalidatePath in action, but we might want to ensure state is clear
+            setEditingEvent(null)
+            setCalendarVersion(v => v + 1)
+        }}
+    />
         </div >
     )
 }
