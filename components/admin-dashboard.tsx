@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2 } from "lucide-react"
+import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert } from "lucide-react"
 import { AdminChat } from "@/components/admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
@@ -550,6 +550,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 <a href="/admin/editor2" className="gap-2">
                                     <Pencil className="h-4 w-4" />
                                     Site Builder
+                                </a>
+                            </Button>
+                            <Button variant="outline" asChild>
+                                <a href="/admin/logs" className="gap-2">
+                                    <ShieldAlert className="h-4 w-4" />
+                                    Logs
                                 </a>
                             </Button>
                             <ProfileSettingsDialog

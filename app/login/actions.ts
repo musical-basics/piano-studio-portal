@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
+import { logAuthEvent } from '@/lib/logger'
 
 export async function login(formData: FormData) {
     const supabase = await createClient()
@@ -16,8 +17,11 @@ export async function login(formData: FormData) {
     const { error } = await supabase.auth.signInWithPassword(data)
 
     if (error) {
+        await logAuthEvent(data.email, 'failed_login', 'failure', error.message)
         return { error: error.message }
     }
+
+    await logAuthEvent(data.email, 'login', 'success')
 
     // Get user profile to determine redirect
     const { data: { user } } = await supabase.auth.getUser()
@@ -69,6 +73,7 @@ export async function sendResetLink(formData: FormData) {
         return { error: error.message }
     }
 
+    await logAuthEvent(email, 'reset_request', 'success')
     return { success: true, message: 'Password reset link sent to your email' }
 }
 
@@ -97,6 +102,10 @@ export async function updatePassword(formData: FormData) {
 
     // Get user profile to determine redirect
     const { data: { user } } = await supabase.auth.getUser()
+
+    if (user?.email) {
+        await logAuthEvent(user.email, 'reset_completed', 'success')
+    }
 
     if (user) {
         const { data: profile } = await supabase
