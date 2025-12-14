@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
+import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
+import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -422,6 +424,59 @@ export async function cancelLesson(lessonId: string) {
 
     console.log(`Lesson ${lessonId} deleted. Refund: ${shouldRefund}`)
 
+    // Send Cancellation Email
+    if (resend) {
+        try {
+            // Fetch student email if not already present
+            const { data: student } = await supabase
+                .from('profiles')
+                .select('name, email')
+                .eq('id', lesson.student_id)
+                .single()
+
+            if (student?.email) {
+                // Get Admin params
+                const { data: adminProfile } = await supabase
+                    .from('profiles')
+                    .select('name, studio_name')
+                    .eq('id', user.id)
+                    .single()
+
+                const studioName = adminProfile?.studio_name || 'Piano Studio'
+
+                // Format Date/Time
+                const dateObj = new Date(`${lesson.date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                const [hours, minutes] = (lesson.time || '12:00').split(':')
+                const hourNum = parseInt(hours, 10)
+                const ampm = hourNum >= 12 ? 'pm' : 'am'
+                const hour12 = hourNum % 12 || 12
+                const formattedTime = `${hour12}:${minutes}${ampm} PST`
+
+                await resend.emails.send({
+                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                    to: student.email,
+                    subject: `Lesson Canceled: ${formattedDate} at ${formattedTime}`,
+                    react: LessonCanceledEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        time: formattedTime,
+                        recipientName: student.name || 'Student',
+                        studioName
+                    })
+                })
+                console.log('Cancellation email sent to:', student.email)
+            }
+        } catch (emailError) {
+            console.error('Failed to send cancellation email:', emailError)
+        }
+    }
+
     // Step 2: Revalidate paths to refresh UI
     revalidatePath('/admin')
     revalidatePath('/student')
@@ -464,7 +519,7 @@ export async function rescheduleLesson(
     // Get the existing lesson
     const { data: lesson, error: lessonFetchError } = await supabase
         .from('lessons')
-        .select('student_id')
+        .select('student_id, date, time')
         .eq('id', lessonId)
         .single()
 
@@ -491,6 +546,61 @@ export async function rescheduleLesson(
 
     if (updateError) {
         return { error: updateError.message }
+    }
+
+    // Send Reschedule Email
+    if (resend) {
+        try {
+            const { data: student } = await supabase
+                .from('profiles')
+                .select('name, email')
+                .eq('id', lesson.student_id)
+                .single()
+
+            if (student?.email) {
+                const { data: adminProfile } = await supabase
+                    .from('profiles')
+                    .select('name, studio_name')
+                    .eq('id', user.id)
+                    .single()
+
+                const studioName = adminProfile?.studio_name || 'Piano Studio'
+
+                // Helper for formatting
+                const formatDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                const formatTime = (t: string) => {
+                    const [h, m] = t.split(':')
+                    const hn = parseInt(h, 10)
+                    const ap = hn >= 12 ? 'pm' : 'am'
+                    const h12 = hn % 12 || 12
+                    return `${h12}:${m}${ap} PST`
+                }
+
+                const oldDateStr = formatDate(lesson.date)
+                const oldTimeStr = formatTime(lesson.time)
+                const newDateStr = formatDate(newDate)
+                const newTimeStr = formatTime(newTime)
+
+                await resend.emails.send({
+                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                    to: student.email,
+                    subject: `Lesson Rescheduled: ${newDateStr} at ${newTimeStr}`,
+                    react: LessonRescheduledEmail({
+                        studentName: student.name || 'Student',
+                        oldDate: oldDateStr,
+                        oldTime: oldTimeStr,
+                        newDate: newDateStr,
+                        newTime: newTimeStr,
+                        newDuration: newDuration,
+                        recipientName: student.name || 'Student',
+                        studioName
+                    })
+                })
+                console.log('Reschedule email sent to:', student.email)
+            }
+        } catch (emailError) {
+            console.error('Failed to send reschedule email:', emailError)
+        }
     }
 
     revalidatePath('/admin')
