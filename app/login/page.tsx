@@ -77,7 +77,7 @@ export default function LoginPage() {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <CardTitle className="text-3xl font-serif text-balance">Piano Studio Portal</CardTitle>
+            <CardTitle className="text-3xl font-serif text-balance">Lionel Yu Piano Studio</CardTitle>
             <CardDescription className="text-base">Enter your credentials to access your account</CardDescription>
           </div>
         </CardHeader>
@@ -101,7 +101,7 @@ export default function LoginPage() {
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="student@demo.com"
+                  placeholder="student@gmail.com"
                   className="pl-10 h-11"
                   required
                 />
@@ -137,7 +137,7 @@ export default function LoginPage() {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
 
-            <div className="space-y-3 pt-2">
+            {/* <div className="space-y-3 pt-2">
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
@@ -165,9 +165,9 @@ export default function LoginPage() {
                   Student Login
                 </Button>
               </div>
-            </div>
+            </div> */}
 
-            <div className="pt-4 text-center text-xs text-muted-foreground border-t">
+            {/* <div className="pt-4 text-center text-xs text-muted-foreground border-t">
               <p className="mb-2">Demo Credentials:</p>
               <p>
                 <strong>Student:</strong> student@demo.com / password123
@@ -175,7 +175,7 @@ export default function LoginPage() {
               <p>
                 <strong>Teacher:</strong> admin@demo.com / password123
               </p>
-            </div>
+            </div> */}
           </form>
         </CardContent>
       </Card>

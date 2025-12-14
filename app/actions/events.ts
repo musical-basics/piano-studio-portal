@@ -83,38 +83,48 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
         return []
     }
 
+    // Fetch current user details to get Timezone
+    const { data: { user } } = await supabase.auth.getUser()
+    let timezone = 'America/Los_Angeles' // Default
+
+    if (user) {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('timezone')
+            .eq('id', user.id)
+            .single()
+        if (profile?.timezone) {
+            timezone = profile.timezone
+        }
+        console.log(`[getAdminEvents] User: ${user.email}, Timezone: ${timezone}`)
+    }
+
     // Transform to AdminEvent shape
     return events.map((event: any) => {
         const invites: EventInvite[] = event.event_invites.map((invite: any) => ({
             student_id: invite.student_id,
             student_name: invite.profiles?.name || 'Unknown',
             status: invite.status,
-            responded_at: invite.updated_at, // Mapping updated_at to responded_at
+            responded_at: invite.updated_at,
             student_notes: invite.student_notes
         }))
 
-        // Extract date and time from ISO start_time if needed, 
-        // BUT the DB stores 'start_time' as ISO timestamp (presumably).
-        // The UI expects 'date' (YYYY-MM-DD) and 'start_time' (HH:MM) separately.
-        // We need to parse the DB's start_time.
-
+        // Extract date and time from ISO start_time
         const startDateTime = new Date(event.start_time)
-        // Adjust for timezone if necessary? standard ISO behavior usually fine if converted on client,
-        // but here we are returning strings.
-        // Assuming event.start_time is stored as ISO UTC. 
-        // To safe-guard, let's keep the date string logic simple.
-
-        // NOTE: The v0 UI expects 'date' and 'start_time' properties.
-        // If the DB has `start_time` as a full timestamptz, we split it.
-        // If the DB has separate columns, we use them.
-        // Based on my previous `createEvent`, I stored it as `start_time` (ISO).
-
         const dateStr = startDateTime.toISOString().split('T')[0]
-        // HH:MM format
         const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
 
-        // HACK: For now, I'll return the DB values if they exist, or parse them.
-        // The previous implementation stored ISO string in `start_time`.
+        // Handle RSVP Deadline (stored as ISO presumably)
+        let rsvpStr = ''
+        if (event.rsvp_deadline) {
+            const rsvpDate = new Date(event.rsvp_deadline)
+            rsvpStr = rsvpDate.toLocaleDateString('en-CA', {
+                timeZone: timezone,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            })
+        }
 
         return {
             id: event.id,
@@ -126,7 +136,7 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
             location_type: event.location_type,
             location_address: event.location_details, // Mapping location_details -> location_address/zoom_link
             zoom_link: event.location_type === 'virtual' ? event.location_details : undefined,
-            rsvp_deadline: event.rsvp_deadline?.split('T')[0] || '', // Extract YYYY-MM-DD
+            rsvp_deadline: event.rsvp_deadline?.split('T')[0] || '',
             invites: invites,
             created_at: event.created_at
         }
@@ -291,6 +301,15 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
         console.error('Error fetching student events:', error)
         return { upcoming: [], past: [] }
     }
+
+    // Fetch student timezone
+    // const { data: profile } = await supabase
+    //     .from('profiles')
+    //     .select('timezone')
+    //     .eq('id', user.id)
+    //     .single()
+
+    // const timezone = profile?.timezone || 'America/Los_Angeles'
 
     const now = new Date()
     const upcoming: StudentEvent[] = []

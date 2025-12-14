@@ -13,6 +13,24 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Video, MapPin, Sparkles, Users } from "lucide-react"
 import { getActiveStudents, createEvent, updateEvent, type CreateEventInput, type AdminEvent } from "@/app/actions/events"
 
+// Helper to extract LOCAL date and time from an ISO string
+const getLocalDateTime = (isoString: string) => {
+  const date = new Date(isoString); // Creates a date object in User's Local Time (PST)
+
+  // Manually build YYYY-MM-DD using local methods
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const localDate = `${year}-${month}-${day}`;
+
+  // Manually build HH:mm using local methods
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const localTime = `${hours}:${minutes}`;
+
+  return { localDate, localTime };
+};
+
 type Student = {
   id: string
   name: string
@@ -53,12 +71,24 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEd
       if (eventToEdit) {
         setTitle(eventToEdit.title)
         setDescription(eventToEdit.description)
-        setDate(eventToEdit.date)
-        setStartTime(eventToEdit.start_time)
+
+        // --- THE FIX: Convert UTC timestamp to Local Time before setting state ---
+        const { localDate, localTime } = getLocalDateTime(eventToEdit.start_time || `${eventToEdit.date}T${eventToEdit.start_time}`)
+
+        setDate(localDate)
+        setStartTime(localTime)
+        // ------------------------------------------------------------------------
+
         setDuration(eventToEdit.duration_minutes.toString())
         setLocationType(eventToEdit.location_type)
         setLocationAddress(eventToEdit.location_address || "")
-        setRsvpDeadline(eventToEdit.rsvp_deadline)
+
+        if (eventToEdit.rsvp_deadline) {
+          const { localDate: rsvpDate } = getLocalDateTime(eventToEdit.rsvp_deadline)
+          setRsvpDeadline(rsvpDate)
+        } else {
+          setRsvpDeadline("")
+        }
         // Invitees
         const invitedIds = eventToEdit.invites.map(i => i.student_id)
         setSelectedStudents(invitedIds)
