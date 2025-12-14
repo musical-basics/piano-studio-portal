@@ -11,6 +11,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ShieldAlert } from "lucide-react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +65,14 @@ export default async function AuthLogsPage() {
             <div className="flex items-center space-x-2">
                 <ShieldAlert className="h-6 w-6 text-muted-foreground" />
                 <h1 className="text-3xl font-bold tracking-tight">Login & Security Logs</h1>
+            </div>
+
+            <div className="flex justify-end">
+                <Button variant="outline" asChild>
+                    <Link href="/admin">
+                        Back to Admin Dashboard
+                    </Link>
+                </Button>
             </div>
 
             <Card>
