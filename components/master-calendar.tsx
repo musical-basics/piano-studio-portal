@@ -17,6 +17,26 @@ const formatDateKey = (date: Date) => {
     return `${year}-${month}-${day}`
 }
 
+// Helper to extract LOCAL date and time from an ISO string
+// (Same as in create-event-modal.tsx)
+const getLocalDateTime = (isoString: string) => {
+    if (!isoString) return { localDate: '', localTime: '' }
+
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return { localDate: '', localTime: '' }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const localDate = `${year}-${month}-${day}`;
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const localTime = `${hours}:${minutes}`;
+
+    return { localDate, localTime };
+};
+
 export type CalendarLesson = Lesson & {
     student: {
         name: string | null
@@ -93,9 +113,14 @@ export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDe
                 student_notes: invite.student_notes
             })) || []
 
-            const startDateTime = new Date(e.start_time)
-            const dateStr = startDateTime.toISOString().split('T')[0]
-            const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+
+
+            // Fix: Use Local Time for Calendar Display (avoids timezone shift)
+            const { localDate, localTime } = getLocalDateTime(e.start_time)
+
+            // Fallback if parsing failed
+            const dateStr = localDate
+            const timeStr = localTime
 
             return {
                 id: e.id,
@@ -107,7 +132,7 @@ export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDe
                 location_type: e.location_type,
                 location_address: e.location_details, // or logic from getAdminEvents
                 zoom_link: e.location_type === 'virtual' ? e.location_details : undefined,
-                rsvp_deadline: e.rsvp_deadline?.split('T')[0] || '',
+                rsvp_deadline: e.rsvp_deadline ? getLocalDateTime(e.rsvp_deadline).localDate : '',
                 invites: invites,
                 created_at: e.created_at,
                 type: 'event'

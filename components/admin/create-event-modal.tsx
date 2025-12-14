@@ -73,10 +73,20 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEd
         setDescription(eventToEdit.description)
 
         // --- THE FIX: Convert UTC timestamp to Local Time before setting state ---
-        const { localDate, localTime } = getLocalDateTime(eventToEdit.start_time || `${eventToEdit.date}T${eventToEdit.start_time}`)
+        // --- FIX: Handle both ISO (fresh fetch) and HH:MM (from Calendar) formats ---
+        const timeValue = eventToEdit.start_time || ''
+        const dateValue = eventToEdit.date || ''
 
-        setDate(localDate)
-        setStartTime(localTime)
+        // Check if timeValue is an ISO string (contains 'T')
+        if (timeValue.includes('T')) {
+          const { localDate, localTime } = getLocalDateTime(timeValue)
+          setDate(localDate)
+          setStartTime(localTime)
+        } else {
+          // Assume it's already HH:MM and Date is YYYY-MM-DD
+          setDate(dateValue)
+          setStartTime(timeValue)
+        }
         // ------------------------------------------------------------------------
 
         setDuration(eventToEdit.duration_minutes.toString())
@@ -84,11 +94,16 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEd
         setLocationAddress(eventToEdit.location_address || "")
 
         if (eventToEdit.rsvp_deadline) {
-          const { localDate: rsvpDate } = getLocalDateTime(eventToEdit.rsvp_deadline)
-          setRsvpDeadline(rsvpDate)
+          if (eventToEdit.rsvp_deadline.includes('T')) {
+            const { localDate: rsvpDate } = getLocalDateTime(eventToEdit.rsvp_deadline)
+            setRsvpDeadline(rsvpDate)
+          } else {
+            setRsvpDeadline(eventToEdit.rsvp_deadline)
+          }
         } else {
           setRsvpDeadline("")
         }
+
         // Invitees
         const invitedIds = eventToEdit.invites.map(i => i.student_id)
         setSelectedStudents(invitedIds)
