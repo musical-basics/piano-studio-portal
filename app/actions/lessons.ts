@@ -580,9 +580,20 @@ export async function rescheduleLesson(
             const { updateZoomMeeting } = await import('@/lib/zoom')
             // Construct ISO time
             const startDateTime = `${newDate}T${newTime}:00`
+            // Fetch student name for the topic if we haven't already (we need it for the email anyway)
+            const { data: studentForZoom } = await supabase
+                .from('profiles')
+                .select('name')
+                .eq('id', lesson.student_id)
+                .single()
+
+            const topic = studentForZoom?.name
+                ? `${studentForZoom.name} - Piano Lesson`
+                : 'Piano Lesson'
+
             await updateZoomMeeting(
                 lessonWithZoom.zoom_meeting_id,
-                'Rescheduled Piano Lesson', // Topic
+                topic,
                 startDateTime,
                 newDuration
             )
