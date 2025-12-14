@@ -40,7 +40,7 @@ export async function createZoomMeeting(
     topic: string,
     startTime: string, // ISO format
     durationMinutes: number
-): Promise<string | null> {
+): Promise<{ id: string, join_url: string } | null> {
     const token = await getZoomAccessToken()
 
     if (!token) {
@@ -76,9 +76,75 @@ export async function createZoomMeeting(
         }
 
         const data = await response.json()
-        return data.join_url
+        return {
+            id: String(data.id),
+            join_url: data.join_url
+        }
     } catch (error) {
         console.error('Failed to create Zoom meeting:', error)
         return null
+    }
+}
+
+
+export async function deleteZoomMeeting(meetingId: string): Promise<boolean> {
+    const token = await getZoomAccessToken()
+    if (!token) return false
+
+    try {
+        const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {
+            method: 'DELETE',
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        })
+
+        if (!response.ok && response.status !== 404) { // 404 means already deleted
+            const errorText = await response.text()
+            console.error('Zoom delete meeting error:', errorText)
+            return false
+        }
+
+        return true
+    } catch (error) {
+        console.error('Failed to delete Zoom meeting:', error)
+        return false
+    }
+}
+
+export async function updateZoomMeeting(
+    meetingId: string,
+    topic: string,
+    startTime: string,
+    duration: number
+): Promise<boolean> {
+    const token = await getZoomAccessToken()
+    if (!token) return false
+
+    try {
+        const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {
+            method: 'PATCH',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                topic,
+                start_time: startTime,
+                duration,
+                timezone: 'America/Los_Angeles' // Keep consistent
+            })
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            console.error('Zoom update meeting error:', errorText)
+            return false
+        }
+
+        return true
+    } catch (error) {
+        console.error('Failed to update Zoom meeting:', error)
+        return false
     }
 }

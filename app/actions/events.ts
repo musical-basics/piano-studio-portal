@@ -178,13 +178,13 @@ export async function createEvent(
     if (input.location_type === 'virtual') {
         // Construct full ISO string for Zoom
         const isoDateTime = new Date(`${input.date}T${input.start_time}`).toISOString()
-        const zoomLink = await createZoomMeeting(
+        const zoomMeeting = await createZoomMeeting(
             input.title,
             isoDateTime,
             input.duration_minutes
         )
-        if (zoomLink) {
-            locationDetails = zoomLink
+        if (zoomMeeting) {
+            locationDetails = zoomMeeting.join_url
         }
     }
 
@@ -420,13 +420,13 @@ export async function updateEvent(
         // Construct full ISO string for Zoom
         // Note: Ideally we update the existing meeting rather than creating new, but for now this ensures link is valid.
         const isoDateTime = new Date(`${input.date}T${input.start_time}`).toISOString()
-        const zoomLink = await createZoomMeeting(
+        const zoomMeeting = await createZoomMeeting(
             input.title,
             isoDateTime,
             input.duration_minutes
         )
-        if (zoomLink) {
-            locationDetails = zoomLink
+        if (zoomMeeting) {
+            locationDetails = zoomMeeting.join_url
         } else if (!locationDetails) {
             // Keep existing if we didn't get a new one and have none? 
             // Actually input.location_address likely contains the existing link if we prefilled it.

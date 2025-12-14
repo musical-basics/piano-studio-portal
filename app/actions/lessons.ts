@@ -365,6 +365,14 @@ export async function cancelLesson(lessonId: string) {
         return { error: 'Lesson not found' }
     }
 
+    // Get zoom_meeting_id if exists (fetch it)
+    const { data: lessonDetails } = await supabase
+        .from('lessons')
+        .select('zoom_meeting_id')
+        .eq('id', lessonId)
+        .single()
+    const zoomMeetingId = lessonDetails?.zoom_meeting_id
+
     // Verify user owns this lesson or is admin
     const { data: profile } = await supabase
         .from('profiles')
@@ -420,6 +428,17 @@ export async function cancelLesson(lessonId: string) {
     if (deleteError) {
         console.error('Delete lesson error:', deleteError)
         return { error: 'Failed to cancel lesson: ' + deleteError.message }
+    }
+
+    // Attempt to delete from Zoom
+    if (zoomMeetingId) {
+        try {
+            const { deleteZoomMeeting } = await import('@/lib/zoom')
+            const deleted = await deleteZoomMeeting(zoomMeetingId)
+            if (deleted) console.log(`Zoom meeting ${zoomMeetingId} deleted.`)
+        } catch (e) {
+            console.error('Failed to delete Zoom meeting:', e)
+        }
     }
 
     console.log(`Lesson ${lessonId} deleted. Refund: ${shouldRefund}`)
@@ -527,6 +546,13 @@ export async function rescheduleLesson(
         return { error: 'Lesson not found' }
     }
 
+    // Fetch existing meeting ID
+    const { data: lessonWithZoom } = await supabase
+        .from('lessons')
+        .select('zoom_meeting_id')
+        .eq('id', lessonId)
+        .single()
+
     // CONFLICT CHECK: Master Calendar
     const isAvailable = await checkAvailability(newDate, newTime, newDuration, lessonId)
     if (!isAvailable) {
@@ -546,6 +572,24 @@ export async function rescheduleLesson(
 
     if (updateError) {
         return { error: updateError.message }
+    }
+
+    // Update Zoom Meeting
+    if (lessonWithZoom?.zoom_meeting_id) {
+        try {
+            const { updateZoomMeeting } = await import('@/lib/zoom')
+            // Construct ISO time
+            const startDateTime = `${newDate}T${newTime}:00`
+            await updateZoomMeeting(
+                lessonWithZoom.zoom_meeting_id,
+                'Rescheduled Piano Lesson', // Topic
+                startDateTime,
+                newDuration
+            )
+            console.log(`Zoom meeting ${lessonWithZoom.zoom_meeting_id} updated.`)
+        } catch (e) {
+            console.error('Failed to update Zoom meeting:', e)
+        }
     }
 
     // Send Reschedule Email
@@ -705,18 +749,22 @@ export async function scheduleLesson(
 
     // Create Zoom meeting (Best Effort)
     let zoomLink = null
+    let zoomMeetingId = null
+
     try {
         const { createZoomMeeting } = await import('@/lib/zoom')
         // Format start time for Zoom: "YYYY-MM-DDTHH:MM:SS"
         // Ensure date and time are clean
         const startDateTime = `${date}T${time}:00`
-        zoomLink = await createZoomMeeting(
+        const zoomData = await createZoomMeeting(
             `${student.name} - Piano Lesson`,
             startDateTime,
             duration
         )
-        if (zoomLink) {
-            console.log('Zoom meeting created:', zoomLink)
+        if (zoomData) {
+            zoomLink = zoomData.join_url
+            zoomMeetingId = zoomData.id
+            console.log('Zoom meeting created:', zoomLink, zoomMeetingId)
         }
     } catch (zoomError) {
         console.error('Failed to create Zoom meeting, proceeding without:', zoomError)
@@ -732,7 +780,8 @@ export async function scheduleLesson(
         date,
         time,
         status: 'scheduled',
-        zoom_link: zoomLink // Add zoom link
+        zoom_link: zoomLink, // Add zoom link
+        zoom_meeting_id: zoomMeetingId
     }
 
     // We try to insert duration if the column exists (it's in Schema but check robustly)
