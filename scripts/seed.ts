@@ -32,7 +32,7 @@ async function seed() {
     }
 
     // 2. Create/update admin user
-    const adminId = await createOrGetUser('admin@demo.com', 'password123')
+    const adminId = await createOrGetUser('support@musicalbasics.com', 'password123')
     if (adminId) {
         await seedAdminProfile(adminId)
     }
@@ -40,7 +40,7 @@ async function seed() {
     console.log('\n🎉 Seed completed successfully!')
     console.log('\n📋 Test credentials:')
     console.log('  Student: student@demo.com / password123')
-    console.log('  Admin:   admin@demo.com / password123')
+    console.log('  Admin:   support@musicalbasics.com / password123')
 }
 
 async function createOrGetUser(email: string, password: string): Promise<string | null> {
@@ -169,7 +169,7 @@ async function seedAdminProfile(userId: string) {
         .upsert({
             id: userId,
             name: 'Professor Williams',
-            email: 'admin@demo.com',
+            email: 'support@musicalbasics.com',
             phone: '(555) 987-6543',
             role: 'admin',
             credits: 0,
