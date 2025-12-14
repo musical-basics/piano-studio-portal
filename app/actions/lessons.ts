@@ -2,6 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { Resend } from 'resend'
+import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
+
+// Initialize Resend
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 /**
  * Check if a time slot is available (not booked by ANY student)
@@ -661,6 +666,62 @@ export async function scheduleLesson(
 
     // CREDIT DEDUCTION REMOVED per requirements.
     // Credits are now only deducted when a lesson is logged (completed) or marked no-show.
+
+    // Send Email Notifications
+    if (resend && student.email) {
+        try {
+            // Get Admin Profile for studio name (or use default)
+            const { data: adminProfile } = await supabase
+                .from('profiles')
+                .select('name, studio_name')
+                .eq('id', user.id)
+                .single()
+
+            const studioName = adminProfile?.studio_name || 'Piano Studio'
+            const adminName = adminProfile?.name || 'Teacher'
+
+            // Email to Student
+            await resend.emails.send({
+                from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                to: student.email,
+                subject: `Lesson Scheduled: ${date} at ${time}`,
+                react: LessonScheduledEmail({
+                    studentName: student.name || 'Student',
+                    date,
+                    time,
+                    duration,
+                    zoomLink,
+                    recipientName: student.name || 'Student',
+                    studioName
+                })
+            })
+
+            // Email to Teacher (Confirmation)
+            // We use user.email which is the admin's email since they are the one scheduling
+            if (user.email) {
+                await resend.emails.send({
+                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                    to: user.email,
+                    subject: `Lesson Scheduled: ${student.name} - ${date} ${time}`,
+                    react: LessonScheduledEmail({
+                        studentName: student.name || 'Student',
+                        date,
+                        time,
+                        duration,
+                        zoomLink,
+                        recipientName: adminName,
+                        studioName
+                    })
+                })
+            }
+
+            console.log(`Emails sent for lesson: ${date} ${time}`)
+
+        } catch (emailError) {
+            console.error('Failed to send email notifications:', emailError)
+            // Don't block success return
+        }
+    }
 
     revalidatePath('/admin')
     revalidatePath('/student')
