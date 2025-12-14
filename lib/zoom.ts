@@ -39,7 +39,8 @@ export async function getZoomAccessToken(): Promise<string | null> {
 export async function createZoomMeeting(
     topic: string,
     startTime: string, // ISO format
-    durationMinutes: number
+    durationMinutes: number,
+    inviteeEmail?: string
 ): Promise<{ id: string, join_url: string } | null> {
     const token = await getZoomAccessToken()
 
@@ -64,7 +65,8 @@ export async function createZoomMeeting(
                     join_before_host: true,
                     waiting_room: false,
                     mute_upon_entry: true,
-                    auto_recording: 'none'
+                    auto_recording: 'none',
+                    meeting_invitees: inviteeEmail ? [{ email: inviteeEmail }] : undefined
                 }
             }),
         })

@@ -3,7 +3,7 @@ import { AddStudentModal } from "@/components/add-student-modal"
 import { EditStudentModal } from "@/components/edit-student-modal"
 import { MasterCalendar } from "./master-calendar"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
-import { useState, useRef, Suspense } from "react"
+import React, { useState, useRef, Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -54,6 +54,13 @@ export interface AdminDashboardProps {
 
 export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread }: AdminDashboardProps) {
     const { toast } = useToast()
+
+    const [isMounted, setIsMounted] = useState(false)
+
+    // Handle hydration mismatch by waiting for mount
+    React.useEffect(() => {
+        setIsMounted(true)
+    }, [])
 
     // Client-side date calculation for robust timezone handling
     // We want YYYY-MM-DD in local time
@@ -523,6 +530,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         month: 'long',
         day: 'numeric'
     })
+
+    // Prevent hydration mismatch by not rendering until mounted
+    if (!isMounted) {
+        return null
+    }
 
     return (
         <div className="min-h-screen bg-background">

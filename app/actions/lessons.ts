@@ -759,7 +759,8 @@ export async function scheduleLesson(
         const zoomData = await createZoomMeeting(
             `${student.name} - Piano Lesson`,
             startDateTime,
-            duration
+            duration,
+            student.email // Pass email for official invite
         )
         if (zoomData) {
             zoomLink = zoomData.join_url
