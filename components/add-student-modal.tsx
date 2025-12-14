@@ -102,6 +102,16 @@ export function AddStudentModal() {
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="parentEmail">Parent Email (Optional - for CC)</Label>
+                        <Input
+                            id="parentEmail"
+                            name="parentEmail"
+                            type="email"
+                            placeholder="parent@example.com"
+                        />
+                    </div>
+
+                    <div className="space-y-2">
                         <Label htmlFor="phone">Phone (optional)</Label>
                         <Input
                             id="phone"

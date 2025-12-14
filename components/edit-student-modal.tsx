@@ -131,6 +131,17 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="parentEmail">Parent Email (Optional - for CC)</Label>
+                        <Input
+                            id="parentEmail"
+                            name="parentEmail"
+                            type="email"
+                            defaultValue={student.parent_email || ''}
+                            placeholder="parent@example.com"
+                        />
+                    </div>
+
+                    <div className="space-y-2">
                         <Label htmlFor="credits">Current Credits</Label>
                         <Input
                             id="credits"

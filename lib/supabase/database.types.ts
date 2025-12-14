@@ -27,6 +27,7 @@ export interface Database {
                     available_hours: Json | null
                     timezone: string | null
                     studio_name: string | null
+                    parent_email: string | null
                     created_at: string
                     updated_at: string
                 }

@@ -11,6 +11,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 export async function createStudent(formData: FormData) {
     const name = formData.get('name') as string
     const email = formData.get('email') as string
+    const parentEmail = formData.get('parentEmail') as string | null
     const phone = formData.get('phone') as string | null
     const credits = parseInt(formData.get('credits') as string) || 0
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
@@ -73,6 +74,7 @@ export async function createStudent(formData: FormData) {
                 id: authData.user.id,
                 name,
                 email,
+                parent_email: parentEmail || null,
                 phone: phone || null,
                 role: 'student',
                 credits,
@@ -110,6 +112,7 @@ export async function updateStudent(formData: FormData) {
     const id = formData.get('id') as string
     const name = formData.get('name') as string
     const email = formData.get('email') as string
+    const parentEmail = formData.get('parentEmail') as string | null
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
     const lessonDay = formData.get('lessonDay') as string || null
 
@@ -176,6 +179,7 @@ export async function updateStudent(formData: FormData) {
             .update({
                 name,
                 email,
+                parent_email: parentEmail || null,
                 lesson_duration: lessonDuration,
                 lesson_day: lessonDay,
                 ...(credits !== undefined && { credits }), // Only update if provided

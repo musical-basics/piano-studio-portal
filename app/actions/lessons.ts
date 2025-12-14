@@ -732,7 +732,7 @@ export async function scheduleLesson(
     // Verify student exists
     const { data: student, error: studentError } = await supabase
         .from('profiles')
-        .select('id, name, email')
+        .select('id, name, email, parent_email')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -756,11 +756,12 @@ export async function scheduleLesson(
         // Format start time for Zoom: "YYYY-MM-DDTHH:MM:SS"
         // Ensure date and time are clean
         const startDateTime = `${date}T${time}:00`
+        const inviteeEmails = [student.email, student.parent_email].filter(Boolean) as string[]
         const zoomData = await createZoomMeeting(
             `${student.name} - Piano Lesson`,
             startDateTime,
             duration,
-            student.email // Pass email for official invite
+            inviteeEmails
         )
         if (zoomData) {
             zoomLink = zoomData.join_url

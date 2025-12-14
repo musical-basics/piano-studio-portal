@@ -1,0 +1,17 @@
+# Project Rules & Preferences
+
+1. **Package Manager:** ALWAYS use `pnpm`. Do not use `npm` or `yarn`.
+   - Install: `pnpm install`
+   - Add: `pnpm add [package]`
+   - Run: `pnpm run [script]`
+   - Dev: `pnpm run dev`
+
+2. **Tech Stack:**
+   - Framework: Next.js 14 (App Router)
+   - Database: Supabase (PostgreSQL)
+   - UI: Shadcn UI + Tailwind CSS
+   - Language: TypeScript
+
+3. **Behavior:**
+   - Always check `pnpm-lock.yaml` if you need to verify installed versions.
+   - If a command fails, check if it was run with `npm` and retry with `pnpm`.
