@@ -403,14 +403,37 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     }
 
     const onEditCalendarLesson = (lesson: CalendarLesson) => {
-        // Adapt CalendarLesson to LessonWithStudent?
-        // CalendarLesson has user (student) as {name, email}. LessonWithStudent expects Profile.
-        // But handleReschedule mainly uses student_id.
-        // And it tries to find student in 'students' array.
-        // So passing the lesson object is sufficient if types align or we cast.
-        // CalendarLesson extends Lesson.
-        const lessonWithId = { ...lesson } as any
-        handleReschedule(lessonWithId)
+        // Fork in the Road Logic:
+        // Future -> Reschedule
+        // Past -> Log/Complete
+
+        const now = new Date()
+        const lessonDate = new Date(`${lesson.date}T${lesson.time}`) // ISO string for comparison
+
+        if (lessonDate < now) {
+            // Past: Open Log Lesson Modal
+            // Adapt CalendarLesson to TodayLesson (needs 'student' as Profile)
+            // We create a minimal Profile object sufficient for display
+            const minimalStudentProfile: any = {
+                id: lesson.student_id,
+                name: lesson.student?.name || 'Unknown',
+                email: lesson.student?.email || '',
+                // Other fields are not critical for Log Modal display
+                credits: 0,
+            }
+
+            const todayLessonAdapter: TodayLesson = {
+                ...lesson,
+                student: minimalStudentProfile,
+                status: 'scheduled', // or 'completed' if we are re-logging? But usually it's 'scheduled' if it's on calendar
+            } as any
+
+            handleLogLesson(todayLessonAdapter)
+        } else {
+            // Future: Open Reschedule Modal
+            const lessonWithId = { ...lesson } as any
+            handleReschedule(lessonWithId)
+        }
     }
 
     const onDeleteCalendarLesson = (lesson: CalendarLesson) => {
