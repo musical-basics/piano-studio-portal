@@ -47,6 +47,8 @@ export async function savePage(
     scriptContent: string,
     variableValues: Record<string, string>
 ): Promise<{ success: boolean; error?: string }> {
+
+    console.log("Attempting to save page:", { id })
     const supabase = await createClient()
 
     // Verify user is authenticated and is admin (using regular client)
@@ -66,6 +68,9 @@ export async function savePage(
     }
 
     // Use Service Role client for valid Admin operations to bypass RLS complexities
+    const hasServiceKey = !!process.env.SUPABASE_SERVICE_KEY
+    console.log("Has Service Key:", hasServiceKey)
+
     const supabaseAdmin = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_KEY!,
@@ -78,22 +83,28 @@ export async function savePage(
     )
 
     // Upsert the page
-    const { error } = await supabaseAdmin
+    const payload = {
+        id,
+        html_template: htmlTemplate,
+        script_content: scriptContent,
+        variable_values: variableValues,
+        updated_at: new Date().toISOString()
+    }
+    console.log("Upserting Payload ID:", id)
+
+    const { data: upsertData, error } = await supabaseAdmin
         .from('site_pages')
-        .upsert({
-            id,
-            html_template: htmlTemplate,
-            script_content: scriptContent,
-            variable_values: variableValues,
-            updated_at: new Date().toISOString()
-        }, {
+        .upsert(payload, {
             onConflict: 'id'
         })
+        .select()
 
     if (error) {
         console.error('Save page error:', error)
         return { success: false, error: error.message }
     }
+
+    console.log("Upsert Success. Data:", upsertData)
 
     // Revalidate the public page
     revalidatePath('/')

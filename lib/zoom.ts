@@ -62,8 +62,8 @@ export async function createZoomMeeting(
                 duration: durationMinutes,
                 timezone: 'America/Los_Angeles', // Hardcoded for this studio as requested
                 settings: {
-                    join_before_host: true,
-                    waiting_room: false,
+                    join_before_host: false,
+                    waiting_room: true,
                     mute_upon_entry: true,
                     auto_recording: 'none',
                     meeting_invitees: inviteeEmails.map(email => ({ email }))

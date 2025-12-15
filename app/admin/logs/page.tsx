@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ShieldAlert } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { LocalTimestamp } from "@/components/local-timestamp"
 
 export const dynamic = 'force-dynamic'
 
@@ -34,15 +35,7 @@ export default async function AuthLogsPage() {
         )
     }
 
-    const formatTime = (isoString: string) => {
-        return new Date(isoString).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            second: '2-digit'
-        })
-    }
+
 
     const getStatusBadge = (status: string) => {
         if (status === 'success') return <Badge className="bg-green-600">Success</Badge>
@@ -97,7 +90,7 @@ export default async function AuthLogsPage() {
                             {logs?.map((log) => (
                                 <TableRow key={log.id}>
                                     <TableCell className="font-mono text-xs text-muted-foreground">
-                                        {formatTime(log.created_at)}
+                                        <LocalTimestamp date={log.created_at} />
                                     </TableCell>
                                     <TableCell>{log.user_email}</TableCell>
                                     <TableCell>{getEventBadge(log.event_type)}</TableCell>

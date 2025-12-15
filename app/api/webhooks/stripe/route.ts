@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import React from 'react'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
             // Get current credits
             const { data: profile, error: fetchError } = await supabaseAdmin
                 .from('profiles')
-                .select('credits, credits_total')
+                .select('credits, credits_total, email')
                 .eq('id', userId)
                 .single()
 
@@ -102,6 +103,49 @@ export async function POST(request: Request) {
             processedEvents.add(session.id)
 
             console.log(`Successfully added ${creditAmount} credits to user ${userId}`)
+
+            // Log to Auth Audit Logs (Payment Success)
+            try {
+                await supabaseAdmin
+                    .from('auth_audit_logs')
+                    .insert({
+                        user_email: profile?.email || 'unknown',
+                        event_type: 'payment_success',
+                        status: 'success',
+                        details: `Purchased ${creditAmount} credits ($${(session.amount_total || 0) / 100})`
+                    })
+            } catch (logError) {
+                console.error('Failed to log payment success:', logError)
+            }
+
+            // Send Confirmation Email
+            if (process.env.RESEND_API_KEY && profile?.email) {
+                try {
+                    const { Resend } = await import('resend')
+                    const { PaymentConfirmationEmail } = await import('@/components/emails/payment-confirmation-email')
+                    const resend = new Resend(process.env.RESEND_API_KEY)
+
+                    const { data: emailData, error: emailError } = await resend.emails.send({
+                        from: 'Lionel Yu Piano Studio <support@musicalbasics.com>',
+                        to: profile.email,
+                        subject: 'Payment Confirmation - Credits Added',
+                        react: PaymentConfirmationEmail({
+                            amount: (session.amount_total || 0) / 100,
+                            credits: creditAmount,
+                            date: new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })
+                        }) as React.ReactElement
+                    })
+
+                    if (emailError) {
+                        console.error('Failed to send confirmation email:', emailError)
+                    } else {
+                        console.log('Confirmation email sent:', emailData?.id)
+                    }
+                } catch (emailExc) {
+                    console.error('Error initiating email sending:', emailExc)
+                }
+            }
+
         } catch (error) {
             console.error('Webhook processing error:', error)
             return NextResponse.json({ error: 'Processing error' }, { status: 500 })
