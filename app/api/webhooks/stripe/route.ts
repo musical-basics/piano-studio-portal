@@ -21,6 +21,10 @@ const supabaseAdmin = createClient(
 // In production, use Redis or database for this
 const processedEvents = new Set<string>()
 
+export async function GET() {
+    return NextResponse.json({ status: 'healthy', message: 'Stripe webhook endpoint is active' })
+}
+
 export async function POST(request: Request) {
     const body = await request.text()
     const signature = request.headers.get('stripe-signature')
