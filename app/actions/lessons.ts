@@ -758,14 +758,13 @@ export async function scheduleLesson(
         return { error: 'This time slot is already booked by another student.' }
     }
 
-    // Create Zoom meeting (Best Effort)
+    // Create Zoom meeting (Best Effort with Fallback)
     let zoomLink = null
     let zoomMeetingId = null
 
     try {
         const { createZoomMeeting } = await import('@/lib/zoom')
         // Format start time for Zoom: "YYYY-MM-DDTHH:MM:SS"
-        // Ensure date and time are clean
         const startDateTime = `${date}T${time}:00`
         const inviteeEmails = [student.email, student.parent_email].filter(Boolean) as string[]
         const zoomData = await createZoomMeeting(
@@ -777,15 +776,29 @@ export async function scheduleLesson(
         if (zoomData) {
             zoomLink = zoomData.join_url
             zoomMeetingId = zoomData.id
-            console.log('Zoom meeting created:', zoomLink, zoomMeetingId)
+            console.log('Zoom meeting created successfully:', zoomLink, zoomMeetingId)
         }
     } catch (zoomError) {
-        console.error('Failed to create Zoom meeting, proceeding without:', zoomError)
+        console.error('Dynamic Zoom creation failed:', zoomError)
     }
 
-    // Create the lesson - try with duration first
-    let lesson = null
-    let lessonError = null
+    // Fallback: If dynamic generation failed (or returned null), try to use the Admin's static link
+    if (!zoomLink) {
+        console.log('Falling back to static Zoom link logic...')
+        // Fetch Admin Profile to get static zoom_link
+        const { data: adminProfile } = await supabase
+            .from('profiles')
+            .select('zoom_link')
+            .eq('id', user.id)
+            .single()
+
+        if (adminProfile?.zoom_link) {
+            zoomLink = adminProfile.zoom_link
+            console.log('Using fallback static Zoom link:', zoomLink)
+        } else {
+            console.warn('No fallback Zoom link found in admin profile.')
+        }
+    }
 
     // Prepare insert payload logic
     const lessonPayload: any = {
@@ -793,9 +806,13 @@ export async function scheduleLesson(
         date,
         time,
         status: 'scheduled',
-        zoom_link: zoomLink, // Add zoom link
+        zoom_link: zoomLink,
         zoom_meeting_id: zoomMeetingId
     }
+
+    // Initialize result variables
+    let lesson = null
+    let lessonError = null
 
     // We try to insert duration if the column exists (it's in Schema but check robustly)
     // The previous code had a retry block for duration, I will adapt it.

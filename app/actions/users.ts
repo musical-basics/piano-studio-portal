@@ -242,6 +242,7 @@ export async function updateProfileSettings(formData: FormData) {
         if (name) updates.name = name
         if (timezone) updates.timezone = timezone
         if (studioName !== undefined) updates.studio_name = studioName
+        if (formData.get('zoomLink') !== undefined) updates.zoom_link = formData.get('zoomLink') as string
         if (availableHoursStr) {
             try {
                 updates.available_hours = JSON.parse(availableHoursStr)

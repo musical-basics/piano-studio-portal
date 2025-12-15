@@ -1,5 +1,14 @@
 
+// Basic in-memory cache for the token
+let cachedToken: string | null = null
+let tokenExpiry: number | null = null
+
 export async function getZoomAccessToken(): Promise<string | null> {
+    // Check cache
+    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) {
+        return cachedToken
+    }
+
     const accountId = process.env.ZOOM_ACCOUNT_ID
     const clientId = process.env.ZOOM_CLIENT_ID
     const clientSecret = process.env.ZOOM_CLIENT_SECRET
@@ -29,6 +38,11 @@ export async function getZoomAccessToken(): Promise<string | null> {
         }
 
         const data = await response.json()
+
+        // Cache token (subtract 60s buffer for safety)
+        cachedToken = data.access_token
+        tokenExpiry = Date.now() + (data.expires_in - 60) * 1000
+
         return data.access_token
     } catch (error) {
         console.error('Failed to get Zoom access token:', error)
@@ -45,30 +59,34 @@ export async function createZoomMeeting(
     const token = await getZoomAccessToken()
 
     if (!token) {
+        console.error('Could not obtain Zoom access token')
         return null
     }
 
     try {
+        // Construct payload
+        const payload: any = {
+            topic,
+            type: 2, // Scheduled meeting
+            start_time: startTime,
+            duration: durationMinutes,
+            timezone: 'America/Los_Angeles', // Hardcoded for this studio
+            settings: {
+                join_before_host: false,
+                waiting_room: true,
+                mute_upon_entry: true,
+                auto_recording: 'cloud', // Enable cloud recording by default if requested
+                meeting_invitees: inviteeEmails.map(email => ({ email }))
+            }
+        }
+
         const response = await fetch('https://api.zoom.us/v2/users/me/meetings', {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                topic,
-                type: 2, // Scheduled meeting
-                start_time: startTime,
-                duration: durationMinutes,
-                timezone: 'America/Los_Angeles', // Hardcoded for this studio as requested
-                settings: {
-                    join_before_host: false,
-                    waiting_room: true,
-                    mute_upon_entry: true,
-                    auto_recording: 'none',
-                    meeting_invitees: inviteeEmails.map(email => ({ email }))
-                }
-            }),
+            body: JSON.stringify(payload),
         })
 
         if (!response.ok) {
@@ -87,7 +105,6 @@ export async function createZoomMeeting(
         return null
     }
 }
-
 
 export async function deleteZoomMeeting(meetingId: string): Promise<boolean> {
     const token = await getZoomAccessToken()
@@ -134,7 +151,7 @@ export async function updateZoomMeeting(
                 topic,
                 start_time: startTime,
                 duration,
-                timezone: 'America/Los_Angeles' // Keep consistent
+                timezone: 'America/Los_Angeles'
             })
         })
 

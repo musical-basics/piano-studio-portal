@@ -43,6 +43,7 @@ export function ProfileSettingsDialog({ profile, open, onOpenChange, trigger }: 
     // Form State
     const [name, setName] = useState(profile.name || "")
     const [studioName, setStudioName] = useState(profile.studio_name || "")
+    const [zoomLink, setZoomLink] = useState(profile.zoom_link || "")
     const [email, setEmail] = useState(profile.email || "")
     const [password, setPassword] = useState("")
     const [timezone, setTimezone] = useState(profile.timezone as string || "UTC")
@@ -103,6 +104,7 @@ export function ProfileSettingsDialog({ profile, open, onOpenChange, trigger }: 
         const formData = new FormData()
         formData.append('name', name)
         formData.append('studioName', studioName)
+        formData.append('zoomLink', zoomLink)
         formData.append('email', email)
         if (password) formData.append('password', password)
         formData.append('timezone', timezone)
@@ -164,6 +166,16 @@ export function ProfileSettingsDialog({ profile, open, onOpenChange, trigger }: 
                                         value={studioName}
                                         onChange={(e) => setStudioName(e.target.value)}
                                     />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="zoomLink">Default Zoom Link</Label>
+                                    <Input
+                                        id="zoomLink"
+                                        placeholder="e.g. https://zoom.us/j/1234567890"
+                                        value={zoomLink}
+                                        onChange={(e) => setZoomLink(e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">Used if automatic link generation fails.</p>
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="email">Email Address</Label>
