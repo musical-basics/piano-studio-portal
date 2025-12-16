@@ -509,7 +509,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                     <h2 className="text-2xl font-serif font-semibold">Messages</h2>
                                     {unreadMessages > 0 && <Badge variant="secondary">{unreadMessages} unread</Badge>}
                                 </div>
-                                <MessagesPanel studentId={profile.id} />
+                                <MessagesPanel studentId={profile.id} teacherName={teacherName} />
                             </TabsContent>
                         </Tabs>
                     </div>

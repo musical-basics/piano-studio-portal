@@ -155,6 +155,7 @@ export async function getAdminProfile() {
         .from('profiles')
         .select('id, name, email')
         .eq('role', 'admin')
+        .order('created_at', { ascending: false })
         .limit(1)
         .single()
 

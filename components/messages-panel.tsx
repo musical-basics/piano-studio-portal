@@ -16,7 +16,7 @@ interface MessagesPanelProps {
   teacherName?: string
 }
 
-export function MessagesPanel({ studentId, teacherName = "Professor Williams" }: MessagesPanelProps) {
+export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
@@ -124,7 +124,7 @@ export function MessagesPanel({ studentId, teacherName = "Professor Williams" }:
               <Music className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle className="text-lg font-serif">{currentTeacherName}</CardTitle>
+              <CardTitle className="text-lg font-serif">{currentTeacherName || "Your Instructor"}</CardTitle>
               <p className="text-sm text-muted-foreground">Your Instructor</p>
             </div>
           </div>

@@ -15,7 +15,7 @@ interface ChatWidgetProps {
   unreadCount: number
 }
 
-export function ChatWidget({ studentId, teacherName = "Professor Williams", unreadCount: initialUnreadCount }: ChatWidgetProps) {
+export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadCount }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
@@ -153,7 +153,7 @@ export function ChatWidget({ studentId, teacherName = "Professor Williams", unre
                 <Music className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-serif font-semibold">{currentTeacherName}</h3>
+                <h3 className="font-serif font-semibold">{currentTeacherName || "Your Instructor"}</h3>
                 <p className="text-xs text-primary-foreground/70">Your Instructor</p>
               </div>
             </div>
