@@ -6,16 +6,28 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
+    // Initialize a log array to return to the user for easy debugging
+    const logs: string[] = []
+    const log = (message: string) => {
+        console.log(message) // Log to Vercel Console
+        logs.push(message)   // Add to response array
+    }
+
+    log("🚀 Starting Nightly Janitor Process...")
+
     // 1. Initialize Dropbox & Supabase
     const refresh_token = process.env.DROPBOX_REFRESH_TOKEN
     const clientId = process.env.DROPBOX_CLIENT_ID
     const clientSecret = process.env.DROPBOX_CLIENT_SECRET
 
-    // IMPORTANT: Use the path from your screenshot
+    // Default to root if variable is missing, but log it clearly
     const sourceRoot = process.env.DROPBOX_SOURCE_PATH || ''
+    log(`📂 Target Source Folder: "${sourceRoot || '(Dropbox Root)'}"`)
 
     if (!refresh_token || !clientId || !clientSecret) {
-        return NextResponse.json({ error: 'Missing Dropbox Credentials' }, { status: 500 })
+        const error = '❌ CRITICAL: Missing Dropbox Credentials in Environment Variables'
+        console.error(error)
+        return NextResponse.json({ error, logs }, { status: 500 })
     }
 
     const dbx = new Dropbox({
@@ -30,16 +42,24 @@ export async function GET(request: Request) {
 
     try {
         // 2. List all folders in the source directory
+        log("🔍 Scanning Dropbox for folders...")
         const listResponse = await dbx.filesListFolder({ path: sourceRoot })
         const entries = listResponse.result.entries
 
-        console.log(`Found ${entries.length} items in source path: ${sourceRoot || 'Root'}`)
+        log(`📊 Found ${entries.length} items in source folder.`)
+
+        if (entries.length === 0) {
+            log("⚠️ WARNING: Source folder is empty. Is 'DROPBOX_SOURCE_PATH' correct?")
+        }
 
         for (const entry of entries) {
-            // We only care about FOLDERS (Zoom creates a folder per meeting)
-            if (entry['.tag'] !== 'folder') continue
+            const folderName = entry.name
 
-            const folderName = entry.name // e.g., "2025_12_15T11-29 Padhma Berk _ Piano Lesson"
+            // We only care about FOLDERS (Zoom creates a folder per meeting)
+            if (entry['.tag'] !== 'folder') {
+                log(`⏭️ Skipping "${folderName}" (Not a folder)`)
+                continue
+            }
 
             // 3. Parse the Folder Name
             // Regex: Match Date (YYYY_MM_DD) and Name (between space and "_ Piano Lesson")
@@ -47,7 +67,7 @@ export async function GET(request: Request) {
             const match = folderName.match(regex)
 
             if (!match) {
-                console.log(`Skipping: ${folderName} (Does not match pattern)`)
+                log(`⚠️ Skipping "${folderName}": Name format does not match regex.`)
                 continue
             }
 
@@ -55,10 +75,10 @@ export async function GET(request: Request) {
             const studentName = match[2].trim() // Padhma Berk
             const lessonDate = rawDate.replace(/_/g, '-') // 2025-12-15
 
-            console.log(`Processing: ${studentName} on ${lessonDate}`)
+            log(`✅ Processing Match: Student="${studentName}", Date="${lessonDate}"`)
 
-            // 4. Find the Lesson in Supabase
-            // We search for a completed or scheduled lesson for this student/date
+            // 4. Find the Student in Supabase
+            log(`🔎 Database: Searching for student "${studentName}"...`)
             const { data: student } = await supabase
                 .from('profiles')
                 .select('id')
@@ -66,11 +86,15 @@ export async function GET(request: Request) {
                 .single()
 
             if (!student) {
-                console.warn(`Student not found in DB: ${studentName}`)
-                errors.push({ file: folderName, error: 'Student not found' })
+                const msg = `❌ Student not found in DB: "${studentName}"`
+                log(msg)
+                errors.push({ file: folderName, error: msg })
                 continue
             }
+            log(`👤 Student Found! ID: ${student.id}`)
 
+            // 5. Find the Lesson in Supabase
+            log(`🔎 Database: Searching for lesson on ${lessonDate}...`)
             const { data: lesson } = await supabase
                 .from('lessons')
                 .select('id')
@@ -79,14 +103,16 @@ export async function GET(request: Request) {
                 .single()
 
             if (!lesson) {
-                console.warn(`Lesson not found for ${studentName} on ${lessonDate}`)
-                errors.push({ file: folderName, error: 'Lesson row not found' })
+                const msg = `❌ Lesson row not found for ${studentName} on ${lessonDate}`
+                log(msg)
+                errors.push({ file: folderName, error: msg })
                 continue
             }
+            log(`📅 Lesson Found! ID: ${lesson.id}`)
 
-            // 5. Move the Folder on Dropbox
-            // Target: /Lesson Recordings/[Student Name] Recordings/[Original Folder Name]
+            // 6. Move the Folder on Dropbox
             const targetFolder = `/Lesson Recordings/${studentName} Recordings/${folderName}`
+            log(`🚚 Moving Dropbox folder to: "${targetFolder}"...`)
 
             try {
                 // Move the entire folder
@@ -95,24 +121,28 @@ export async function GET(request: Request) {
                     to_path: targetFolder,
                     autorename: true
                 })
-                console.log(`Moved folder to: ${targetFolder}`)
+                log(`✅ Move Successful.`)
 
-                // 6. Find the .mp4 file INSIDE the moved folder
-                // We list files in the NEW location
+                // 7. Find the .mp4 file INSIDE the moved folder
+                log(`🎥 Scanning inside new folder for .mp4...`)
                 const folderContent = await dbx.filesListFolder({ path: targetFolder })
                 const videoFile = folderContent.result.entries.find(f => f.name.endsWith('.mp4'))
 
                 if (!videoFile) {
-                    throw new Error('No .mp4 file found inside lesson folder')
+                    throw new Error('No .mp4 file found inside moved folder')
                 }
+                log(`✅ Found video file: "${videoFile.name}"`)
 
-                // 7. Generate Link for the .mp4
+                // 8. Generate Link for the .mp4
+                log(`🔗 Generating shared link...`)
                 const linkResponse = await dbx.sharingCreateSharedLinkWithSettings({
                     path: videoFile.path_lower!
                 })
                 const videoUrl = linkResponse.result.url
+                log(`✅ Link Created: ${videoUrl}`)
 
-                // 8. Update Supabase
+                // 9. Update Supabase
+                log(`💾 Updating Supabase Lesson ID ${lesson.id}...`)
                 const { error: updateError } = await supabase
                     .from('lessons')
                     .update({
@@ -122,6 +152,7 @@ export async function GET(request: Request) {
                     .eq('id', lesson.id)
 
                 if (updateError) throw updateError
+                log(`🎉 SUCCESS: Lesson updated completely.`)
 
                 results.push({
                     student: studentName,
@@ -131,19 +162,28 @@ export async function GET(request: Request) {
                 })
 
             } catch (err: any) {
-                console.error(`Error processing ${folderName}:`, err)
+                const msg = `❌ Error during Dropbox Ops/DB Update: ${err.message}`
+                console.error(msg)
+                log(msg)
                 errors.push({ file: folderName, error: err.message })
             }
         }
+
+        log("🏁 Janitor Run Complete.")
 
         return NextResponse.json({
             success: true,
             processed: results.length,
             results,
-            errors
+            errors,
+            logs // We return the full log history in the JSON response
         })
 
     } catch (globalError: any) {
-        return NextResponse.json({ error: globalError.message }, { status: 500 })
+        console.error('Critical Script Failure:', globalError)
+        return NextResponse.json({
+            error: globalError.message,
+            logs
+        }, { status: 500 })
     }
 }
