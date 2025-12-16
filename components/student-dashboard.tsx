@@ -312,8 +312,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                             </>
                         ) : (
                             <div className="text-center py-8">
-                                <p className="text-muted-foreground mb-4">No upcoming lesson scheduled</p>
-                                <Button>Schedule a Lesson</Button>
+                                <p className="text-muted-foreground">No upcoming lesson scheduled</p>
                             </div>
                         )}
                     </CardContent>
