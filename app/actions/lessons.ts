@@ -6,7 +6,6 @@ import { Resend } from 'resend'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
-import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -190,6 +189,9 @@ export async function logLesson(
     // Send Lesson Logged Email (best effort - don't fail if email fails)
     if (resend && student?.email && notes) {
         try {
+            // Dynamic import to avoid client bundler issues
+            const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
             // Format date nicely
             const dateObj = new Date(`${lesson.date}T00:00:00`)
             const formattedDate = dateObj.toLocaleDateString('en-US', {
