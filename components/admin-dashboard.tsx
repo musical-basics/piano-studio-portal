@@ -165,45 +165,62 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     }
 
     const handleSaveLesson = async () => {
+        console.log('handleSaveLesson started', { selectedLesson, selectedStudentForLog })
         if (!selectedLesson && !selectedStudentForLog) return
 
         setIsLoading(true)
 
         let result;
 
-        if (selectedLesson) {
-            result = await logLesson(
-                selectedLesson.id,
-                lessonNotes,
-                videoUrl || undefined,
-                sheetMusicUrl || undefined
-            )
-        } else if (selectedStudentForLog) {
-            // Import dynamically to handle the new action
-            const { logPastLesson } = await import("@/app/actions/lessons")
-            result = await logPastLesson(
-                selectedStudentForLog.id,
-                logDate,
-                logTime,
-                logDuration,
-                lessonNotes,
-                videoUrl || undefined,
-                sheetMusicUrl || undefined
-            )
+        try {
+            if (selectedLesson) {
+                console.log('Calling logLesson', selectedLesson.id)
+                result = await logLesson(
+                    selectedLesson.id,
+                    lessonNotes,
+                    videoUrl || undefined,
+                    sheetMusicUrl || undefined
+                )
+            } else if (selectedStudentForLog) {
+                console.log('Calling logPastLesson', selectedStudentForLog.id)
+                // Import dynamically to handle the new action
+                const { logPastLesson } = await import("@/app/actions/lessons")
+                result = await logPastLesson(
+                    selectedStudentForLog.id,
+                    logDate,
+                    logTime,
+                    logDuration,
+                    lessonNotes,
+                    videoUrl || undefined,
+                    sheetMusicUrl || undefined
+                )
+            }
+        } catch (e) {
+            console.error('Error calling lesson action:', e)
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "An unexpected error occurred"
+            })
+            setIsLoading(false)
+            return
         }
 
+        console.log('Action result:', result)
         setIsLoading(false)
 
         if (result?.error) {
+            console.log('Showing error toast')
             toast({
                 variant: "destructive",
                 title: "Error",
                 description: result.error
             })
         } else {
+            console.log('Success, closing modal')
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson.Credit deducted.`
+                description: `Successfully logged lesson. Credit deducted.`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")

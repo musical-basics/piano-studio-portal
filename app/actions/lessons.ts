@@ -117,6 +117,7 @@ export async function getLessonsForDateRange(startDate: string, endDate: string)
 
 /**
  * Log a completed lesson - updates status to 'completed' and deducts 1 credit
+ * Email notification is sent asynchronously (fire-and-forget) to not block the save
  */
 export async function logLesson(
     lessonId: string,
@@ -153,11 +154,10 @@ export async function logLesson(
         return { error: 'Lesson not found' }
     }
 
-    if (lesson.status === 'completed') {
-        return { error: 'Lesson already completed' }
-    }
+    const isAlreadyCompleted = lesson.status === 'completed'
+    console.log('logLesson: Starting update', { lessonId, notes: notes?.substring(0, 50), isAlreadyCompleted })
 
-    // Update the lesson
+    // STEP 1: Update the lesson in database FIRST (critical path)
     const { error: lessonError } = await supabase
         .from('lessons')
         .update({
@@ -169,59 +169,99 @@ export async function logLesson(
         .eq('id', lessonId)
 
     if (lessonError) {
+        console.error('logLesson: Update failed', lessonError)
         return { error: lessonError.message }
     }
 
-    // Deduct 1 credit from the student and fetch their details for email
-    const { data: student } = await supabase
-        .from('profiles')
-        .select('credits, name, email')
-        .eq('id', lesson.student_id)
-        .single()
+    console.log('logLesson: Database update successful')
 
-    if (student) {
-        await supabase
+    // STEP 2: Deduct 1 credit ONLY if it wasn't already completed
+    if (!isAlreadyCompleted) {
+        const { data: studentCredits } = await supabase
             .from('profiles')
-            .update({ credits: student.credits - 1 })
+            .select('credits')
             .eq('id', lesson.student_id)
-    }
+            .single()
 
-    // Send Lesson Logged Email (best effort - don't fail if email fails)
-    if (resend && student?.email && notes) {
-        try {
-            // Dynamic import to avoid client bundler issues
-            const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
-
-            // Format date nicely
-            const dateObj = new Date(`${lesson.date}T00:00:00`)
-            const formattedDate = dateObj.toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric'
-            })
-
-            await resend.emails.send({
-                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                to: student.email,
-                subject: `Lesson Notes: ${formattedDate}`,
-                react: LessonLoggedEmail({
-                    studentName: student.name || 'Student',
-                    date: formattedDate,
-                    notes: notes
-                })
-            })
-            console.log('Lesson logged email sent to:', student.email)
-        } catch (emailError) {
-            console.error('Failed to send lesson logged email:', emailError)
-            // Don't fail the action - lesson is already saved
+        if (studentCredits) {
+            await supabase
+                .from('profiles')
+                .update({ credits: studentCredits.credits - 1 })
+                .eq('id', lesson.student_id)
+            console.log('logLesson: Credit deducted')
         }
     }
 
+    // STEP 3: Revalidate paths immediately so UI updates
     revalidatePath('/admin')
     revalidatePath('/student')
+
+    // STEP 4: Fire-and-forget email (async IIFE, not awaited)
+    // This ensures the function returns success immediately
+    if (resend && notes) {
+        (async () => {
+            try {
+                // Fetch student details for email
+                const { data: student } = await supabase
+                    .from('profiles')
+                    .select('name, email')
+                    .eq('id', lesson.student_id)
+                    .single()
+
+                if (!student?.email) {
+                    console.log('logLesson: No student email, skipping notification')
+                    return
+                }
+
+                // Dynamic import to avoid client bundler issues
+                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
+                // Format date nicely
+                const dateObj = new Date(`${lesson.date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                // Extract sheet music filename from URL
+                let sheetMusicFileName: string | undefined
+                if (sheetMusicUrl) {
+                    try {
+                        const url = new URL(sheetMusicUrl)
+                        const pathname = decodeURIComponent(url.pathname)
+                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
+                    } catch {
+                        sheetMusicFileName = 'Sheet Music.pdf'
+                    }
+                }
+
+                await resend.emails.send({
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: student.email,
+                    subject: `Lesson Notes: ${formattedDate}`,
+                    react: LessonLoggedEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        notes: notes,
+                        sheetMusicUrl: sheetMusicUrl || undefined,
+                        sheetMusicFileName
+                    })
+                })
+                console.log('logLesson: Email sent to', student.email)
+            } catch (emailError) {
+                console.error('logLesson: Email failed (non-blocking):', emailError)
+                // Don't throw - this is fire-and-forget
+            }
+        })()
+    }
+
+    console.log('logLesson: Returning success')
     return { success: true }
 }
+
 
 /**
  * Log a past lesson directly (ad-hoc) without scheduling it first
@@ -989,6 +1029,7 @@ export async function scheduleLesson(
 
 /**
  * Update a lesson (notes, video_url, sheet_music_url)
+ * Sends email notification with updated info (fire-and-forget)
  */
 export async function updateLesson(
     lessonId: string,
@@ -1014,6 +1055,17 @@ export async function updateLesson(
         return { error: 'Only admins can update lessons' }
     }
 
+    // Get the lesson to find student_id and date for email
+    const { data: lesson, error: fetchError } = await supabase
+        .from('lessons')
+        .select('student_id, date')
+        .eq('id', lessonId)
+        .single()
+
+    if (fetchError || !lesson) {
+        return { error: 'Lesson not found' }
+    }
+
     // Update the lesson
     const { error: lessonError } = await supabase
         .from('lessons')
@@ -1028,10 +1080,76 @@ export async function updateLesson(
         return { error: lessonError.message }
     }
 
+    console.log('updateLesson: Database update successful')
+
+    // Revalidate paths immediately
     revalidatePath('/admin')
     revalidatePath('/student')
+
+    // Fire-and-forget email notification
+    if (resend && notes) {
+        (async () => {
+            try {
+                // Fetch student details
+                const { data: student } = await supabase
+                    .from('profiles')
+                    .select('name, email')
+                    .eq('id', lesson.student_id)
+                    .single()
+
+                if (!student?.email) {
+                    console.log('updateLesson: No student email, skipping notification')
+                    return
+                }
+
+                // Dynamic import to avoid client bundler issues
+                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
+                // Format date
+                const dateObj = new Date(`${lesson.date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                // Extract sheet music filename from URL
+                let sheetMusicFileName: string | undefined
+                if (sheetMusicUrl) {
+                    try {
+                        const url = new URL(sheetMusicUrl)
+                        const pathname = decodeURIComponent(url.pathname)
+                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                        // Remove timestamp prefix if present
+                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
+                    } catch {
+                        sheetMusicFileName = 'Sheet Music.pdf'
+                    }
+                }
+
+                await resend.emails.send({
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: student.email,
+                    subject: `Lesson Notes Updated: ${formattedDate}`,
+                    react: LessonLoggedEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        notes: notes,
+                        sheetMusicUrl: sheetMusicUrl || undefined,
+                        sheetMusicFileName
+                    })
+                })
+                console.log('updateLesson: Email sent to', student.email)
+            } catch (emailError) {
+                console.error('updateLesson: Email failed (non-blocking):', emailError)
+            }
+        })()
+    }
+
     return { success: true, message: 'Lesson updated successfully' }
 }
+
 
 /**
  * Upload a file to Supabase Storage
