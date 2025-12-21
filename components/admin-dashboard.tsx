@@ -3,7 +3,7 @@ import { AddStudentModal } from "@/components/add-student-modal"
 import { EditStudentModal } from "@/components/edit-student-modal"
 import { MasterCalendar } from "./master-calendar"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
-import React, { useState, useRef, Suspense } from "react"
+import React, { useState, useRef, Suspense, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert } from "lucide-react"
+import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert, ArrowUpDown } from "lucide-react"
 import { AdminChat } from "@/components/admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
@@ -41,6 +41,13 @@ export type LessonWithStudent = LessonWithZoom & {
 export type StudentRoster = Profile & {
     last_lesson_date?: string
     lesson_day?: string | null
+}
+
+type SortKey = 'name' | 'lesson_day' | 'credits'
+type SortDirection = 'asc' | 'desc'
+interface SortConfig {
+    key: SortKey
+    direction: SortDirection
 }
 
 export interface AdminDashboardProps {
@@ -105,6 +112,40 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const [calendarVersion, setCalendarVersion] = useState(0)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const editFileInputRef = useRef<HTMLInputElement>(null)
+
+    // Sorting state for student roster
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lesson_day', direction: 'asc' })
+
+    const dayOrder: Record<string, number> = {
+        'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+        'Thursday': 4, 'Friday': 5, 'Saturday': 6
+    }
+
+    const sortedStudents = useMemo(() => {
+        return [...students].sort((a, b) => {
+            const { key, direction } = sortConfig
+            let comparison = 0
+
+            if (key === 'name') {
+                comparison = (a.name || '').localeCompare(b.name || '')
+            } else if (key === 'lesson_day') {
+                const dayA = a.lesson_day ? dayOrder[a.lesson_day] ?? 99 : 99
+                const dayB = b.lesson_day ? dayOrder[b.lesson_day] ?? 99 : 99
+                comparison = dayA - dayB
+            } else if (key === 'credits') {
+                comparison = (a.credits ?? 0) - (b.credits ?? 0)
+            }
+
+            return direction === 'asc' ? comparison : -comparison
+        })
+    }, [students, sortConfig])
+
+    const handleSort = (key: SortKey) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }))
+    }
 
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
@@ -767,24 +808,39 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                     <Table>
                                         <TableHeader>
                                             <TableRow>
-                                                <TableHead className="font-semibold">Name</TableHead>
+                                                <TableHead className="font-semibold">
+                                                    <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('name')}>
+                                                        Name
+                                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'name' ? 'opacity-100' : 'opacity-40'}`} />
+                                                    </Button>
+                                                </TableHead>
                                                 <TableHead className="font-semibold">Contact</TableHead>
-                                                <TableHead className="font-semibold">Weekday</TableHead>
-                                                <TableHead className="font-semibold text-center">Credits</TableHead>
+                                                <TableHead className="font-semibold">
+                                                    <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('lesson_day')}>
+                                                        Weekday
+                                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'lesson_day' ? 'opacity-100' : 'opacity-40'}`} />
+                                                    </Button>
+                                                </TableHead>
+                                                <TableHead className="font-semibold text-center">
+                                                    <Button variant="ghost" size="sm" className="h-8 gap-1" onClick={() => handleSort('credits')}>
+                                                        Credits
+                                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'credits' ? 'opacity-100' : 'opacity-40'}`} />
+                                                    </Button>
+                                                </TableHead>
                                                 <TableHead className="font-semibold text-center">Balance Due</TableHead>
                                                 <TableHead className="font-semibold">Status</TableHead>
                                                 <TableHead className="font-semibold text-right">Actions</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {students.length === 0 ? (
+                                            {sortedStudents.length === 0 ? (
                                                 <TableRow>
                                                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                                         No students found
                                                     </TableCell>
                                                 </TableRow>
                                             ) : (
-                                                students.map((student) => (
+                                                sortedStudents.map((student) => (
                                                     <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
                                                         <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
                                                         <TableCell>
