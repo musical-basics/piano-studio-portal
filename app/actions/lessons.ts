@@ -6,6 +6,7 @@ import { Resend } from 'resend'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
+import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -142,10 +143,10 @@ export async function logLesson(
         return { error: 'Only admins can log lessons' }
     }
 
-    // Get the lesson to find the student_id
+    // Get the lesson to find the student_id and date
     const { data: lesson, error: lessonFetchError } = await supabase
         .from('lessons')
-        .select('student_id, status')
+        .select('student_id, status, date')
         .eq('id', lessonId)
         .single()
 
@@ -172,10 +173,10 @@ export async function logLesson(
         return { error: lessonError.message }
     }
 
-    // Deduct 1 credit from the student
+    // Deduct 1 credit from the student and fetch their details for email
     const { data: student } = await supabase
         .from('profiles')
-        .select('credits')
+        .select('credits, name, email')
         .eq('id', lesson.student_id)
         .single()
 
@@ -184,6 +185,35 @@ export async function logLesson(
             .from('profiles')
             .update({ credits: student.credits - 1 })
             .eq('id', lesson.student_id)
+    }
+
+    // Send Lesson Logged Email (best effort - don't fail if email fails)
+    if (resend && student?.email && notes) {
+        try {
+            // Format date nicely
+            const dateObj = new Date(`${lesson.date}T00:00:00`)
+            const formattedDate = dateObj.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            })
+
+            await resend.emails.send({
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                to: student.email,
+                subject: `Lesson Notes: ${formattedDate}`,
+                react: LessonLoggedEmail({
+                    studentName: student.name || 'Student',
+                    date: formattedDate,
+                    notes: notes
+                })
+            })
+            console.log('Lesson logged email sent to:', student.email)
+        } catch (emailError) {
+            console.error('Failed to send lesson logged email:', emailError)
+            // Don't fail the action - lesson is already saved
+        }
     }
 
     revalidatePath('/admin')

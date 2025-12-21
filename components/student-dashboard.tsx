@@ -409,13 +409,34 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                                                     Video
                                                                 </Badge>
                                                             )}
-                                                            {lesson.sheet_music_url && (
-                                                                <Badge variant="secondary" className="text-xs">
-                                                                    <Download className="h-3 w-3 mr-1" />
-                                                                    Sheet Music
-                                                                </Badge>
-                                                            )}
                                                         </div>
+                                                        {lesson.sheet_music_url && (
+                                                            <div className="mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
+                                                                <p className="text-xs text-muted-foreground mb-2">📄 Download Sheet Music:</p>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="bg-primary/5 hover:bg-primary/10 border-primary/20"
+                                                                    asChild
+                                                                >
+                                                                    <a href={lesson.sheet_music_url} download target="_blank" rel="noopener noreferrer">
+                                                                        <Download className="h-4 w-4 mr-2" />
+                                                                        {(() => {
+                                                                            try {
+                                                                                const url = new URL(lesson.sheet_music_url)
+                                                                                const pathname = decodeURIComponent(url.pathname)
+                                                                                const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                                                                                // Remove timestamp prefix if present (e.g., "1734567890123_")
+                                                                                const cleanName = filename.replace(/^\d{10,}_/, '')
+                                                                                return cleanName.length > 30 ? cleanName.slice(0, 27) + '...' : cleanName
+                                                                            } catch {
+                                                                                return 'Sheet Music.pdf'
+                                                                            }
+                                                                        })()}
+                                                                    </a>
+                                                                </Button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <Clock className="h-5 w-5 text-muted-foreground" />
