@@ -48,6 +48,7 @@ import {
     ArrowLeft,
     CheckSquare,
     Square,
+    Download,
 } from 'lucide-react'
 import Link from 'next/link'
 import {
@@ -393,6 +394,10 @@ export function LibraryManager({ initialResources, students }: LibraryManagerPro
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onClick={() => window.open(resource.file_url, '_blank')}>
+                                                    <Download className="h-4 w-4 mr-2" />
+                                                    Download
+                                                </DropdownMenuItem>
                                                 <DropdownMenuItem onClick={() => handleEdit(resource)}>
                                                     <Pencil className="h-4 w-4 mr-2" />
                                                     Edit
