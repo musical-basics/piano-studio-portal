@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { StudentDashboard } from "@/components/student-dashboard"
 import { getStudentEvents } from "@/app/actions/events"
+import { getStudentResources } from "@/app/actions/resources"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -62,8 +63,6 @@ export default async function StudentPage() {
   } : null
 
   // Determine Zoom link: lesson-specific > student's profile > teacher's default
-  // Also check if the next EVENT is virtual and happening now? Use event link? 
-  // For now, sticking to lesson logic.
   const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null
 
   // Format today's date for display
@@ -77,6 +76,9 @@ export default async function StudentPage() {
   // Fetch events
   const { upcoming: upcomingEvents } = await getStudentEvents()
 
+  // Fetch resources assigned to this student
+  const { resources } = await getStudentResources()
+
   return (
     <StudentDashboard
       profile={profile}
@@ -86,7 +88,8 @@ export default async function StudentPage() {
       todayDate={todayFormatted}
       studioName={teacher?.studio_name || "Piano Studio"}
       teacherName={teacher?.name || "Professor"}
-      events={upcomingEvents} // Passing upcoming events
+      events={upcomingEvents}
+      resources={resources}
     />
   )
 }
