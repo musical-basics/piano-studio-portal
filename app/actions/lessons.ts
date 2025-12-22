@@ -176,6 +176,7 @@ export async function logLesson(
     console.log('logLesson: Database update successful')
 
     // STEP 2: Deduct 1 credit ONLY if it wasn't already completed
+    // Also save the new balance as credit_snapshot for receipt display
     if (!isAlreadyCompleted) {
         const { data: studentCredits } = await supabase
             .from('profiles')
@@ -184,11 +185,21 @@ export async function logLesson(
             .single()
 
         if (studentCredits) {
+            const newBalance = studentCredits.credits - 1
+
+            // Update student's credit balance
             await supabase
                 .from('profiles')
-                .update({ credits: studentCredits.credits - 1 })
+                .update({ credits: newBalance })
                 .eq('id', lesson.student_id)
-            console.log('logLesson: Credit deducted')
+
+            // Save the snapshot to the lesson for static receipt display
+            await supabase
+                .from('lessons')
+                .update({ credit_snapshot: newBalance })
+                .eq('id', lessonId)
+
+            console.log('logLesson: Credit deducted, snapshot saved:', newBalance)
         }
     }
 

@@ -46,6 +46,7 @@ import { EventSignupModal } from "@/components/student/event-signup-modal"
 type UILesson = Lesson & {
     duration?: number
     teacher_notes?: string
+    credit_snapshot?: number | null
 }
 
 export interface StudentDashboardProps {
@@ -449,6 +450,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                                         )}
                                                     </div>
                                                 </div>
+                                                {/* Credit Receipt Footer */}
+                                                {lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null && (
+                                                    <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                                                        Credits spent: 1 • Remaining: {lesson.credit_snapshot}
+                                                    </div>
+                                                )}
                                                 <Clock className="h-5 w-5 text-muted-foreground" />
                                             </CardContent>
                                         </Card>
