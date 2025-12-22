@@ -640,6 +640,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </a>
                             </Button>
                             <Button variant="outline" asChild>
+                                <a href="/admin/library" className="gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Library
+                                </a>
+                            </Button>
+                            <Button variant="outline" asChild>
                                 <a href="/admin/editor2" className="gap-2">
                                     <Pencil className="h-4 w-4" />
                                     Site Builder
