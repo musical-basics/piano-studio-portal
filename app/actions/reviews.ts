@@ -51,3 +51,96 @@ export async function getApprovedReviews() {
 
     return data
 }
+
+export async function getAllReviews() {
+    const supabase = await createClient()
+
+    // Check auth
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: "Unauthorized" }
+
+    // Check admin role
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+    if (profile?.role !== 'admin') {
+        return { error: "Unauthorized" }
+    }
+
+    const { data, error } = await supabase
+        .from("reviews")
+        .select("*, profiles(email)")
+        .order("created_at", { ascending: false })
+
+    if (error) {
+        console.error("Error fetching all reviews:", error)
+        return { error: "Failed to fetch reviews" }
+    }
+
+    return { data }
+}
+
+export async function updateReviewStatus(id: string, status: 'approved' | 'rejected' | 'pending') {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: "Unauthorized" }
+
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+    if (profile?.role !== 'admin') {
+        return { error: "Unauthorized" }
+    }
+
+    const { error } = await supabase
+        .from("reviews")
+        .update({ status })
+        .eq("id", id)
+
+    if (error) {
+        console.error("Error updating review:", error)
+        return { error: "Failed to update review" }
+    }
+
+    revalidatePath("/admin/reviews")
+    revalidatePath("/reviews") // Update public page
+    return { success: true }
+}
+
+export async function deleteReview(id: string) {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: "Unauthorized" }
+
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+    if (profile?.role !== 'admin') {
+        return { error: "Unauthorized" }
+    }
+
+    const { error } = await supabase
+        .from("reviews")
+        .delete()
+        .eq("id", id)
+
+    if (error) {
+        console.error("Error deleting review:", error)
+        return { error: "Failed to delete review" }
+    }
+
+    revalidatePath("/admin/reviews")
+    revalidatePath("/reviews")
+    return { success: true }
+}
