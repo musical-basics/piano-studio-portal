@@ -31,7 +31,7 @@ export default async function ReviewsPage() {
                 <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                     <Link href="/" className="flex items-center gap-2">
                         <Music className="h-6 w-6" />
-                        <span className="font-serif text-xl font-bold">Piano Studio</span>
+                        <span className="font-serif text-xl font-bold">Lionel Yu Piano Studio</span>
                     </Link>
                     <Link href="/login">
                         <Button variant="outline" size="sm">

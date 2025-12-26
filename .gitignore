@@ -5,3 +5,6 @@ node_modules
 .DS_Store
 .vercel
 .env*.local
+migrate_db.sh
+scripts/migrate.ts
+scripts/test-connection.ts
