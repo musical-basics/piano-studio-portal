@@ -2,6 +2,7 @@ name: Trigger Reminders
 on:
   schedule:
     - cron: '*/10 * * * *' # Run every 10 minutes
+  workflow_dispatch: # Enable manual trigger
 jobs:
   ping-api:
     runs-on: ubuntu-latest
