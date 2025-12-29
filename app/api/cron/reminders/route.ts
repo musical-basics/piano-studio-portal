@@ -42,6 +42,7 @@ export async function GET(request: Request) {
                 react: LessonReminderEmail({
                     studentName: lesson.profiles.name || 'Student',
                     time: new Date(lesson.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    zoomLink: lesson.zoom_link,
                     variant: '24h'
                 })
             })
@@ -72,6 +73,7 @@ export async function GET(request: Request) {
                 react: LessonReminderEmail({
                     studentName: lesson.profiles.name || 'Student',
                     time: new Date(lesson.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    zoomLink: lesson.zoom_link,
                     variant: '2h'
                 })
             })

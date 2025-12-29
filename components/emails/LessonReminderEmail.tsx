@@ -61,9 +61,19 @@ export default function LessonReminderEmail({
                                 {text.btnText}
                             </Button>
                         ) : (
-                            <Button style={button} href={`${loginUrl}/login`}>
-                                {text.btnText}
-                            </Button>
+                            <>
+                                <Button style={button} href={`${loginUrl}/login`}>
+                                    {text.btnText}
+                                </Button>
+                                {zoomLink && (
+                                    <Text style={zoomLinkText}>
+                                        <strong>Zoom Link:</strong>{' '}
+                                        <a href={zoomLink} style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+                                            {zoomLink}
+                                        </a>
+                                    </Text>
+                                )}
+                            </>
                         )}
                     </Section>
                 </Container>
@@ -83,3 +93,5 @@ const joinButton = {
     ...button,
     backgroundColor: '#10b981',
 }
+const zoomLinkText = { ...bodyText, fontSize: '14px', margin: '24px 0 0', textAlign: 'center' as const }
+
