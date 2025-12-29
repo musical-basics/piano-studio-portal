@@ -33,7 +33,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         // 3. Send Email
         console.log('[ManualReminder] Sending email to', lesson.student.email)
         const { data: emailData, error: emailError } = await resend.emails.send({
-            from: 'Piano Studio <lessons@musicalbasics.com>',
+            from: 'Piano Studio <notifications@updates.musicalbasics.com>',
             to: lesson.student.email,
             subject: subjects[variant],
             react: LessonReminderEmail({

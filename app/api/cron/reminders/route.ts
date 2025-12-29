@@ -36,7 +36,7 @@ export async function GET(request: Request) {
             if (!lesson.profiles?.email) continue
 
             await resend.emails.send({
-                from: 'Piano Studio <lessons@musicalbasics.com>',
+                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Reminder: Lesson Tomorrow',
                 react: LessonReminderEmail({
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
             if (!lesson.profiles?.email) continue
 
             await resend.emails.send({
-                from: 'Piano Studio <lessons@musicalbasics.com>',
+                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Lesson in 2 Hours',
                 react: LessonReminderEmail({
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
             if (!lesson.profiles?.email) continue
 
             await resend.emails.send({
-                from: 'Piano Studio <lessons@musicalbasics.com>',
+                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Lesson Starting Soon!',
                 react: LessonReminderEmail({
