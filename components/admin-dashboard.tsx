@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert, ArrowUpDown, Star } from "lucide-react"
+import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert, ArrowUpDown, Star, Bell } from "lucide-react"
 import { AdminChat } from "@/components/admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { deleteStudent } from "@/app/actions/users"
 import { deleteEvent, type AdminEvent } from "@/app/actions/events"
+import { sendManualReminder } from "@/app/actions/reminders"
 import { CreateEventModal } from "@/components/admin/create-event-modal"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { CalendarLesson } from "./master-calendar"
@@ -111,7 +112,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null)
     const [calendarVersion, setCalendarVersion] = useState(0)
     const fileInputRef = useRef<HTMLInputElement>(null)
+
     const editFileInputRef = useRef<HTMLInputElement>(null)
+
+    // Manual Reminder State
+    const [showReminderModal, setShowReminderModal] = useState(false)
+    const [lessonForReminder, setLessonForReminder] = useState<TodayLesson | null>(null)
 
     // Sorting state for student roster
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lesson_day', direction: 'asc' })
@@ -585,6 +591,22 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         }
     }
 
+    const handleSendReminder = async (variant: '24h' | '2h' | '15m') => {
+        if (!lessonForReminder) return
+        setIsLoading(true)
+
+        const result = await sendManualReminder(lessonForReminder.id, variant)
+
+        setIsLoading(false)
+        setShowReminderModal(false)
+
+        if (result.error) {
+            toast({ variant: "destructive", title: "Error", description: result.error })
+        } else {
+            toast({ title: "Email Sent", description: result.message })
+        }
+    }
+
     // Format time for display (HH:MM:SS -> h:mm AM/PM)
     const formatTime = (timeStr: string) => {
         const [hours, minutes] = timeStr.split(':').map(Number)
@@ -793,6 +815,18 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                                         >
                                                             <Calendar className="h-4 w-4 mr-1" />
                                                             Resched
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => {
+                                                                setLessonForReminder(lesson)
+                                                                setShowReminderModal(true)
+                                                            }}
+                                                            disabled={isLoading}
+                                                        >
+                                                            <Bell className="h-4 w-4 mr-1" />
+                                                            Remind
                                                         </Button>
                                                         <Button
                                                             size="sm"
@@ -1522,6 +1556,32 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     setCalendarVersion(v => v + 1)
                 }}
             />
+            {/* Manual Reminder Modal */}
+            <Dialog open={showReminderModal} onOpenChange={setShowReminderModal}>
+                <DialogContent className="sm:max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle>Send Reminder</DialogTitle>
+                        <DialogDescription>
+                            Manually trigger an email for {lessonForReminder?.student.name}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-3 py-4">
+                        <Button variant="outline" onClick={() => handleSendReminder('24h')} className="justify-start">
+                            <Clock className="mr-2 h-4 w-4" />
+                            Send "Tomorrow" Reminder (24h)
+                        </Button>
+                        <Button variant="outline" onClick={() => handleSendReminder('2h')} className="justify-start">
+                            <Clock className="mr-2 h-4 w-4" />
+                            Send "Starting Soon" Reminder (2h)
+                        </Button>
+                        <Button variant="default" onClick={() => handleSendReminder('15m')} className="justify-start bg-green-600 hover:bg-green-700">
+                            <Video className="mr-2 h-4 w-4" />
+                            Send "Join Now" Link (Urgent)
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div >
     )
 }
+
