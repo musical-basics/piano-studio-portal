@@ -738,7 +738,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsContent>
 
                     <TabsContent value="messages">
-                        <AdminChat initialStudentId={chatStudentId} />
+                        <AdminChat
+                            initialStudentId={chatStudentId}
+                            onClearInitialStudent={() => setChatStudentId(null)}
+                        />
                     </TabsContent>
 
                     <TabsContent value="calendar">

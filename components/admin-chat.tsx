@@ -15,9 +15,10 @@ type StudentWithMessages = Profile & {
 
 interface AdminChatProps {
   initialStudentId?: string | null
+  onClearInitialStudent?: () => void
 }
 
-export function AdminChat({ initialStudentId }: AdminChatProps) {
+export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChatProps) {
   const [students, setStudents] = useState<StudentWithMessages[]>([])
   const [selectedStudent, setSelectedStudent] = useState<StudentWithMessages | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -60,9 +61,13 @@ export function AdminChat({ initialStudentId }: AdminChatProps) {
       const studentToSelect = students.find(s => s.id === initialStudentId)
       if (studentToSelect) {
         setSelectedStudent(studentToSelect)
+        // Clear the initial ID from parent to prevent sticky state
+        if (onClearInitialStudent) {
+          onClearInitialStudent()
+        }
       }
     }
-  }, [initialStudentId, students])
+  }, [initialStudentId, students, onClearInitialStudent])
 
   // 2. Load messages when student is selected
   useEffect(() => {
