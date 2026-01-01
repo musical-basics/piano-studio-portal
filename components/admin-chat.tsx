@@ -142,12 +142,38 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   const filteredStudents = students.filter((student) =>
     (student.name || '').toLowerCase().includes(searchQuery.toLowerCase()),
   )
+    .sort((a, b) => {
+      // Get timestamps (default to 0 if no message exists)
+      const timeA = a.lastMessage?.created_at ? new Date(a.lastMessage.created_at).getTime() : 0
+      const timeB = b.lastMessage?.created_at ? new Date(b.lastMessage.created_at).getTime() : 0
+
+      // Sort descending (newest first)
+      return timeB - timeA
+    })
 
   const totalUnread = students.reduce((acc, s) => acc + s.unreadCount, 0)
   const isFromAdmin = (message: Message) => selectedStudent ? message.sender_id !== selectedStudent.id : false
 
   // Format Date Logic
-  // Format Date Logic (Updated to show time for past dates)
+  const formatSidebarDate = (timestamp: string) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) {
+      // Today: Show Time only
+      return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    } else if (diffDays === 1) {
+      return "Yesterday"
+    } else if (diffDays < 7) {
+      // This week: Show Day Name (e.g., "Mon")
+      return date.toLocaleDateString("en-US", { weekday: "short" })
+    } else {
+      // Older: Show Date (e.g., "Dec 12")
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    }
+  }
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp)
     const now = new Date()
@@ -215,10 +241,24 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   <User className={selectedStudent?.id === student.id ? "text-primary-foreground" : "text-muted-foreground"} size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline">
-                    <span className="font-medium truncate text-sm">{student.name || 'Unknown'}</span>
-                    {student.unreadCount > 0 && selectedStudent?.id !== student.id && (
-                      <Badge variant="destructive" className="h-5 px-1.5 text-[10px] rounded-full">{student.unreadCount}</Badge>
+                  <div className="flex justify-between items-center mb-0.5">
+                    {/* Name and Badge Group */}
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <span className="font-medium truncate text-sm">
+                        {student.name || 'Unknown'}
+                      </span>
+                      {student.unreadCount > 0 && selectedStudent?.id !== student.id && (
+                        <Badge variant="destructive" className="h-5 px-1.5 text-[10px] rounded-full shrink-0">
+                          {student.unreadCount}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Timestamp (New!) */}
+                    {student.lastMessage && (
+                      <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                        {formatSidebarDate(student.lastMessage.created_at)}
+                      </span>
                     )}
                   </div>
                   <p className={`text-xs truncate mt-1 ${selectedStudent?.id === student.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
