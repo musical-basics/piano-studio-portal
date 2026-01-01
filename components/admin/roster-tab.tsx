@@ -5,7 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay } from "lucide-react"
+
+// We assume your Lesson App is hosted here (Change this if different!)
+const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 import type { StudentRoster } from "@/types/admin"
 import { AddStudentModal } from "@/components/add-student-modal"
 import { EditStudentModal } from "@/components/edit-student-modal"
@@ -31,6 +34,18 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
     const dayOrder: Record<string, number> = {
         'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
         'Thursday': 4, 'Friday': 5, 'Saturday': 6
+    }
+
+    // Helper to generate the Launcher Link
+    const getClassroomLink = (student: StudentRoster) => {
+        // We pass the ID. The Launcher (on the other app) handles the Auth.
+        // We also pass metadata (name/email) just in case the cache is stale, 
+        // ensuring the video interface always has the correct label.
+        const params = new URLSearchParams({
+            email: student.email || "",
+            name: student.name || "",
+        })
+        return `${CLASSROOM_URL}/start/${student.id}?${params.toString()}`
     }
 
     const sortedStudents = useMemo(() => {
@@ -151,6 +166,19 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-1">
+
+                                                {/* --- NEW BUTTON: JOIN CLASSROOM --- */}
+                                                <Button
+                                                    size="sm"
+                                                    // We use 'secondary' or a distinct color like 'indigo' 
+                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white border-0"
+                                                    onClick={() => window.open(getClassroomLink(student), '_blank')}
+                                                    title="Open Teacher Interface"
+                                                >
+                                                    <MonitorPlay className="h-4 w-4 mr-1" />
+                                                    Room
+                                                </Button>
+
                                                 <EditStudentModal student={student} />
                                                 <Button
                                                     size="sm"
