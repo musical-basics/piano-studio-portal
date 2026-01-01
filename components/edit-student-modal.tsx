@@ -120,6 +120,17 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="publicId">Public ID (Optional)</Label>
+                        <Input
+                            id="publicId"
+                            name="publicId"
+                            type="text"
+                            defaultValue={student.public_id || ''}
+                            placeholder="e.g. 12345"
+                        />
+                    </div>
+
+                    <div className="space-y-2">
                         <Label htmlFor="email">Email</Label>
                         <Input
                             id="email"

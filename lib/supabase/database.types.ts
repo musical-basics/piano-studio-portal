@@ -28,6 +28,7 @@ export interface Database {
                     timezone: string | null
                     studio_name: string | null
                     parent_email: string | null
+                    public_id: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -45,6 +46,7 @@ export interface Database {
                     available_hours?: Json | null
                     timezone?: string | null
                     studio_name?: string | null
+                    public_id?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -62,6 +64,7 @@ export interface Database {
                     available_hours?: Json | null
                     timezone?: string | null
                     studio_name?: string | null
+                    public_id?: string | null
                     created_at?: string
                     updated_at?: string
                 }

@@ -115,6 +115,7 @@ export async function updateStudent(formData: FormData) {
     const parentEmail = formData.get('parentEmail') as string | null
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
     const lessonDay = formData.get('lessonDay') as string || null
+    const publicId = formData.get('publicId') as string || null
 
     // Parse credits if present
     const creditsRaw = formData.get('credits')
@@ -182,6 +183,7 @@ export async function updateStudent(formData: FormData) {
                 parent_email: parentEmail || null,
                 lesson_duration: lessonDuration,
                 lesson_day: lessonDay,
+                public_id: publicId,
                 ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })
