@@ -303,31 +303,44 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                 <Separator />
 
                                 <div className="flex flex-wrap gap-3">
-                                    {/* Priority: Classroom > Zoom > Disabled */}
-                                    {classroomUrl ? (
+
+                                    {/* 1. PRIMARY ACTION: Join Classroom */}
+                                    <Button
+                                        size="lg"
+                                        className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md shadow-indigo-900/10"
+                                        asChild
+                                    >
+                                        <a
+                                            href={`${process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"}/${profile.public_id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            <MonitorPlay className="h-5 w-5 mr-2" />
+                                            Join Classroom
+                                        </a>
+                                    </Button>
+
+                                    {/* 2. FALLBACK: Join Zoom Lesson */}
+                                    {zoomLink ? (
                                         <Button
                                             size="lg"
-                                            className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0"
+                                            variant="outline"
+                                            className="flex-1 min-w-[200px] text-zinc-600 dark:text-zinc-400"
                                             asChild
                                         >
-                                            <a href={classroomUrl} target="_blank" rel="noopener noreferrer">
-                                                <MonitorPlay className="h-5 w-5 mr-2" />
-                                                Join Classroom
-                                            </a>
-                                        </Button>
-                                    ) : zoomLink ? (
-                                        <Button size="lg" className="flex-1 min-w-[200px]" asChild>
                                             <a href={zoomLink} target="_blank" rel="noopener noreferrer">
                                                 <Video className="h-5 w-5 mr-2" />
-                                                Join Zoom Lesson
+                                                Zoom (Backup)
                                             </a>
                                         </Button>
                                     ) : (
-                                        <Button size="lg" className="flex-1 min-w-[200px]" disabled>
-                                            <Video className="h-5 w-5 mr-2" />
-                                            No Link Available
+                                        <Button size="lg" variant="ghost" className="flex-1 min-w-[200px] text-muted-foreground" disabled>
+                                            <Video className="h-5 w-5 mr-2 opacity-50" />
+                                            No Zoom Link
                                         </Button>
                                     )}
+
+                                    {/* 3. Existing Actions */}
                                     <Button size="lg" variant="outline" onClick={handleReschedule}>
                                         <CalendarClock className="h-5 w-5 mr-2" />
                                         Reschedule
