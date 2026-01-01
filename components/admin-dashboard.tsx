@@ -109,6 +109,15 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
 
 
+    // State for Active Tab and Chat Selection
+    const [activeTab, setActiveTab] = useState("dashboard")
+    const [chatStudentId, setChatStudentId] = useState<string | null>(null)
+
+    const handleJumpToMessage = (studentId: string) => {
+        setChatStudentId(studentId)
+        setActiveTab("messages")
+    }
+
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
         setSelectedStudentForLog(null)
@@ -651,7 +660,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             </header>
 
             <main className="container mx-auto px-4 py-8">
-                <Tabs defaultValue="dashboard" className="space-y-8">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
                     <TabsList className="grid w-full max-w-3xl grid-cols-5">
                         <TabsTrigger value="dashboard" className="gap-2">
                             <LayoutDashboard className="h-4 w-4" />
@@ -697,6 +706,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 setShowReminderModal(true)
                             }}
                             isLoading={isLoading}
+                            onMessage={handleJumpToMessage}
                         />
 
                         {/* Student Roster */}
@@ -728,7 +738,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsContent>
 
                     <TabsContent value="messages">
-                        <AdminChat />
+                        <AdminChat initialStudentId={chatStudentId} />
                     </TabsContent>
 
                     <TabsContent value="calendar">

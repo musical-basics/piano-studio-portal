@@ -13,7 +13,11 @@ type StudentWithMessages = Profile & {
   unreadCount: number
 }
 
-export function AdminChat() {
+interface AdminChatProps {
+  initialStudentId?: string | null
+}
+
+export function AdminChat({ initialStudentId }: AdminChatProps) {
   const [students, setStudents] = useState<StudentWithMessages[]>([])
   const [selectedStudent, setSelectedStudent] = useState<StudentWithMessages | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -49,6 +53,16 @@ export function AdminChat() {
     }
     loadStudents()
   }, [])
+
+  // Handle initialStudentId logic
+  useEffect(() => {
+    if (initialStudentId && students.length > 0) {
+      const studentToSelect = students.find(s => s.id === initialStudentId)
+      if (studentToSelect) {
+        setSelectedStudent(studentToSelect)
+      }
+    }
+  }, [initialStudentId, students])
 
   // 2. Load messages when student is selected
   useEffect(() => {
@@ -244,8 +258,8 @@ export function AdminChat() {
                   {messages.map((msg) => (
                     <div key={msg.id} className={`flex ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
-                          ? "bg-primary text-primary-foreground rounded-br-none"
-                          : "bg-white border text-foreground rounded-bl-none"
+                        ? "bg-primary text-primary-foreground rounded-br-none"
+                        : "bg-white border text-foreground rounded-bl-none"
                         }`}>
                         {/* The Message Text */}
                         <p className="text-sm leading-relaxed">{msg.content}</p>

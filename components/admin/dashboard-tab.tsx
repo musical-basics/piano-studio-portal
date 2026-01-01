@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle } from "lucide-react"
 import type { TodayLesson, LessonWithStudent } from "@/types/admin"
 
 interface DashboardTabProps {
@@ -14,6 +14,7 @@ interface DashboardTabProps {
     onNoShow: (lesson: TodayLesson) => void
     onCancel: (lessonId: string, studentName: string) => void
     onRemind: (lesson: TodayLesson) => void
+    onMessage: (studentId: string) => void
     isLoading?: boolean
 }
 
@@ -25,6 +26,7 @@ export function DashboardTab({
     onNoShow,
     onCancel,
     onRemind,
+    onMessage,
     isLoading = false
 }: DashboardTabProps) {
 
@@ -106,6 +108,15 @@ export function DashboardTab({
                                                 </a>
                                             </Button>
                                         )}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => onMessage(lesson.student.id)}
+                                            disabled={isLoading}
+                                        >
+                                            <MessageCircle className="h-4 w-4 mr-1" />
+                                            Message
+                                        </Button>
                                         <Button
                                             size="sm"
                                             variant="outline"
