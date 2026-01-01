@@ -67,7 +67,10 @@ export async function createStudent(formData: FormData) {
             return { error: 'Failed to create user' }
         }
 
-        // Step 2: Create profile in public.profiles
+        // Step 2: Auto-generate public_id from name
+        const publicId = name.toLowerCase().replace(/ /g, '_')
+
+        // Step 3: Create profile in public.profiles
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
             .upsert({
@@ -81,7 +84,8 @@ export async function createStudent(formData: FormData) {
                 credits_total: credits,
                 balance_due: 0,
                 lesson_duration: lessonDuration,
-                lesson_day: lessonDay
+                lesson_day: lessonDay,
+                public_id: publicId
             })
 
         if (profileError) {
