@@ -1,4 +1,6 @@
 "use client"
+import { ScheduledTab } from "@/components/admin/scheduled-tab"
+import { CompletedTab } from "@/components/admin/completed-tab"
 import { RosterTab } from "@/components/admin/roster-tab"
 import { MasterCalendar } from "./master-calendar"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
@@ -12,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Clock, AlertCircle, Upload, XCircle, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Trash2, ShieldAlert, ArrowUpDown, Star, Bell } from "lucide-react"
+import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star } from "lucide-react"
 import { AdminChat } from "@/components/admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
@@ -708,192 +710,21 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
                     {/* Scheduled Lessons Tab */}
                     <TabsContent value="scheduled" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-2xl font-serif">Upcoming Lessons</CardTitle>
-                                        <CardDescription>All scheduled lessons</CardDescription>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <Badge variant="secondary" className="text-base px-4 py-2">
-                                            {scheduledLessons.length} Lessons
-                                        </Badge>
-                                        <Button onClick={openNewSchedule}>
-                                            <Plus className="h-4 w-4 mr-2" />
-                                            Schedule Lesson
-                                        </Button>
-                                    </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {scheduledLessons.length === 0 ? (
-                                        <p className="text-center text-muted-foreground py-8">No scheduled lessons</p>
-                                    ) : (
-                                        scheduledLessons.map((lesson) => (
-                                            <Card key={lesson.id} className="border-2">
-                                                <CardContent className="flex items-center justify-between p-6">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-primary text-primary-foreground rounded-lg">
-                                                            <span className="text-xs font-medium">{formatDate(lesson.date).split(',')[0]}</span>
-                                                            <span className="text-xs">{formatDate(lesson.date).split(' ')[1]}</span>
-                                                        </div>
-                                                        <div>
-                                                            <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
-                                                            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                                                <div className="flex items-center gap-1">
-                                                                    <Calendar className="h-3 w-3" />
-                                                                    <span>{formatDate(lesson.date)}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1">
-                                                                    <Clock className="h-3 w-3" />
-                                                                    <span>{formatTime(lesson.time)}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1">
-                                                                    <Music className="h-3 w-3" />
-                                                                    <span>{lesson.duration || 60} min</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <Badge variant="outline">Scheduled</Badge>
-                                                    <div className="flex gap-2 ml-4">
-                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
-                                                            <Button
-                                                                size="sm"
-                                                                className="bg-blue-600 hover:bg-blue-700"
-                                                                asChild
-                                                            >
-                                                                <a
-                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    <Video className="h-4 w-4 mr-1" />
-                                                                    Zoom
-                                                                </a>
-                                                            </Button>
-                                                        )}
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleReschedule(lesson)}
-                                                        >
-                                                            <Calendar className="h-4 w-4 mr-1" />
-                                                            Reschedule
-                                                        </Button>
-                                                        <Button
-                                                            variant="destructive"
-                                                            size="sm"
-                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
-                                                        >
-                                                            <XCircle className="h-4 w-4 mr-1" />
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <ScheduledTab
+                            lessons={scheduledLessons}
+                            adminZoomLink={admin.zoom_link || undefined}
+                            onReschedule={handleReschedule}
+                            onCancel={handleCancelLesson}
+                            onScheduleNew={openNewSchedule}
+                        />
                     </TabsContent>
 
                     {/* Completed Lessons Tab */}
                     <TabsContent value="completed" className="space-y-4">
-                        <Card>
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-2xl font-serif">Completed Lessons</CardTitle>
-                                        <CardDescription>Past lesson history</CardDescription>
-                                    </div>
-                                    <Badge variant="secondary" className="text-base px-4 py-2">
-                                        {completedLessons.length} Lessons
-                                    </Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {completedLessons.length === 0 ? (
-                                        <p className="text-center text-muted-foreground py-8">No completed lessons</p>
-                                    ) : (
-                                        completedLessons.map((lesson) => (
-                                            <Card key={lesson.id} className="border">
-                                                <CardContent className="p-6">
-                                                    <div className="flex items-start justify-between">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="flex flex-col items-center justify-center h-14 w-14 bg-muted rounded-lg">
-                                                                <Music className="h-6 w-6 text-muted-foreground" />
-                                                            </div>
-                                                            <div>
-                                                                <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
-                                                                <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                                                    <div className="flex items-center gap-1">
-                                                                        <Calendar className="h-3 w-3" />
-                                                                        <span>{formatDate(lesson.date)}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1">
-                                                                        <Clock className="h-3 w-3" />
-                                                                        <span>{formatTime(lesson.time)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                {lesson.notes && (
-                                                                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                                                                        {lesson.notes}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex flex-col items-end gap-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() => handleEditLesson(lesson)}
-                                                                >
-                                                                    <Pencil className="h-3 w-3 mr-1" />
-                                                                    Edit
-                                                                </Button>
-                                                                <Badge variant="default" className="bg-green-600">Completed</Badge>
-                                                            </div>
-                                                            {(lesson.video_url || lesson.sheet_music_url) && (
-                                                                <div className="flex gap-2">
-                                                                    {lesson.video_url && (
-                                                                        <a
-                                                                            href={lesson.video_url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition-colors"
-                                                                        >
-                                                                            <Video className="h-3 w-3" />
-                                                                            Video
-                                                                        </a>
-                                                                    )}
-                                                                    {lesson.sheet_music_url && (
-                                                                        <a
-                                                                            href={lesson.sheet_music_url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 text-xs font-medium transition-colors"
-                                                                        >
-                                                                            <FileText className="h-3 w-3" />
-                                                                            Sheet Music
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <CompletedTab
+                            lessons={completedLessons}
+                            onEdit={handleEditLesson}
+                        />
                     </TabsContent>
 
                     <TabsContent value="messages">
