@@ -10,6 +10,7 @@ import {
     Calendar,
     Clock,
     Video,
+    MonitorPlay,
     CreditCard,
     AlertCircle,
     Music,
@@ -72,6 +73,10 @@ const categoryColors: Record<string, string> = {
 
 export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate, studioName = "Piano Studio", teacherName, events = [], resources = [] }: StudentDashboardProps) {
     const { toast } = useToast()
+
+    // Classroom Link (prioritized over Zoom)
+    const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
+    const classroomUrl = profile.public_id ? `${classroomBase}/${profile.public_id}` : null
 
     // Transform lessons to UI format
     const uiLessons: UILesson[] = lessons.map(lesson => ({
@@ -298,7 +303,19 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                 <Separator />
 
                                 <div className="flex flex-wrap gap-3">
-                                    {zoomLink ? (
+                                    {/* Priority: Classroom > Zoom > Disabled */}
+                                    {classroomUrl ? (
+                                        <Button
+                                            size="lg"
+                                            className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0"
+                                            asChild
+                                        >
+                                            <a href={classroomUrl} target="_blank" rel="noopener noreferrer">
+                                                <MonitorPlay className="h-5 w-5 mr-2" />
+                                                Join Classroom
+                                            </a>
+                                        </Button>
+                                    ) : zoomLink ? (
                                         <Button size="lg" className="flex-1 min-w-[200px]" asChild>
                                             <a href={zoomLink} target="_blank" rel="noopener noreferrer">
                                                 <Video className="h-5 w-5 mr-2" />
@@ -308,7 +325,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                     ) : (
                                         <Button size="lg" className="flex-1 min-w-[200px]" disabled>
                                             <Video className="h-5 w-5 mr-2" />
-                                            Zoom Link Not Available
+                                            No Link Available
                                         </Button>
                                     )}
                                     <Button size="lg" variant="outline" onClick={handleReschedule}>
