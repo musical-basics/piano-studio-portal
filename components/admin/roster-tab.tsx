@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle } from "lucide-react"
 import type { StudentRoster } from "@/types/admin"
 import { AddStudentModal } from "@/components/add-student-modal"
 import { EditStudentModal } from "@/components/edit-student-modal"
@@ -22,9 +22,10 @@ interface RosterTabProps {
     onLog: (student: StudentRoster) => void
     onSchedule: (student: StudentRoster) => void
     onDelete: (student: StudentRoster) => void
+    onMessage: (studentId: string) => void
 }
 
-export function RosterTab({ students, onLog, onSchedule, onDelete }: RosterTabProps) {
+export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: RosterTabProps) {
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lesson_day', direction: 'asc' })
 
     const dayOrder: Record<string, number> = {
@@ -151,6 +152,14 @@ export function RosterTab({ students, onLog, onSchedule, onDelete }: RosterTabPr
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-1">
                                                 <EditStudentModal student={student} />
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => onMessage(student.id)}
+                                                >
+                                                    <MessageCircle className="h-4 w-4 mr-1" />
+                                                    Msg
+                                                </Button>
                                                 <Button
                                                     size="sm"
                                                     variant="outline"

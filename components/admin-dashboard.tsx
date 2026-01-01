@@ -715,6 +715,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onLog={handleLogPastLesson}
                             onSchedule={handleOpenSchedule}
                             onDelete={handleDeleteStudent}
+                            onMessage={handleJumpToMessage}
                         />
                     </TabsContent>
 
