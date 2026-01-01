@@ -32,8 +32,25 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
     try {
         // 3. Send Email
         console.log('[ManualReminder] Sending email to', lesson.student.email)
+
+        // Fetch Studio Name from Admin Profile (Current User)
+        // We can safely use auth.getUser() here because this is a Server Action called by a logged-in admin
+        const { data: { user } } = await supabase.auth.getUser()
+        let studioName = 'Piano Studio'
+
+        if (user) {
+            const { data: adminProfile } = await supabase
+                .from('profiles')
+                .select('studio_name')
+                .eq('id', user.id)
+                .single()
+            if (adminProfile?.studio_name) {
+                studioName = adminProfile.studio_name
+            }
+        }
+
         const { data: emailData, error: emailError } = await resend.emails.send({
-            from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+            from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: lesson.student.email,
             subject: subjects[variant],
             react: LessonReminderEmail({
