@@ -25,24 +25,11 @@ import { sendManualReminder } from "@/app/actions/reminders"
 import { CreateEventModal } from "@/components/admin/create-event-modal"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { CalendarLesson } from "./master-calendar"
+import { DashboardTab } from "@/components/admin/dashboard-tab"
+import type { LessonWithStudent, TodayLesson, StudentRoster } from "@/types/admin"
 
-// Types for the component props
-export type TodayLesson = LessonWithZoom & {
-    student: Profile
-}
-
-// Extends Lesson type to safely handle zoom_link until types are regenerated
-type LessonWithZoom = Lesson & { zoom_link?: string | null }
-
-
-export type LessonWithStudent = LessonWithZoom & {
-    student: Profile
-}
-
-export type StudentRoster = Profile & {
-    last_lesson_date?: string
-    lesson_day?: string | null
-}
+// Re-export types for compatibility if used elsewhere (e.g. page.tsx)
+export type { LessonWithStudent, TodayLesson, StudentRoster }
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'
@@ -625,15 +612,6 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         })
     }
 
-    // Get today's date formatted
-    const today = new Date()
-    const formattedDate = today.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    })
-
     // Prevent hydration mismatch by not rendering until mounted
     if (!isMounted) {
         return null
@@ -738,122 +716,19 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
                     <TabsContent value="dashboard" className="space-y-8">
                         {/* Daily Schedule */}
-                        <Card>
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-2xl font-serif">Today's Schedule</CardTitle>
-                                        <CardDescription className="flex items-center gap-2 mt-1">
-                                            <Calendar className="h-4 w-4" />
-                                            {formattedDate}
-                                        </CardDescription>
-                                    </div>
-                                    <Badge variant="secondary" className="text-base px-4 py-2">
-                                        {todaysLessons.length} Lessons
-                                    </Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {todaysLessons.length === 0 ? (
-                                        <p className="text-center text-muted-foreground py-8">No lessons scheduled for today</p>
-                                    ) : (
-                                        todaysLessons.map((lesson) => (
-                                            <Card key={lesson.id} className="border-2">
-                                                <CardContent className="flex items-center justify-between p-6">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-primary text-primary-foreground rounded-lg">
-                                                            <span className="text-xs font-medium">
-                                                                {formatTime(lesson.time).split(' ')[0]}
-                                                            </span>
-                                                            <span className="text-xs">{formatTime(lesson.time).split(' ')[1]}</span>
-                                                        </div>
-                                                        <div>
-                                                            <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
-                                                            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                                                <div className="flex items-center gap-1">
-                                                                    <Clock className="h-3 w-3" />
-                                                                    <span>{lesson.duration || 60} min</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1">
-                                                                    <Music className="h-3 w-3" />
-                                                                    <span>{lesson.student.credits} credits left</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
-                                                        {(lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link) && (
-                                                            <Button
-                                                                size="sm"
-                                                                className="bg-blue-600 hover:bg-blue-700"
-                                                                asChild
-                                                            >
-                                                                <a
-                                                                    href={lesson.zoom_link || lesson.student.zoom_link || admin.zoom_link || '#'}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                >
-                                                                    <Video className="h-4 w-4 mr-1" />
-                                                                    Zoom
-                                                                </a>
-                                                            </Button>
-                                                        )}
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => handleLogLesson(lesson)}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <Upload className="h-4 w-4 mr-1" />
-                                                            Log
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleReschedule(({ ...lesson, student_id: lesson.student.id } as any))}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <Calendar className="h-4 w-4 mr-1" />
-                                                            Resched
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => {
-                                                                setLessonForReminder(lesson)
-                                                                setShowReminderModal(true)
-                                                            }}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <Bell className="h-4 w-4 mr-1" />
-                                                            Remind
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            onClick={() => handleMarkNoShow(lesson)}
-                                                            disabled={isLoading}
-                                                        >
-                                                            <XCircle className="h-4 w-4 mr-1" />
-                                                            No-Show
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="secondary"
-                                                            className="text-destructive hover:text-destructive"
-                                                            onClick={() => handleCancelLesson(lesson.id, lesson.student.name || 'Student')}
-                                                            disabled={isLoading}
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <DashboardTab
+                            lessons={todaysLessons}
+                            adminZoomLink={admin.zoom_link}
+                            onLog={handleLogLesson}
+                            onReschedule={handleReschedule}
+                            onNoShow={handleMarkNoShow}
+                            onCancel={handleCancelLesson}
+                            onRemind={(lesson) => {
+                                setLessonForReminder(lesson)
+                                setShowReminderModal(true)
+                            }}
+                            isLoading={isLoading}
+                        />
 
                         {/* Student Roster */}
                         <Card>
@@ -1265,7 +1140,6 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             />
                         </div>
 
-
                         <div className="space-y-2">
                             <Label htmlFor="video" className="text-base">
                                 Video Recording URL
@@ -1447,7 +1321,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-serif">Edit Lesson</DialogTitle>
                         <DialogDescription>
-                            Update lesson notes and materials for {editingLesson?.student.name}
+                            Update lesson details for {editingLesson?.student.name}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1584,4 +1458,3 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         </div >
     )
 }
-
