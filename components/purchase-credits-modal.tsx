@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Check, CreditCard, Sparkles, Loader2, Repeat } from "lucide-react"
+import { Check, CreditCard, Sparkles, Loader2, Repeat, Infinity } from "lucide-react"
 import { createCheckoutSession } from "@/app/actions/stripe"
 import { getCurrentUserPricing } from "@/app/actions/pricing"
 import { useToast } from "@/hooks/use-toast"
@@ -174,6 +174,12 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
                 </div>
               </button>
 
+            </div>
+
+            {/* Credits Never Expire Notice */}
+            <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground bg-muted/30 rounded-md">
+              <Infinity className="h-4 w-4" />
+              <span>Credits never expire</span>
             </div>
 
             <div className="border-t pt-4">
