@@ -10,8 +10,8 @@ import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorP
 // We assume your Lesson App is hosted here (Change this if different!)
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 import type { StudentRoster } from "@/types/admin"
-import { AddStudentModal } from "@/components/add-student-modal"
-import { EditStudentModal } from "@/components/edit-student-modal"
+import { AddStudentModal } from "./add-student-modal"
+import { EditStudentModal } from "./edit-student-modal"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'

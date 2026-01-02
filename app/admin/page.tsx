@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { AdminDashboard } from "@/components/admin-dashboard"
-import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components/admin-dashboard"
+import { AdminDashboard } from "@/components/admin/admin-dashboard"
+import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components/admin/admin-dashboard"
 
 export default async function AdminPage() {
   const supabase = await createClient()

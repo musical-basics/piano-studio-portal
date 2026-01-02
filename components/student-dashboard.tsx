@@ -34,7 +34,7 @@ import {
 } from "@/lib/mock-data"
 import { MakeupScheduler } from "@/components/makeup-scheduler"
 import { CancellationModal } from "@/components/cancellation-modal"
-import { LessonDetailModal } from "@/components/lesson-detail-modal"
+import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "@/components/purchase-credits-modal"
 import { MessagesPanel } from "@/components/messages-panel"
 import { ChatWidget } from "@/components/chat-widget"

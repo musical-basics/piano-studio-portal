@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Calendar, Clock, Download, Music } from "lucide-react"
-import { VideoPlayer } from "./video-player"
+import { VideoPlayer } from "@/components/video-player"
 import type { Lesson } from "@/lib/mock-data"
 
 interface LessonDetailModalProps {
