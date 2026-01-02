@@ -1214,14 +1214,29 @@ export async function uploadFile(formData: FormData) {
 /**
  * Confirm attendance for a lesson (student only)
  * Updates is_confirmed to true
+ * Uses admin client to bypass RLS
  */
 export async function confirmAttendance(lessonId: string) {
     const supabase = await createClient()
 
-    const { error } = await supabase
+    // Verify the user is authenticated and owns this lesson
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { success: false, error: 'Unauthorized' }
+    }
+
+    // Use admin client to bypass RLS
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!
+    )
+
+    const { error } = await supabaseAdmin
         .from('lessons')
         .update({ is_confirmed: true })
         .eq('id', lessonId)
+        .eq('student_id', user.id) // Security: only update if student owns the lesson
 
     if (error) {
         console.error('Confirmation error:', error)
