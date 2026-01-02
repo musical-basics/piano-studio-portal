@@ -22,6 +22,8 @@ import {
     PlayCircle,
     MessageCircle,
     Plus,
+    CheckCircle,
+    Loader2,
 } from "lucide-react"
 import {
     mockEvents,
@@ -35,7 +37,7 @@ import { PurchaseCreditsModal } from "@/components/purchase-credits-modal"
 import { MessagesPanel } from "@/components/messages-panel"
 import { ChatWidget } from "@/components/chat-widget"
 import { logout } from "@/app/login/actions"
-import { cancelLesson } from "@/app/actions/lessons"
+import { cancelLesson, confirmAttendance } from "@/app/actions/lessons"
 import { rsvpToEvent } from "@/app/actions/events"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
@@ -53,7 +55,7 @@ type UILesson = Lesson & {
 export interface StudentDashboardProps {
     profile: Profile
     lessons: Lesson[]
-    nextLesson: { id?: string; date: string; time: string; duration: number; rawTime?: string } | null
+    nextLesson: { id?: string; date: string; time: string; duration: number; rawTime?: string; isConfirmed?: boolean } | null
     zoomLink?: string | null
     todayDate?: string
     studioName?: string
@@ -101,6 +103,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
     const [showLessonDetail, setShowLessonDetail] = useState(false)
     const [showPurchaseModal, setShowPurchaseModal] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
+    const [isConfirming, setIsConfirming] = useState(false)
 
     // Event Signup State
     const [showEventSignup, setShowEventSignup] = useState(false)
@@ -133,6 +136,27 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
             })
         }
         setIsCancelling(false)
+    }
+
+    const handleConfirmAttendance = async () => {
+        if (!nextLesson?.id) return
+        setIsConfirming(true)
+
+        const result = await confirmAttendance(nextLesson.id)
+
+        if (result.success) {
+            toast({
+                title: "Attendance Confirmed",
+                description: "Thanks for letting us know you'll be there!",
+            })
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Could not confirm attendance. Please try again."
+            })
+        }
+        setIsConfirming(false)
     }
 
     const handleSignUpClick = (event: StudentEvent) => {
@@ -241,6 +265,45 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
             </header>
 
             <main className="container mx-auto px-4 py-8 space-y-8">
+
+                {/* Confirmation Banner */}
+                {nextLesson?.id && !nextLesson.isConfirmed && (
+                    <Card className="border-blue-200 bg-blue-50 dark:bg-blue-900/10 shadow-sm">
+                        <CardContent className="flex flex-col sm:flex-row items-center justify-between p-6 gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0 text-blue-600">
+                                    <Calendar className="h-5 w-5" />
+                                </div>
+                                <div className="space-y-1 text-center sm:text-left">
+                                    <h3 className="font-semibold text-blue-900 dark:text-blue-100">
+                                        Upcoming Lesson Confirmation
+                                    </h3>
+                                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                                        Please confirm you will be attending your lesson on {formatDate(nextLesson.date)} at {nextLesson.time}.
+                                    </p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={handleConfirmAttendance}
+                                disabled={isConfirming}
+                                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+                            >
+                                {isConfirming ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        Confirming...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle className="h-4 w-4 mr-2" />
+                                        Confirm Attendance
+                                    </>
+                                )}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {/* Renewal Banner */}
                 {needsRenewal && (
                     <Card className="border-warning bg-warning/5">

@@ -80,6 +80,7 @@ export interface Database {
                     video_url: string | null
                     sheet_music_url: string | null
                     duration: number
+                    is_confirmed: boolean
                     created_at: string
                     updated_at: string
                 }
@@ -93,6 +94,7 @@ export interface Database {
                     video_url?: string | null
                     sheet_music_url?: string | null
                     duration?: number
+                    is_confirmed?: boolean
                     created_at?: string
                     updated_at?: string
                 }
@@ -106,6 +108,7 @@ export interface Database {
                     video_url?: string | null
                     sheet_music_url?: string | null
                     duration?: number
+                    is_confirmed?: boolean
                     created_at?: string
                     updated_at?: string
                 }

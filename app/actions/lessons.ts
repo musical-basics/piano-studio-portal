@@ -1210,3 +1210,24 @@ export async function uploadFile(formData: FormData) {
     return { success: true, url: publicUrl, path: data.path }
 }
 
+
+/**
+ * Confirm attendance for a lesson (student only)
+ * Updates is_confirmed to true
+ */
+export async function confirmAttendance(lessonId: string) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('lessons')
+        .update({ is_confirmed: true })
+        .eq('id', lessonId)
+
+    if (error) {
+        console.error('Confirmation error:', error)
+        return { success: false, error: 'Failed to confirm attendance' }
+    }
+
+    revalidatePath('/student')
+    return { success: true }
+}
