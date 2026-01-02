@@ -17,7 +17,7 @@ interface PurchaseCreditsModalProps {
 // Hardcoded subscription pricing map based on your rules
 const SUBSCRIPTION_PRICES: Record<number, number> = {
   30: 160,
-  45: 225,
+  45: 220,
   60: 280
 }
 
