@@ -91,6 +91,8 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
         setMessages([])
       } finally {
         setIsLoadingMessages(false)
+        // Scroll to bottom after loading messages
+        setTimeout(() => scrollToBottom(), 100)
       }
 
       // Mark as read in background
@@ -105,10 +107,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     loadMessages()
   }, [selectedStudent])
 
-  // Scroll on message update
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, isLoadingMessages])
+  // Removed auto-scroll useEffect triggered by polling
 
   // Poll for new messages
   useEffect(() => {
@@ -157,6 +156,8 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
             ? { ...s, lastMessage: result.message! }
             : s
         ))
+        // Scroll to newly sent message
+        setTimeout(() => scrollToBottom(), 100)
       } else {
         setNewMessage(tempMessage)
         setPendingAttachments(tempAttachments)

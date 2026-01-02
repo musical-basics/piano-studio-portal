@@ -61,16 +61,15 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
       }
 
       setIsLoading(false)
+
+      // Scroll to bottom on load
+      setTimeout(() => scrollToBottom(), 100)
     }
 
     loadData()
   }, [isOpen])
 
-  useEffect(() => {
-    if (isOpen) {
-      scrollToBottom()
-    }
-  }, [messages, isOpen])
+  // Removed auto-scroll useEffect that was triggered by polling
 
   // Poll for new messages when open
   useEffect(() => {
@@ -116,6 +115,8 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
 
       if (result.success && result.message) {
         setMessages((prev) => [...prev, result.message!])
+        // Scroll to newly sent message
+        setTimeout(() => scrollToBottom(), 100)
       } else if (result.error) {
         console.error('Failed to send message:', result.error)
         setNewMessage(tempMessage)
