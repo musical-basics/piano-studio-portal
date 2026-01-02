@@ -4,9 +4,10 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Send, Music, User, Search, Loader2 } from "lucide-react"
-import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessages } from "@/app/messages/actions"
-import type { Message, Profile } from "@/lib/supabase/database.types"
+import { Send, Music, User, Search, Loader2, Paperclip } from "lucide-react"
+import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
+import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
+import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
 
 type StudentWithMessages = Profile & {
   lastMessage: Message | null
@@ -29,6 +30,10 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   const [isLoadingStudents, setIsLoadingStudents] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
+
+  // Attachment states
+  const [pendingAttachments, setPendingAttachments] = useState<{ file: File; preview?: string; uploading?: boolean }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -116,27 +121,86 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   }, [selectedStudent])
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedStudent) return
+    if ((!newMessage.trim() && pendingAttachments.length === 0) || !selectedStudent) return
 
     const tempMessage = newMessage
+    const tempAttachments = [...pendingAttachments]
     setNewMessage("")
+    setPendingAttachments([])
     setIsSending(true)
 
-    const result = await sendMessage(selectedStudent.id, tempMessage.trim())
+    try {
+      // Upload all pending attachments first
+      const uploadedAttachments: MessageAttachment[] = []
+      for (const pending of tempAttachments) {
+        const formData = new FormData()
+        formData.append('file', pending.file)
+        const result = await uploadChatAttachment(formData)
+        if (result.attachment) {
+          uploadedAttachments.push(result.attachment)
+        } else if (result.error) {
+          console.error('Failed to upload attachment:', result.error)
+        }
+      }
 
-    setIsSending(false)
+      // Send message with attachments
+      const result = await sendMessage(
+        selectedStudent.id,
+        tempMessage.trim() || (uploadedAttachments.length > 0 ? '📎 Attachment' : ''),
+        uploadedAttachments.length > 0 ? uploadedAttachments : undefined
+      )
 
-    if (result.success && result.message) {
-      setMessages(prev => [...prev, result.message!])
-      setStudents(prev => prev.map(s =>
-        s.id === selectedStudent.id
-          ? { ...s, lastMessage: result.message! }
-          : s
-      ))
-    } else {
+      if (result.success && result.message) {
+        setMessages(prev => [...prev, result.message!])
+        setStudents(prev => prev.map(s =>
+          s.id === selectedStudent.id
+            ? { ...s, lastMessage: result.message! }
+            : s
+        ))
+      } else {
+        setNewMessage(tempMessage)
+        setPendingAttachments(tempAttachments)
+        alert("Failed to send")
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
       setNewMessage(tempMessage)
+      setPendingAttachments(tempAttachments)
       alert("Failed to send")
+    } finally {
+      setIsSending(false)
     }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const newAttachments = Array.from(files).map(file => {
+      const isImage = file.type.startsWith('image/')
+      return {
+        file,
+        preview: isImage ? URL.createObjectURL(file) : undefined,
+        uploading: false
+      }
+    })
+
+    setPendingAttachments(prev => [...prev, ...newAttachments].slice(0, 5)) // Max 5
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setPendingAttachments(prev => {
+      const attachment = prev[index]
+      if (attachment?.preview) {
+        URL.revokeObjectURL(attachment.preview)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const filteredStudents = students.filter((student) =>
@@ -307,7 +371,14 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                         : "bg-white border text-foreground rounded-bl-none"
                         }`}>
                         {/* The Message Text */}
-                        <p className="text-sm leading-relaxed">{msg.content}</p>
+                        {msg.content && msg.content !== '📎 Attachment' && (
+                          <p className="text-sm leading-relaxed">{msg.content}</p>
+                        )}
+
+                        {/* Attachments */}
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <ChatAttachmentPreview attachments={msg.attachments} compact />
+                        )}
 
                         {/* The Timestamp - Right aligned, small, slightly transparent */}
                         <p className={`text-[10px] text-right mt-1 ${isFromAdmin(msg) ? "text-primary-foreground/70" : "text-muted-foreground"
@@ -323,8 +394,37 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
             </div>
 
             {/* Input Area - Pinned to bottom */}
-            <div className="p-4 border-t bg-background shrink-0">
-              <div className="flex gap-2 items-center">
+            <div className="border-t bg-background shrink-0">
+              {/* Pending Attachments Preview */}
+              {pendingAttachments.length > 0 && (
+                <ChatPendingAttachments
+                  attachments={pendingAttachments}
+                  onRemove={handleRemoveAttachment}
+                />
+              )}
+
+              <div className="p-4 flex gap-2 items-center">
+                {/* Hidden File Input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*,.pdf,.doc,.docx"
+                  multiple
+                  className="hidden"
+                />
+
+                {/* Attachment Button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSending || pendingAttachments.length >= 5}
+                  title="Add attachment"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+
                 <Input
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
@@ -333,7 +433,11 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   disabled={isSending}
                   className="flex-1"
                 />
-                <Button onClick={handleSendMessage} disabled={!newMessage.trim() || isSending} size="icon">
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={(!newMessage.trim() && pendingAttachments.length === 0) || isSending}
+                  size="icon"
+                >
                   {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>

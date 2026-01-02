@@ -9,6 +9,14 @@ export type Json =
     | { [key: string]: Json | undefined }
     | Json[]
 
+// Message attachment type for chat attachments
+export type MessageAttachment = {
+    type: 'image' | 'file'
+    url: string
+    name: string
+    size: number
+}
+
 export interface Database {
     public: {
         Tables: {
@@ -120,6 +128,7 @@ export interface Database {
                     recipient_id: string
                     content: string
                     is_read: boolean
+                    attachments: MessageAttachment[] | null
                     created_at: string
                 }
                 Insert: {
@@ -128,6 +137,7 @@ export interface Database {
                     recipient_id: string
                     content: string
                     is_read?: boolean
+                    attachments?: MessageAttachment[] | null
                     created_at?: string
                 }
                 Update: {
@@ -136,6 +146,7 @@ export interface Database {
                     recipient_id?: string
                     content?: string
                     is_read?: boolean
+                    attachments?: MessageAttachment[] | null
                     created_at?: string
                 }
             }

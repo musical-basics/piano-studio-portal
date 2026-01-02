@@ -5,9 +5,10 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { MessageCircle, X, Send, Music, Minimize2, Loader2 } from "lucide-react"
-import { sendMessage, getConversation, markMessagesAsRead, getAdminProfile } from "@/app/messages/actions"
-import type { Message } from "@/lib/supabase/database.types"
+import { MessageCircle, X, Send, Music, Minimize2, Loader2, Paperclip } from "lucide-react"
+import { sendMessage, getConversation, markMessagesAsRead, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
+import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
+import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
 
 interface ChatWidgetProps {
   studentId: string
@@ -24,6 +25,11 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
+
+  // Attachment states
+  const [pendingAttachments, setPendingAttachments] = useState<{ file: File; preview?: string; uploading?: boolean }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -79,18 +85,80 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
   }, [isOpen, adminId])
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !adminId) return
+    if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
 
+    const tempMessage = newMessage
+    const tempAttachments = [...pendingAttachments]
+    setNewMessage("")
+    setPendingAttachments([])
     setIsSending(true)
-    const result = await sendMessage(adminId, newMessage.trim())
-    setIsSending(false)
 
-    if (result.success && result.message) {
-      setMessages((prev) => [...prev, result.message])
-      setNewMessage("")
-    } else if (result.error) {
-      console.error('Failed to send message:', result.error)
+    try {
+      // Upload all pending attachments first
+      const uploadedAttachments: MessageAttachment[] = []
+      for (const pending of tempAttachments) {
+        const formData = new FormData()
+        formData.append('file', pending.file)
+        const result = await uploadChatAttachment(formData)
+        if (result.attachment) {
+          uploadedAttachments.push(result.attachment)
+        } else if (result.error) {
+          console.error('Failed to upload attachment:', result.error)
+        }
+      }
+
+      // Send message with attachments
+      const result = await sendMessage(
+        adminId,
+        tempMessage.trim() || (uploadedAttachments.length > 0 ? '📎 Attachment' : ''),
+        uploadedAttachments.length > 0 ? uploadedAttachments : undefined
+      )
+
+      if (result.success && result.message) {
+        setMessages((prev) => [...prev, result.message!])
+      } else if (result.error) {
+        console.error('Failed to send message:', result.error)
+        setNewMessage(tempMessage)
+        setPendingAttachments(tempAttachments)
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      setNewMessage(tempMessage)
+      setPendingAttachments(tempAttachments)
+    } finally {
+      setIsSending(false)
     }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const newAttachments = Array.from(files).map(file => {
+      const isImage = file.type.startsWith('image/')
+      return {
+        file,
+        preview: isImage ? URL.createObjectURL(file) : undefined,
+        uploading: false
+      }
+    })
+
+    setPendingAttachments(prev => [...prev, ...newAttachments].slice(0, 5)) // Max 5
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setPendingAttachments(prev => {
+      const attachment = prev[index]
+      if (attachment?.preview) {
+        URL.revokeObjectURL(attachment.preview)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -192,7 +260,15 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                       : "bg-muted rounded-bl-sm"
                       }`}
                   >
-                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    {message.content && message.content !== '📎 Attachment' && (
+                      <p className="text-sm leading-relaxed">{message.content}</p>
+                    )}
+
+                    {/* Attachments */}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <ChatAttachmentPreview attachments={message.attachments} compact />
+                    )}
+
                     <p
                       className={`text-[10px] mt-1 ${isFromStudent(message) ? "text-primary-foreground/60" : "text-muted-foreground"
                         }`}
@@ -207,8 +283,38 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
           </div>
 
           {/* Input */}
-          <div className="border-t p-3 bg-card">
-            <div className="flex gap-2">
+          <div className="border-t bg-card">
+            {/* Pending Attachments Preview */}
+            {pendingAttachments.length > 0 && (
+              <ChatPendingAttachments
+                attachments={pendingAttachments}
+                onRemove={handleRemoveAttachment}
+              />
+            )}
+
+            <div className="p-3 flex gap-2">
+              {/* Hidden File Input */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept="image/*,.pdf,.doc,.docx"
+                multiple
+                className="hidden"
+              />
+
+              {/* Attachment Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isSending || pendingAttachments.length >= 5 || !adminId}
+                title="Add attachment"
+                className="shrink-0"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+
               <Input
                 placeholder="Type a message..."
                 value={newMessage}
@@ -217,7 +323,11 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                 className="flex-1 text-sm"
                 disabled={isSending || !adminId}
               />
-              <Button size="icon" onClick={handleSendMessage} disabled={!newMessage.trim() || isSending || !adminId}>
+              <Button
+                size="icon"
+                onClick={handleSendMessage}
+                disabled={(!newMessage.trim() && pendingAttachments.length === 0) || isSending || !adminId}
+              >
                 {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>

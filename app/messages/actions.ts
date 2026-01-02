@@ -2,12 +2,18 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import type { Message } from '@/lib/supabase/database.types'
+import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
 import { Resend } from 'resend'
 import { MessageNotification } from '@/components/emails/message-notification'
 
 // Initialize Resend (will be undefined if no API key)
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+
+// Allowed file types and size limits for chat attachments
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const ALLOWED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_ATTACHMENTS_PER_MESSAGE = 5
 
 export type MessageWithProfile = Message & {
     sender_profile?: {
@@ -18,14 +24,22 @@ export type MessageWithProfile = Message & {
 
 /**
  * Send a message from the current user to another user
+ * @param recipientId - The ID of the message recipient
+ * @param content - The text content of the message
+ * @param attachments - Optional array of attachments (images/files)
  */
-export async function sendMessage(recipientId: string, content: string) {
+export async function sendMessage(recipientId: string, content: string, attachments?: MessageAttachment[]) {
     const supabase = await createClient()
 
     // Get current user
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
         return { error: 'Unauthorized' }
+    }
+
+    // Validate attachments count
+    if (attachments && attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+        return { error: `Maximum ${MAX_ATTACHMENTS_PER_MESSAGE} attachments allowed per message` }
     }
 
     // Insert the message
@@ -35,7 +49,8 @@ export async function sendMessage(recipientId: string, content: string) {
             sender_id: user.id,
             recipient_id: recipientId,
             content,
-            is_read: false
+            is_read: false,
+            attachments: attachments && attachments.length > 0 ? attachments : null
         })
         .select()
         .single()
@@ -239,4 +254,68 @@ export async function getUnreadCount(): Promise<number> {
         .eq('is_read', false)
 
     return count || 0
+}
+
+/**
+ * Upload a file attachment for chat messages
+ * Both students and admins can upload attachments
+ */
+export async function uploadChatAttachment(formData: FormData): Promise<{ attachment?: MessageAttachment; error?: string }> {
+    const supabase = await createClient()
+
+    // Get current user (both students and admins can upload)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const file = formData.get('file') as File
+    if (!file) {
+        return { error: 'No file provided' }
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+        return { error: `File size must be under ${MAX_FILE_SIZE / (1024 * 1024)}MB` }
+    }
+
+    // Determine file type category
+    const isImage = ALLOWED_IMAGE_TYPES.includes(file.type)
+    const isDocument = ALLOWED_FILE_TYPES.includes(file.type)
+
+    if (!isImage && !isDocument) {
+        return { error: 'Invalid file type. Allowed: images (JPEG, PNG, GIF, WebP) and documents (PDF, Word)' }
+    }
+
+    // Generate unique filename
+    const timestamp = Date.now()
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath = `chat-attachments/${user.id}/${timestamp}_${sanitizedName}`
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+        .from('lesson_materials')
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+        })
+
+    if (error) {
+        console.error('Error uploading chat attachment:', error)
+        return { error: error.message }
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+        .from('lesson_materials')
+        .getPublicUrl(data.path)
+
+    const attachment: MessageAttachment = {
+        type: isImage ? 'image' : 'file',
+        url: publicUrl,
+        name: file.name,
+        size: file.size
+    }
+
+    return { attachment }
 }
