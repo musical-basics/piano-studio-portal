@@ -28,7 +28,7 @@ export function LessonScheduledEmail({
     duration,
     zoomLink,
     recipientName,
-    studioName = 'Piano Studio',
+    studioName = 'Lionel Yu Piano Studio',
 }: LessonScheduledEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 

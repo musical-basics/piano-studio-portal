@@ -30,7 +30,7 @@ export function LessonRescheduledEmail({
     newTime,
     newDuration,
     recipientName,
-    studioName = 'Piano Studio',
+    studioName = 'Lionel Yu Piano Studio',
 }: LessonRescheduledEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 

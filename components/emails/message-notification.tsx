@@ -29,7 +29,7 @@ export function MessageNotification({
             <Preview>New message from {senderName}</Preview>
             <Body style={main}>
                 <Container style={container}>
-                    <Heading style={heading}>🎹 Piano Studio</Heading>
+                    <Heading style={heading}>🎹 Lionel Yu Piano Studio</Heading>
 
                     <Section style={section}>
                         <Text style={greeting}>Hi {recipientName},</Text>
@@ -40,7 +40,7 @@ export function MessageNotification({
                             <Text style={messageText}>&quot;{messageContent}&quot;</Text>
                         </Section>
                         <Text style={text}>
-                            Log in to your Piano Studio portal to view and reply to this message.
+                            Log in to your Lionel Yu Piano Studio portal to view and reply to this message.
                         </Text>
                         <Button style={button} href={`${loginUrl}/login`}>
                             View Message
@@ -48,7 +48,7 @@ export function MessageNotification({
                     </Section>
 
                     <Text style={footer}>
-                        © Piano Studio Portal • You received this email because you have an account with us.
+                        © Lionel Yu Piano Studio Portal • You received this email because you have an account with us.
                     </Text>
                 </Container>
             </Body>

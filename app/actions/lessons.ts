@@ -544,7 +544,7 @@ export async function cancelLesson(lessonId: string) {
                     .eq('id', user.id)
                     .single()
 
-                const studioName = adminProfile?.studio_name || 'Piano Studio'
+                const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
 
                 // Format Date/Time
                 const dateObj = new Date(`${lesson.date}T00:00:00`)
@@ -702,7 +702,7 @@ export async function rescheduleLesson(
                     .eq('id', user.id)
                     .single()
 
-                const studioName = adminProfile?.studio_name || 'Piano Studio'
+                const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
 
                 // Helper for formatting
                 const formatDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -948,8 +948,9 @@ export async function scheduleLesson(
                 .eq('id', user.id)
                 .single()
 
-            const studioName = adminProfile?.studio_name || 'Piano Studio'
-            const adminName = adminProfile?.name || 'Teacher'
+            const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
+            const rawName = adminProfile?.name || 'Teacher'
+            const adminName = rawName === 'Professor Lionel' ? 'Professor Lionel Yu' : rawName
 
             // Format Date and Time for Email
             // Input date: YYYY-MM-DD

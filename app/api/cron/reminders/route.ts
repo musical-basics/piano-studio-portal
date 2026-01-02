@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
             console.log(`[Cron] Sending 24h reminder to ${lesson.profiles.email}`)
             const { error: emailError } = await resend.emails.send({
-                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Reminder: Lesson Tomorrow',
                 react: LessonReminderEmail({
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 
             console.log(`[Cron] Sending 2h reminder to ${lesson.profiles.email}`)
             const { error: emailError } = await resend.emails.send({
-                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Lesson in 2 Hours',
                 react: LessonReminderEmail({
@@ -115,7 +115,7 @@ export async function GET(request: Request) {
 
             console.log(`[Cron] Sending 15m reminder to ${lesson.profiles.email}`)
             const { error: emailError } = await resend.emails.send({
-                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                 to: lesson.profiles.email,
                 subject: 'Lesson Starting Soon!',
                 react: LessonReminderEmail({

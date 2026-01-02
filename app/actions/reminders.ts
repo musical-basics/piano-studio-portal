@@ -36,7 +36,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         // Fetch Studio Name from Admin Profile (Current User)
         // We can safely use auth.getUser() here because this is a Server Action called by a logged-in admin
         const { data: { user } } = await supabase.auth.getUser()
-        let studioName = 'Piano Studio'
+        let studioName = 'Lionel Yu Piano Studio'
 
         if (user) {
             const { data: adminProfile } = await supabase

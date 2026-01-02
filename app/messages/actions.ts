@@ -78,12 +78,15 @@ export async function sendMessage(recipientId: string, content: string, attachme
                 .single()
 
             if (recipientProfile?.email) {
+                const rawSender = senderProfile?.name || 'Lionel Yu Piano Studio'
+                const finalSenderName = rawSender === 'Professor Lionel' ? 'Professor Lionel Yu' : rawSender
+
                 await resend.emails.send({
-                    from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: recipientProfile.email,
-                    subject: `New message from ${senderProfile?.name || 'Piano Studio'}`,
+                    subject: `New message from ${finalSenderName}`,
                     react: MessageNotification({
-                        senderName: senderProfile?.name || 'Piano Studio',
+                        senderName: finalSenderName,
                         messageContent: content.length > 200 ? content.substring(0, 200) + '...' : content,
                         recipientName: recipientProfile.name || 'Student',
                     }),

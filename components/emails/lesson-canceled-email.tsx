@@ -24,7 +24,7 @@ export function LessonCanceledEmail({
     date,
     time,
     recipientName,
-    studioName = 'Piano Studio',
+    studioName = 'Lionel Yu Piano Studio',
 }: LessonCanceledEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
