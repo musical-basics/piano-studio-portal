@@ -1,161 +1,89 @@
+import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
-import React from 'react'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
 
-// Create admin client for database updates (bypasses RLS)
-const supabaseAdmin = createClient(
+// Use admin client for webhook (no user session available)
+const supabaseAdmin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY!,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }
+    process.env.SUPABASE_SERVICE_KEY!
 )
 
-// Simple in-memory cache to prevent duplicate processing
-// In production, use Redis or database for this
-const processedEvents = new Set<string>()
-
-export async function GET() {
-    return NextResponse.json({ status: 'healthy', message: 'Stripe webhook endpoint is active' })
-}
-
-export async function POST(request: Request) {
-    const body = await request.text()
-    const signature = request.headers.get('stripe-signature')
-
-    if (!signature) {
-        return NextResponse.json({ error: 'No signature' }, { status: 400 })
-    }
+export async function POST(req: Request) {
+    const body = await req.text()
+    const headersList = await headers()
+    const signature = headersList.get('stripe-signature')
 
     let event: Stripe.Event
 
     try {
-        event = stripe.webhooks.constructEvent(
-            body,
-            signature,
-            process.env.STRIPE_WEBHOOK_SECRET!
-        )
+        event = stripe.webhooks.constructEvent(body, signature!, webhookSecret)
     } catch (err) {
         console.error('Webhook signature verification failed:', err)
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
+        return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
     }
 
-    // Idempotency check - prevent duplicate processing
-    if (processedEvents.has(event.id)) {
-        console.log(`Event ${event.id} already processed, skipping`)
-        return NextResponse.json({ received: true, duplicate: true })
-    }
-
-    // Handle the event
+    // 1. Handle One-Time Purchases & First Subscription Payment
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object as Stripe.Checkout.Session
-
-        // Also check by session ID for extra safety
-        if (processedEvents.has(session.id)) {
-            console.log(`Session ${session.id} already processed, skipping`)
-            return NextResponse.json({ received: true, duplicate: true })
-        }
-
         const userId = session.metadata?.userId
-        const creditAmount = parseInt(session.metadata?.creditAmount || '0', 10)
+        const creditsToAdd = Number(session.metadata?.credits || 0)
 
-        if (!userId || creditAmount <= 0) {
-            console.error('Missing metadata:', { userId, creditAmount })
-            return NextResponse.json({ error: 'Missing metadata' }, { status: 400 })
-        }
-
-        console.log(`Processing credit purchase: ${creditAmount} credits for user ${userId} (session: ${session.id})`)
-
-        try {
-            // Get current credits
-            const { data: profile, error: fetchError } = await supabaseAdmin
+        if (userId && creditsToAdd > 0) {
+            // Find current credits first to add safely
+            const { data: profile } = await supabaseAdmin
                 .from('profiles')
-                .select('credits, credits_total, email')
+                .select('credits')
                 .eq('id', userId)
                 .single()
 
-            if (fetchError) {
-                console.error('Error fetching profile:', fetchError)
-                return NextResponse.json({ error: 'User not found' }, { status: 404 })
-            }
+            const newBalance = (profile?.credits || 0) + creditsToAdd
 
-            const currentCredits = profile?.credits || 0
-            const currentTotal = profile?.credits_total || 0
-
-            // Update credits
-            const { error: updateError } = await supabaseAdmin
+            await supabaseAdmin
                 .from('profiles')
-                .update({
-                    credits: currentCredits + creditAmount,
-                    credits_total: currentTotal + creditAmount,
-                })
+                .update({ credits: newBalance })
                 .eq('id', userId)
 
-            if (updateError) {
-                console.error('Error updating credits:', updateError)
-                return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
-            }
+            console.log(`✅ Added ${creditsToAdd} credits to user ${userId} (Checkout)`)
+        }
+    }
 
-            // Mark as processed AFTER successful update
-            processedEvents.add(event.id)
-            processedEvents.add(session.id)
+    // 2. Handle Recurring Subscription Payments (Months 2, 3, 4...)
+    if (event.type === 'invoice.payment_succeeded') {
+        const invoice = event.data.object as Stripe.Invoice
 
-            console.log(`Successfully added ${creditAmount} credits to user ${userId}`)
+        // We only care about subscription renewals, not the first payment
+        // 'subscription_create' is handled by checkout.session.completed above
+        if (invoice.billing_reason === 'subscription_cycle') {
 
-            // Log to Auth Audit Logs (Payment Success)
-            try {
+            // Fetch the subscription to get the metadata we saved
+            const subscriptionId = (invoice as any).subscription as string
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+
+            const userId = subscription.metadata?.userId
+            const creditsToAdd = Number(subscription.metadata?.credits || 0) // Should be 4
+
+            if (userId && creditsToAdd > 0) {
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('credits')
+                    .eq('id', userId)
+                    .single()
+
+                const newBalance = (profile?.credits || 0) + creditsToAdd
+
                 await supabaseAdmin
-                    .from('auth_audit_logs')
-                    .insert({
-                        user_email: profile?.email || 'unknown',
-                        event_type: 'payment_success',
-                        status: 'success',
-                        details: `Purchased ${creditAmount} credits ($${(session.amount_total || 0) / 100})`
-                    })
-            } catch (logError) {
-                console.error('Failed to log payment success:', logError)
+                    .from('profiles')
+                    .update({ credits: newBalance })
+                    .eq('id', userId)
+
+                console.log(`✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId}`)
             }
-
-            // Send Confirmation Email
-            if (process.env.RESEND_API_KEY && profile?.email) {
-                try {
-                    const { Resend } = await import('resend')
-                    const { PaymentConfirmationEmail } = await import('@/components/emails/payment-confirmation-email')
-                    const resend = new Resend(process.env.RESEND_API_KEY)
-
-                    const { data: emailData, error: emailError } = await resend.emails.send({
-                        from: 'Lionel Yu Piano Studio <support@musicalbasics.com>',
-                        to: profile.email,
-                        subject: 'Payment Confirmation - Credits Added',
-                        react: PaymentConfirmationEmail({
-                            amount: (session.amount_total || 0) / 100,
-                            credits: creditAmount,
-                            date: new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })
-                        }) as React.ReactElement
-                    })
-
-                    if (emailError) {
-                        console.error('Failed to send confirmation email:', emailError)
-                    } else {
-                        console.log('Confirmation email sent:', emailData?.id)
-                    }
-                } catch (emailExc) {
-                    console.error('Error initiating email sending:', emailExc)
-                }
-            }
-
-        } catch (error) {
-            console.error('Webhook processing error:', error)
-            return NextResponse.json({ error: 'Processing error' }, { status: 500 })
         }
     }
 
     return NextResponse.json({ received: true })
 }
-

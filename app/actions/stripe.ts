@@ -58,6 +58,13 @@ export async function createCheckoutSession(
                         quantity: 1,
                     },
                 ],
+                // Attach metadata to the Subscription so it persists on every recurring invoice
+                subscription_data: {
+                    metadata: {
+                        userId: user.id,
+                        credits: '4' // The recurring amount
+                    }
+                },
                 metadata: {
                     userId: user.id,
                     credits: '4', // Subscriptions add 4 credits per cycle
