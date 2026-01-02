@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,8 @@ import {
     MessageCircle,
     Plus,
     CheckCircle,
+    CheckCircle2,
+    HelpCircle,
     Loader2,
 } from "lucide-react"
 import {
@@ -109,6 +111,16 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
     const [showEventSignup, setShowEventSignup] = useState(false)
     const [selectedEvent, setSelectedEvent] = useState<StudentEvent | null>(null)
 
+    // Local state for confirmation - allows instant UI feedback
+    const [confirmationStatus, setConfirmationStatus] = useState<boolean>(!!nextLesson?.isConfirmed)
+
+    // Sync local state if the prop changes (e.g. on page refresh)
+    useEffect(() => {
+        if (nextLesson) {
+            setConfirmationStatus(!!nextLesson.isConfirmed)
+        }
+    }, [nextLesson])
+
     const handleReschedule = () => {
         setShowMakeupScheduler(true)
     }
@@ -139,12 +151,18 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
     }
 
     const handleConfirmAttendance = async () => {
-        if (!nextLesson?.id) return
+        if (!nextLesson?.id) {
+            toast({ variant: "destructive", title: "Error", description: "Lesson ID missing" })
+            return
+        }
         setIsConfirming(true)
 
         const result = await confirmAttendance(nextLesson.id)
 
         if (result.success) {
+            // Update local state immediately for instant feedback
+            setConfirmationStatus(true)
+
             toast({
                 title: "Attendance Confirmed",
                 description: "Thanks for letting us know you'll be there!",
@@ -267,7 +285,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
             <main className="container mx-auto px-4 py-8 space-y-8">
 
                 {/* Confirmation Banner */}
-                {nextLesson?.id && !nextLesson.isConfirmed && (
+                {nextLesson?.id && !confirmationStatus && (
                     <Card className="border-blue-200 bg-blue-50 dark:bg-blue-900/10 shadow-sm">
                         <CardContent className="flex flex-col sm:flex-row items-center justify-between p-6 gap-4">
                             <div className="flex items-center gap-4">
@@ -326,11 +344,28 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                 )}
 
                 {/* Hero Section - Next Lesson */}
-                <Card className="border-2">
-                    <CardHeader className="pb-4">
-                        <CardTitle className="text-2xl font-serif">Next Lesson</CardTitle>
+                <Card className="border-2 overflow-hidden">
+                    <CardHeader className="pb-4 bg-muted/20 border-b">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-2xl font-serif">Next Lesson</CardTitle>
+
+                            {/* STATUS BADGE */}
+                            {nextLesson && (
+                                confirmationStatus ? (
+                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 pl-1.5 pr-2.5 py-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                        Confirmed
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 pl-1.5 pr-2.5 py-1">
+                                        <HelpCircle className="w-3.5 h-3.5 mr-1" />
+                                        Unconfirmed
+                                    </Badge>
+                                )
+                            )}
+                        </div>
                     </CardHeader>
-                    <CardContent className="space-y-6">
+                    <CardContent className="space-y-6 pt-6">
                         {nextLesson ? (
                             <>
                                 <div className="grid md:grid-cols-3 gap-6">
