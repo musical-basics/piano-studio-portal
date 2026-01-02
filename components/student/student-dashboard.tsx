@@ -32,12 +32,12 @@ import {
     mockTutorials,
     type Tutorial,
 } from "@/lib/mock-data"
-import { MakeupScheduler } from "@/components/makeup-scheduler"
-import { CancellationModal } from "@/components/cancellation-modal"
+import { MakeupScheduler } from "./makeup-scheduler"
+import { CancellationModal } from "./cancellation-modal"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
-import { PurchaseCreditsModal } from "@/components/purchase-credits-modal"
-import { MessagesPanel } from "@/components/messages-panel"
-import { ChatWidget } from "@/components/chat-widget"
+import { PurchaseCreditsModal } from "./purchase-credits-modal"
+import { MessagesPanel } from "./messages-panel"
+import { ChatWidget } from "./chat-widget"
 import { logout } from "@/app/login/actions"
 import { cancelLesson, confirmAttendance } from "@/app/actions/lessons"
 import { rsvpToEvent } from "@/app/actions/events"
@@ -45,7 +45,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { StudentEvent } from "@/app/actions/events"
 import type { Resource } from "@/app/actions/resources"
-import { EventSignupModal } from "@/components/student/event-signup-modal"
+import { EventSignupModal } from "./event-signup-modal"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
