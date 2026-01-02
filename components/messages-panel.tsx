@@ -57,14 +57,16 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
       }
 
       setIsLoading(false)
+
+      // Scroll to bottom after initial load
+      setTimeout(() => scrollToBottom(), 100)
     }
 
     loadData()
   }, [])
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+  // Don't auto-scroll on every poll - only scroll when user sends a message
+  // The scrollToBottom is now called explicitly in handleSendMessage
 
   // Poll for new messages every 5 seconds
   useEffect(() => {
@@ -110,6 +112,8 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
 
       if (result.success && result.message) {
         setMessages((prev) => [...prev, result.message!])
+        // Scroll to show the new message
+        setTimeout(() => scrollToBottom(), 100)
       } else if (result.error) {
         alert(`Failed to send message: ${result.error}`)
         setNewMessage(tempMessage)
