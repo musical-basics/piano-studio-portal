@@ -4,8 +4,12 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Music, Clock, Calendar, Award, Facebook, Instagram, Mail } from "lucide-react"
+import { InquiryModal } from "@/components/inquiry-modal"
+import { useState } from "react"
 
 export function StaticLandingPage() {
+    const [showInquiryModal, setShowInquiryModal] = useState(false)
+
     return (
         <div className="min-h-screen bg-background">
             {/* Navigation */}
@@ -61,7 +65,7 @@ export function StaticLandingPage() {
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-4">
-                                <Button size="lg" className="text-base h-12 px-8">
+                                <Button size="lg" className="text-base h-12 px-8" onClick={() => setShowInquiryModal(true)}>
                                     Inquire for Lessons
                                 </Button>
                                 <Link href="/login">
@@ -285,9 +289,11 @@ export function StaticLandingPage() {
                             Limited openings available for serious students. Schedule a consultation to discuss your goals and find
                             the perfect lesson time.
                         </p>
-                        <Button size="lg" className="text-base h-12 px-8">
+                        <Button size="lg" className="text-base h-12 px-8" onClick={() => setShowInquiryModal(true)}>
                             Inquire for Lessons
                         </Button>
+
+                        <InquiryModal open={showInquiryModal} onOpenChange={setShowInquiryModal} />
                     </div>
                 </div>
             </section>
