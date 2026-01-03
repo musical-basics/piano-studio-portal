@@ -1,3 +1,6 @@
+-- Enable the moddatetime extension
+CREATE EXTENSION IF NOT EXISTS moddatetime SCHEMA extensions;
+
 -- Create inquiries table to track improved leads
 CREATE TABLE public.inquiries (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -31,6 +34,6 @@ CREATE POLICY "Anyone can insert inquiries"
   FOR INSERT
   WITH CHECK (true);
 
--- Create updated_at trigger
+-- Create updated_at trigger using the extension
 create trigger handle_updated_at before update on inquiries
-  for each row execute procedure moddatetime (updated_at);
+  for each row execute procedure extensions.moddatetime (updated_at);
