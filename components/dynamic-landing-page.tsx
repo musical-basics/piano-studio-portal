@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { InquiryModal } from "@/components/inquiry-modal"
 
 interface DynamicLandingPageProps {
     html: string
@@ -9,6 +11,12 @@ interface DynamicLandingPageProps {
 
 export function DynamicLandingPage({ html, script }: DynamicLandingPageProps) {
     const scriptExecuted = useRef(false)
+    const [showInquiryModal, setShowInquiryModal] = useState(false)
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     useEffect(() => {
         // Execute scripts only once after mount
@@ -32,10 +40,33 @@ export function DynamicLandingPage({ html, script }: DynamicLandingPageProps) {
         }
     }, [script])
 
+    const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        // Check if the clicked element or its parent is a link to /contact
+        const target = e.target as HTMLElement
+        const link = target.closest('a')
+
+        if (link) {
+            const href = link.getAttribute('href')
+            // Intercept internal /contact links (and also handle full URLs if needed)
+            if (href === '/contact' || href?.endsWith('/contact')) {
+                e.preventDefault()
+                setShowInquiryModal(true)
+            }
+        }
+    }
+
     return (
-        <div
-            className="dynamic-landing-page"
-            dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <>
+            <div
+                className="dynamic-landing-page"
+                dangerouslySetInnerHTML={{ __html: html }}
+                onClick={handleClick}
+            />
+            {/* Dialog handles its own portal automatically */}
+            {mounted && (
+                <InquiryModal open={showInquiryModal} onOpenChange={setShowInquiryModal} />
+            )}
+        </>
     )
 }
+
