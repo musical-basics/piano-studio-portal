@@ -18,22 +18,49 @@ export async function submitInquiry(formData: FormData) {
         return { success: false, error: "Missing required fields" }
     }
 
-    try {
-        // 1. Insert into database
-        const { error: dbError } = await supabase
-            .from("inquiries")
-            .insert({
-                name,
-                email,
-                phone: phone || null,
-                experience,
-                goals,
-                status: 'new'
-            })
+    // 1. Prepare the "System Note" (We can keep this for the human/AI context)
+    const contextNotes = `
+**Inquiry Source:** Website Form
+**Phone:** ${phone || 'N/A'}
+    `.trim() // Combined for AI context
 
-        if (dbError) {
+    try {
+        // 2. Create the Student (Lead)
+        const { data: student, error: dbError } = await supabase
+            .from("crm_students")
+            .insert({
+                full_name: name,
+                email: email,
+                // user snippet did not have phone column, it is in notes
+                notes: contextNotes,
+                status: 'Lead',
+                tags: ['Website Inquiry'],
+                country_code: 'US',
+                // --- NEW: Save to the dedicated column ---
+                experience_level: experience
+            })
+            .select()
+            .single()
+
+        if (dbError || !student) {
             console.error("Database error:", dbError)
             return { success: false, error: "Failed to save inquiry" }
+        }
+
+        // 3. Post the "Musical Goals" as the First Message (Visible in Chat)
+        // This ensures your CRM sees a "message" to reply to!
+        const { error: messageError } = await supabase
+            .from('crm_messages')
+            .insert({
+                student_id: student.id,
+                sender_role: 'student',
+                body_text: goals, // "Hello, I'm trying to learn..."
+                created_at: new Date().toISOString()
+            })
+
+        if (messageError) {
+            console.error('Message Creation Error:', messageError)
+            // We don't fail the whole request since the student was created
         }
 
         // 2. Get Admin Email (from profiles where role=admin)

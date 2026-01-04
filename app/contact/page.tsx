@@ -19,7 +19,7 @@ export default function ContactPage() {
                                 Get in Touch
                             </h1>
                             <p className="text-xl text-muted-foreground leading-relaxed">
-                                Ready to start your musical journey? We'd love to hear from you. Fill out the form or reach out directly.
+                                Ready to start your musical journey? I'd love to hear from you. Fill out the form or reach out directly.
                             </p>
                         </div>
 
