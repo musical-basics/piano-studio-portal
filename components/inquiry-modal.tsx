@@ -1,15 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CheckCircle2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { InquiryForm } from "./inquiry-form"
 
 interface InquiryModalProps {
@@ -34,6 +28,10 @@ export function InquiryModal({ open, onOpenChange }: InquiryModalProps) {
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
+            {/* CRITICAL FIX: 
+               We removed 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' 
+               from the className below. The Dialog primitive handles this now.
+            */}
             <DialogContent className="sm:max-w-[500px]">
                 {isSuccess ? (
                     <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">

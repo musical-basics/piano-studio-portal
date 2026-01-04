@@ -87,3 +87,37 @@ export async function submitInquiry(formData: FormData) {
         return { success: false, error: "Failed to submit inquiry" }
     }
 }
+
+export async function getInquiries() {
+    const supabase = await createClient()
+
+    const { data: inquiries, error } = await supabase
+        .from("inquiries")
+        .select("*")
+        .order("created_at", { ascending: false })
+
+    if (error) {
+        console.error("Error fetching inquiries:", error)
+        return { inquiries: [] }
+    }
+
+    return { inquiries }
+}
+
+export async function updateInquiryStatus(id: string, status: 'new' | 'contacted' | 'student' | 'archived') {
+    const supabase = await createClient()
+
+    try {
+        const { error } = await supabase
+            .from("inquiries")
+            .update({ status })
+            .eq("id", id)
+
+        if (error) throw error
+
+        return { success: true }
+    } catch (error) {
+        console.error("Error updating inquiry status:", error)
+        return { success: false, error: "Failed to update status" }
+    }
+}

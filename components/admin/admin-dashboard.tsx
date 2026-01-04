@@ -2,6 +2,7 @@
 import { ScheduledTab } from "@/components/admin/scheduled-tab"
 import { CompletedTab } from "@/components/admin/completed-tab"
 import { RosterTab } from "@/components/admin/roster-tab"
+import { InquiriesTab } from "@/components/admin/inquiries-tab"
 import { MasterCalendar } from "./master-calendar"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import React, { useState, useRef, Suspense, useMemo } from "react"
@@ -14,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star } from "lucide-react"
+import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
@@ -27,10 +28,10 @@ import { CreateEventModal } from "@/components/admin/create-event-modal"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
-import type { LessonWithStudent, TodayLesson, StudentRoster } from "@/types/admin"
+import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry } from "@/types/admin"
 
 // Re-export types for compatibility if used elsewhere (e.g. page.tsx)
-export type { LessonWithStudent, TodayLesson, StudentRoster }
+export type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry }
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'
@@ -46,9 +47,10 @@ export interface AdminDashboardProps {
     completedLessons: LessonWithStudent[]
     students: StudentRoster[]
     totalUnread: number
+    inquiries: Inquiry[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -690,6 +692,18 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </Badge>
                             )}
                         </TabsTrigger>
+                        <TabsTrigger value="inquiries" className="gap-2 relative">
+                            <Mail className="h-4 w-4" />
+                            <span className="hidden sm:inline">Inquiries</span>
+                            {inquiries.filter(i => i.status === 'new').length > 0 && (
+                                <Badge
+                                    variant="destructive"
+                                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                                >
+                                    {inquiries.filter(i => i.status === 'new').length}
+                                </Badge>
+                            )}
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="dashboard" className="space-y-8">
@@ -743,6 +757,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             initialStudentId={chatStudentId}
                             onClearInitialStudent={() => setChatStudentId(null)}
                         />
+                    </TabsContent>
+
+                    <TabsContent value="inquiries" className="m-0 h-full p-4 lg:p-10 overflow-auto">
+                        <InquiriesTab inquiries={inquiries} />
                     </TabsContent>
 
                     <TabsContent value="calendar">

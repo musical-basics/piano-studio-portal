@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { AdminDashboard } from "@/components/admin/admin-dashboard"
 import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components/admin/admin-dashboard"
+import { getInquiries } from "@/app/actions/inquiries"
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -103,6 +104,9 @@ export default async function AdminPage() {
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
+  // Fetch Inquiries
+  const { inquiries } = await getInquiries()
+
   return (
     <AdminDashboard
       admin={profile}
@@ -110,6 +114,7 @@ export default async function AdminPage() {
       completedLessons={completedLessons}
       students={students}
       totalUnread={totalUnread}
+      inquiries={inquiries || []}
     />
   )
 }

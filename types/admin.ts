@@ -16,3 +16,14 @@ export type StudentRoster = Profile & {
     lesson_day?: string | null
     balance_due?: number
 }
+
+export type Inquiry = {
+    id: string
+    name: string
+    email: string
+    phone: string | null
+    experience: string
+    goals: string
+    status: 'new' | 'contacted' | 'student' | 'archived'
+    created_at: string
+}
