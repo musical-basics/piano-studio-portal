@@ -663,7 +663,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
             <main className="container mx-auto px-4 py-8">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-                    <TabsList className="grid w-full max-w-3xl grid-cols-5">
+                    <TabsList className="grid w-full max-w-4xl grid-cols-3 sm:grid-cols-6 h-auto sm:h-10">
                         <TabsTrigger value="dashboard" className="gap-2">
                             <LayoutDashboard className="h-4 w-4" />
                             <span className="hidden sm:inline">Today</span>
