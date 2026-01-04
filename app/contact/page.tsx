@@ -29,28 +29,27 @@ export default function ContactPage() {
                                     <Mail className="h-5 w-5" />
                                 </div>
                                 <div>
-                                    <h3 className="font-medium">Email</h3>
-                                    <a href="mailto:contact@pianostudio.com" className="text-muted-foreground hover:text-primary transition-colors">
-                                        contact@pianostudio.com
-                                    </a>
+                                    <p className="font-medium">Email</p>
+                                    <p className="text-muted-foreground">support@musicalbasics.com</p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4">
-                                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                    <Music className="h-5 w-5" />
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-secondary rounded-lg">
+                                    <Music className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="font-medium">Studio</h3>
+                                    <p className="font-medium">Studio</p>
                                     <p className="text-muted-foreground">Lionel Yu Piano Studio</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="p-6 bg-muted/30 rounded-lg border">
-                            <h3 className="font-serif text-lg font-semibold mb-2">Teaching Philosophy</h3>
-                            <p className="text-muted-foreground text-sm leading-relaxed">
-                                "I believe that every student has a unique musical voice waiting to be discovered. My goal is to provide a supportive and inspiring environment where technical mastery meets artistic expression."
+                        {/* Philosophy Card */}
+                        <div className="bg-card border rounded-xl p-8 shadow-sm">
+                            <h3 className="font-serif font-semibold text-xl mb-4">Teaching Philosophy</h3>
+                            <p className="text-muted-foreground leading-relaxed">
+                                "My teaching philosophy centers on three pillars: discipline, creativity, and joy. I believe that mastery comes from consistent practice, but the journey should always be filled with the excitement of musical discovery."
                             </p>
                         </div>
                     </div>
