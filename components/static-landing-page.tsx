@@ -68,7 +68,7 @@ export function StaticLandingPage() {
                                 <Button size="lg" className="text-base h-12 px-8" onClick={() => setShowInquiryModal(true)}>
                                     Inquire for Lessons
                                 </Button>
-                                <Link href="/login">
+                                <Link href="/student">
                                     <Button variant="outline" size="lg" className="text-base h-12 px-8 w-full sm:w-auto bg-transparent">
                                         Student Portal
                                     </Button>
