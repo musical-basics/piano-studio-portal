@@ -9158,3 +9158,6 @@ ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 
 \unrestrict qN1cw1WF0ZHNaAaq2LCrKOakDypK4l1EbpXraXwYUa9EZIKxPdoBY7iYBFKpPzV
 
+
+-- Migration: Add google_event_id to lessons table
+ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS google_event_id TEXT;

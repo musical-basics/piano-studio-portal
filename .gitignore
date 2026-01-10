@@ -8,3 +8,6 @@ node_modules
 migrate_db.sh
 scripts/migrate.ts
 scripts/test-connection.ts
+
+# Google Credentials
+piano-studio-scheduler-*.json

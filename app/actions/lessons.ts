@@ -6,6 +6,7 @@ import { Resend } from 'resend'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
+import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -883,6 +884,24 @@ export async function scheduleLesson(
         }
     }
 
+    // --- NEW: Google Calendar Integration ---
+    let googleEventId = null
+    try {
+        // Use the student name we fetched earlier
+        const studentName = student.name || 'Student'
+
+        console.log("📅 Creating Google Calendar Event...")
+        googleEventId = await createGoogleCalendarEvent(
+            studentName,
+            date,
+            time,
+            duration
+        )
+    } catch (e) {
+        console.error('Failed to create Google Event (Non-blocking):', e)
+    }
+    // ----------------------------------------
+
     // Prepare insert payload logic
     const lessonPayload: any = {
         student_id: studentId,
@@ -890,7 +909,8 @@ export async function scheduleLesson(
         time,
         status: 'scheduled',
         zoom_link: zoomLink,
-        zoom_meeting_id: zoomMeetingId
+        zoom_meeting_id: zoomMeetingId,
+        google_event_id: googleEventId
     }
 
     // Initialize result variables
@@ -904,7 +924,8 @@ export async function scheduleLesson(
         .from('lessons')
         .insert({
             ...lessonPayload,
-            duration
+            duration,
+            google_event_id: googleEventId
         })
         .select()
         .single()
