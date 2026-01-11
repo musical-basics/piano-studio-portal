@@ -1,6 +1,5 @@
 import { google } from 'googleapis'
 
-// 1. Authenticate using the Service Account
 const auth = new google.auth.JWT({
     email: process.env.GOOGLE_CLIENT_EMAIL,
     key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'), // Fixes newline issues in Vercel/Env

@@ -46,6 +46,7 @@ import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { StudentEvent } from "@/app/actions/events"
 import type { Resource } from "@/app/actions/resources"
 import { EventSignupModal } from "./event-signup-modal"
+import { LocalTimeDisplay } from "@/components/ui/local-time-display"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -384,7 +385,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                                         </div>
                                         <div>
                                             <p className="text-sm text-muted-foreground">Time</p>
-                                            <p className="font-semibold">{nextLesson.time}</p>
+                                            <LocalTimeDisplay date={nextLesson.date} time={nextLesson.time} />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
