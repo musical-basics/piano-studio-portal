@@ -66,14 +66,6 @@ export default async function StudentPage() {
   // Determine Zoom link: lesson-specific > student's profile > teacher's default
   const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null
 
-  // Format today's date for display
-  const todayFormatted = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
-
   // Fetch events
   const { upcoming: upcomingEvents } = await getStudentEvents()
 
@@ -86,7 +78,6 @@ export default async function StudentPage() {
       lessons={lessons || []}
       nextLesson={nextLesson}
       zoomLink={zoomLink}
-      todayDate={todayFormatted}
       studioName={teacher?.studio_name || "Piano Studio"}
       teacherName={teacher?.name || "Professor"}
       events={upcomingEvents}

@@ -60,7 +60,6 @@ export interface StudentDashboardProps {
     lessons: Lesson[]
     nextLesson: { id?: string; date: string; time: string; duration: number; rawTime?: string; isConfirmed?: boolean } | null
     zoomLink?: string | null
-    todayDate?: string
     studioName?: string
     teacherName?: string
     events?: StudentEvent[]
@@ -76,7 +75,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, todayDate, studioName = "Piano Studio", teacherName, events = [], resources = [] }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [] }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -247,6 +246,18 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
         })
     }
 
+    const [currentDate, setCurrentDate] = useState("")
+
+    useEffect(() => {
+        const date = new Date()
+        setCurrentDate(date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }))
+    }, [])
+
     return (
         <div className="min-h-screen bg-background">
             <header className="border-b bg-card sticky top-0 z-10">
@@ -262,10 +273,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                             </div>
                         </div>
                         <div className="flex items-center gap-4">
-                            {todayDate && (
+                            {currentDate && (
                                 <div className="hidden md:block text-right">
                                     <p className="text-sm text-muted-foreground">Today is</p>
-                                    <p className="font-medium">{todayDate}</p>
+                                    <p className="font-medium">{currentDate}</p>
                                 </div>
                             )}
                             <form action={logout}>
@@ -275,9 +286,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, today
                             </form>
                         </div>
                     </div>
-                    {todayDate && (
+                    {currentDate && (
                         <div className="md:hidden mt-3 pt-3 border-t">
-                            <p className="text-sm text-muted-foreground">Today is <span className="font-medium text-foreground">{todayDate}</span></p>
+                            <p className="text-sm text-muted-foreground">Today is <span className="font-medium text-foreground">{currentDate}</span></p>
                         </div>
                     )}
                 </div>
