@@ -55,12 +55,16 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
     const [lessonDuration, setLessonDuration] = useState(
         String(student.lesson_duration || 30)
     )
+    const [lessonTime, setLessonTime] = useState(
+        (student as any).lesson_time || "15:30"
+    )
     const { toast } = useToast()
     const router = useRouter()
 
     async function handleSubmit(formData: FormData) {
         // Add lesson duration from state
         formData.set('lessonDuration', lessonDuration)
+        formData.set('lessonTime', lessonTime)
 
         try {
             const result = await updateStudent(formData)
@@ -163,19 +167,30 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                         />
                     </div>
 
-                    <div className="space-y-2">
-                        <Label htmlFor="lessonDay">Recurring Lesson Day</Label>
-                        <select
-                            id="lessonDay"
-                            name="lessonDay"
-                            defaultValue={(student as any).lesson_day || ""}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            <option value="">None</option>
-                            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                                <option key={day} value={day}>{day}</option>
-                            ))}
-                        </select>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="lessonDay">Recurring Day</Label>
+                            <select
+                                id="lessonDay"
+                                name="lessonDay"
+                                defaultValue={(student as any).lesson_day || ""}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <option value="">None</option>
+                                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                                    <option key={day} value={day}>{day}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="lessonTime">Standard Time</Label>
+                            <Input
+                                id="lessonTime"
+                                type="time"
+                                value={lessonTime}
+                                onChange={(e) => setLessonTime(e.target.value)}
+                            />
+                        </div>
                     </div>
 
                     <div className="space-y-2">

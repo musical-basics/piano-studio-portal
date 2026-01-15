@@ -1268,3 +1268,68 @@ export async function confirmAttendance(lessonId: string) {
     revalidatePath('/student')
     return { success: true }
 }
+
+// Helper to get the next occurrence of a specific day of week
+function getNextDayOfWeek(date: Date, dayName: string) {
+    const dayOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        .indexOf(dayName);
+    const resultDate = new Date(date.getTime());
+    resultDate.setDate(date.getDate() + (7 + dayOfWeek - date.getDay()) % 7);
+
+    // If result is today, move to next week (assuming "Next" means future)
+    if (resultDate.toDateString() === date.toDateString()) {
+        resultDate.setDate(resultDate.getDate() + 7);
+    }
+    return resultDate;
+}
+
+export async function bulkScheduleLessons(studentId: string, count: number) {
+    const supabase = await createClient()
+
+    // 1. Fetch Student's Standard Slot
+    const { data: student } = await supabase
+        .from('profiles')
+        .select('name, lesson_day, lesson_time, lesson_duration')
+        .eq('id', studentId)
+        .single()
+
+    if (!student || !student.lesson_day || !student.lesson_time) {
+        return { error: "Student does not have a standard day/time set." }
+    }
+
+    let successes = 0
+    let failures = 0
+    let lastDate = new Date() // Start calculating from today
+
+    // 2. Loop 'count' times
+    for (let i = 0; i < count; i++) {
+        // Find next date
+        const nextDateObj = getNextDayOfWeek(lastDate, student.lesson_day)
+        const dateStr = nextDateObj.toISOString().split('T')[0] // YYYY-MM-DD
+
+        // Call your existing scheduler (handles conflicts, Google Cal, Zoom, Email)
+        const result = await scheduleLesson(
+            studentId,
+            dateStr,
+            student.lesson_time,
+            student.lesson_duration || 60
+        )
+
+        if (result.success) {
+            successes++
+        } else {
+            failures++
+            console.error(`Failed to schedule ${dateStr}:`, result.error)
+        }
+
+        // Advance cursor so next iteration finds the week after
+        lastDate = nextDateObj
+        // Small hack: add 1 day so getNextDayOfWeek doesn't find the same day again
+        lastDate.setDate(lastDate.getDate() + 1)
+    }
+
+    return {
+        success: true,
+        message: `Scheduled ${successes} lessons. ${failures > 0 ? `(${failures} failed due to conflicts)` : ''}`
+    }
+}
