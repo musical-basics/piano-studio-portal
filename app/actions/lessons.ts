@@ -1305,7 +1305,12 @@ export async function bulkScheduleLessons(studentId: string, count: number) {
     for (let i = 0; i < count; i++) {
         // Find next date
         const nextDateObj = getNextDayOfWeek(lastDate, student.lesson_day)
-        const dateStr = nextDateObj.toISOString().split('T')[0] // YYYY-MM-DD
+
+        // Fix: Use local date components to avoid timezone shifts (e.g. 8pm PST -> Next Day UTC)
+        const year = nextDateObj.getFullYear()
+        const month = String(nextDateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(nextDateObj.getDate()).padStart(2, '0')
+        const dateStr = `${year}-${month}-${day}`
 
         // Call your existing scheduler (handles conflicts, Google Cal, Zoom, Email)
         const result = await scheduleLesson(
