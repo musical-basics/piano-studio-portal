@@ -94,6 +94,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-[50px]"></TableHead>
                                 <TableHead className="font-semibold">
                                     <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('name')}>
                                         Name
@@ -121,13 +122,16 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                         <TableBody>
                             {sortedStudents.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                                         No students found
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 sortedStudents.map((student) => (
                                     <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
+                                        <TableCell>
+                                            <EditStudentModal student={student} />
+                                        </TableCell>
                                         <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
                                         <TableCell>
                                             <div className="text-sm">
@@ -224,7 +228,6 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                                     Room
                                                 </Button>
 
-                                                <EditStudentModal student={student} />
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
