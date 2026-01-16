@@ -58,6 +58,9 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
     const [lessonTime, setLessonTime] = useState(
         (student as any).lesson_time || "15:30"
     )
+    const [timezone, setTimezone] = useState(
+        student.timezone || "America/Los_Angeles"
+    )
     const { toast } = useToast()
     const router = useRouter()
 
@@ -65,6 +68,7 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
         // Add lesson duration from state
         formData.set('lessonDuration', lessonDuration)
         formData.set('lessonTime', lessonTime)
+        formData.set('timezone', timezone)
 
         try {
             const result = await updateStudent(formData)
@@ -154,6 +158,27 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                             defaultValue={student.parent_email || ''}
                             placeholder="parent@example.com"
                         />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Time Zone</Label>
+                        <Select
+                            value={timezone}
+                            onValueChange={setTimezone}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select timezone" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="America/Los_Angeles">PT (Pacific Time)</SelectItem>
+                                <SelectItem value="America/Denver">MT (Mountain Time)</SelectItem>
+                                <SelectItem value="America/Chicago">CT (Central Time)</SelectItem>
+                                <SelectItem value="America/New_York">ET (Eastern Time)</SelectItem>
+                                <SelectItem value="Europe/London">UK Time</SelectItem>
+                                <SelectItem value="Europe/Paris">Central Europe Time</SelectItem>
+                                <SelectItem value="Australia/Sydney">AET (Australian Eastern Time)</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="space-y-2">

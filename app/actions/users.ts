@@ -190,6 +190,7 @@ export async function updateStudent(formData: FormData) {
                 lesson_day: lessonDay,
                 lesson_time: lessonTime,
                 public_id: publicId,
+                timezone: formData.get('timezone') as string || null,
                 ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })
