@@ -32,6 +32,68 @@ interface RosterTabProps {
     onMessage: (studentId: string) => void
 }
 
+function AutoScheduleButton({ student }: { student: StudentRoster }) {
+    const { toast } = useToast()
+    const router = useRouter()
+    const [open, setOpen] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+
+    if (!student.lesson_day || !student.lesson_time) return null
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                    {isLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                        <CalendarClock className="h-4 w-4" />
+                    )}
+                    <span className="sr-only">Auto-Schedule</span>
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="end">
+                <div className="space-y-2">
+                    <h4 className="font-medium text-xs text-muted-foreground uppercase tracking-wider px-2">
+                        {student.lesson_day}s at {student.lesson_time}
+                    </h4>
+                    <div className="grid gap-1">
+                        {[1, 2, 4].map((num) => (
+                            <Button
+                                key={num}
+                                variant="ghost"
+                                className="justify-start h-8 font-normal"
+                                disabled={isLoading}
+                                onClick={async () => {
+                                    setIsLoading(true)
+                                    toast({ title: "Scheduling...", description: "Please wait." })
+
+                                    try {
+                                        const res = await bulkScheduleLessons(student.id, num)
+                                        if (res.error) {
+                                            toast({ variant: "destructive", title: "Error", description: res.error })
+                                        } else {
+                                            toast({ title: "Done", description: res.message })
+                                            setOpen(false) // Close the popover
+                                            router.refresh()
+                                        }
+                                    } catch (e) {
+                                        toast({ variant: "destructive", title: "Error", description: "Something went wrong" })
+                                    } finally {
+                                        setIsLoading(false)
+                                    }
+                                }}
+                            >
+                                Schedule Next {num}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            </PopoverContent>
+        </Popover>
+    )
+}
+
 export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: RosterTabProps) {
     const { toast } = useToast()
     const router = useRouter()
@@ -179,44 +241,9 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                             <div className="flex items-center justify-end gap-1">
 
                                                 {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
-                                                {(student as any).lesson_day && (student as any).lesson_time && (
-                                                    <Popover>
-                                                        <PopoverTrigger asChild>
-                                                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                                                                <CalendarClock className="h-4 w-4" />
-                                                                <span className="sr-only">Auto-Schedule</span>
-                                                            </Button>
-                                                        </PopoverTrigger>
-                                                        <PopoverContent className="w-48 p-2" align="end">
-                                                            <div className="space-y-2">
-                                                                <h4 className="font-medium text-xs text-muted-foreground uppercase tracking-wider px-2">
-                                                                    {(student as any).lesson_day}s at {(student as any).lesson_time}
-                                                                </h4>
-                                                                <div className="grid gap-1">
-                                                                    {[1, 2, 4].map((num) => (
-                                                                        <Button
-                                                                            key={num}
-                                                                            variant="ghost"
-                                                                            className="justify-start h-8 font-normal"
-                                                                            onClick={async () => {
-                                                                                toast({ title: "Scheduling...", description: "Please wait." })
-                                                                                const res = await bulkScheduleLessons(student.id, num)
-                                                                                if (res.error) {
-                                                                                    toast({ variant: "destructive", title: "Error", description: res.error })
-                                                                                } else {
-                                                                                    toast({ title: "Done", description: res.message })
-                                                                                    router.refresh()
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            Schedule Next {num}
-                                                                        </Button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        </PopoverContent>
-                                                    </Popover>
-                                                )}
+                                                {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
+                                                <AutoScheduleButton student={student} />
+                                                {/* -------------------------------- */}
                                                 {/* -------------------------------- */}
 
                                                 {/* --- NEW BUTTON: JOIN CLASSROOM --- */}

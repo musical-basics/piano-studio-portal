@@ -14,6 +14,7 @@ export type TodayLesson = LessonWithZoom & {
 export type StudentRoster = Profile & {
     last_lesson_date?: string
     lesson_day?: string | null
+    lesson_time?: string | null
     balance_due?: number
 }
 
