@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +34,7 @@ interface RosterTabProps {
 
 export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: RosterTabProps) {
     const { toast } = useToast()
+    const router = useRouter()
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lesson_day', direction: 'asc' })
 
     const dayOrder: Record<string, number> = {
@@ -203,6 +205,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                                                                     toast({ variant: "destructive", title: "Error", description: res.error })
                                                                                 } else {
                                                                                     toast({ title: "Done", description: res.message })
+                                                                                    router.refresh()
                                                                                 }
                                                                             }}
                                                                         >
