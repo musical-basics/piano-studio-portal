@@ -210,7 +210,7 @@ export async function logLesson(
 
     // STEP 4: Fire-and-forget email (async IIFE, not awaited)
     // This ensures the function returns success immediately
-    if (resend && notes) {
+    if (resend) {
         (async () => {
             try {
                 // Fetch student details for email
@@ -349,6 +349,54 @@ export async function logPastLesson(
 
     revalidatePath('/admin')
     revalidatePath('/student')
+
+    // Fire-and-forget email (async IIFE)
+    if (resend) {
+        (async () => {
+            try {
+                // Dynamic import to avoid client bundler issues
+                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
+                // Format date nicely
+                const dateObj = new Date(`${date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                // Extract sheet music filename from URL
+                let sheetMusicFileName: string | undefined
+                if (sheetMusicUrl) {
+                    try {
+                        const url = new URL(sheetMusicUrl)
+                        const pathname = decodeURIComponent(url.pathname)
+                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
+                    } catch {
+                        sheetMusicFileName = 'Sheet Music.pdf'
+                    }
+                }
+
+                await resend.emails.send({
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: student.email,
+                    subject: `Lesson Notes: ${formattedDate}`,
+                    react: LessonLoggedEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        notes: notes,
+                        sheetMusicUrl: sheetMusicUrl || undefined,
+                        sheetMusicFileName
+                    })
+                })
+                console.log('logPastLesson: Email sent to', student.email)
+            } catch (emailError) {
+                console.error('logPastLesson: Email failed (non-blocking):', emailError)
+            }
+        })()
+    }
 
     return {
         success: true,
@@ -1120,7 +1168,7 @@ export async function updateLesson(
     revalidatePath('/student')
 
     // Fire-and-forget email notification
-    if (resend && notes) {
+    if (resend) {
         (async () => {
             try {
                 // Fetch student details
