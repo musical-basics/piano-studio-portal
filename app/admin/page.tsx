@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { AdminDashboard } from "@/components/admin/admin-dashboard"
 import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components/admin/admin-dashboard"
 import { getInquiries } from "@/app/actions/inquiries"
+import { getResources } from "@/app/actions/resources"
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -107,6 +108,9 @@ export default async function AdminPage() {
   // Fetch Inquiries
   const { inquiries } = await getInquiries()
 
+  // Fetch Resources for the library selector
+  const { resources } = await getResources()
+
   return (
     <AdminDashboard
       admin={profile}
@@ -115,6 +119,7 @@ export default async function AdminPage() {
       students={students}
       totalUnread={totalUnread}
       inquiries={inquiries || []}
+      resources={resources || []}
     />
   )
 }

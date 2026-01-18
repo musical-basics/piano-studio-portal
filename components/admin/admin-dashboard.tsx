@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail } from "lucide-react"
 import { AdminChat } from "./admin-chat"
@@ -26,6 +27,7 @@ import { deleteEvent, type AdminEvent } from "@/app/actions/events"
 import { sendManualReminder } from "@/app/actions/reminders"
 import { CreateEventModal } from "@/components/admin/create-event-modal"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
+import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry } from "@/types/admin"
@@ -48,9 +50,10 @@ export interface AdminDashboardProps {
     students: StudentRoster[]
     totalUnread: number
     inquiries: Inquiry[]
+    resources: Resource[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries, resources }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -869,6 +872,36 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 Sheet Music PDF
                             </Label>
                             <div className="space-y-3">
+                                {/* Library Selector */}
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Select from Library</Label>
+                                    <Select onValueChange={(url) => setSheetMusicUrl(url)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Choose from Library..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {resources
+                                                .filter(r => ['Sheet Music', 'Exercises', 'Theory'].includes(r.category))
+                                                .map(resource => (
+                                                    <SelectItem key={resource.id} value={resource.file_url}>
+                                                        {resource.title} ({resource.category})
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <span className="w-full border-t" />
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-background px-2 text-muted-foreground">
+                                            Or upload new
+                                        </span>
+                                    </div>
+                                </div>
+
                                 <div className="flex gap-2 items-center">
                                     <Input
                                         ref={fileInputRef}
@@ -893,7 +926,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                     <div className="flex items-center gap-2 text-sm text-green-600">
                                         <FileText className="h-4 w-4" />
                                         <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
-                                            {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
+                                            {resources.find(r => r.file_url === sheetMusicUrl)?.title || sheetMusicUrl.split('/').pop() || 'Sheet Music'}
                                         </a>
                                         <Button
                                             type="button"
@@ -1068,6 +1101,36 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 Sheet Music PDF
                             </Label>
                             <div className="space-y-3">
+                                {/* Library Selector */}
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Select from Library</Label>
+                                    <Select onValueChange={(url) => setSheetMusicUrl(url)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Choose from Library..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {resources
+                                                .filter(r => ['Sheet Music', 'Exercises', 'Theory'].includes(r.category))
+                                                .map(resource => (
+                                                    <SelectItem key={resource.id} value={resource.file_url}>
+                                                        {resource.title} ({resource.category})
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <span className="w-full border-t" />
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-background px-2 text-muted-foreground">
+                                            Or upload new
+                                        </span>
+                                    </div>
+                                </div>
+
                                 <div className="flex gap-2 items-center">
                                     <Input
                                         ref={editFileInputRef}
@@ -1092,7 +1155,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                     <div className="flex items-center gap-2 text-sm text-green-600">
                                         <FileText className="h-4 w-4" />
                                         <a href={sheetMusicUrl} target="_blank" rel="noopener noreferrer" className="underline truncate max-w-xs">
-                                            {sheetMusicUrl.split('/').pop() || 'Sheet Music'}
+                                            {resources.find(r => r.file_url === sheetMusicUrl)?.title || sheetMusicUrl.split('/').pop() || 'Sheet Music'}
                                         </a>
                                         <Button
                                             type="button"
