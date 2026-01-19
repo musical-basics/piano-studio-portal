@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 import type { StudentRoster } from "@/types/admin"
 import { AddStudentModal } from "./add-student-modal"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
@@ -180,151 +181,211 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="rounded-md border">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[50px]"></TableHead>
-                                <TableHead className="font-semibold">
-                                    <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('name')}>
-                                        Name
-                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'name' ? 'opacity-100' : 'opacity-40'}`} />
-                                    </Button>
-                                </TableHead>
-                                <TableHead className="font-semibold">Contact</TableHead>
-                                <TableHead className="font-semibold">
-                                    <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('lesson_day')}>
-                                        Weekday
-                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'lesson_day' ? 'opacity-100' : 'opacity-40'}`} />
-                                    </Button>
-                                </TableHead>
-                                <TableHead className="font-semibold text-center">
-                                    <Button variant="ghost" size="sm" className="h-8 gap-1" onClick={() => handleSort('credits')}>
-                                        Credits
-                                        <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'credits' ? 'opacity-100' : 'opacity-40'}`} />
-                                    </Button>
-                                </TableHead>
-                                <TableHead className="font-semibold text-center">Balance Due</TableHead>
-                                <TableHead className="font-semibold">Status</TableHead>
-                                <TableHead className="font-semibold text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {sortedStudents.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                                        No students found
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                sortedStudents.map((student) => (
-                                    <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
-                                        <TableCell>
-                                            <EditStudentModal student={student} />
-                                        </TableCell>
-                                        <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
-                                        <TableCell>
-                                            <div className="text-sm">
-                                                <div>{student.email}</div>
-                                                <div className="text-muted-foreground">{student.phone}</div>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            {student.lesson_day ? (
-                                                <Badge variant="outline">{student.lesson_day}</Badge>
-                                            ) : (
-                                                <span className="text-muted-foreground text-sm">-</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            <Badge variant={student.credits <= 1 ? "destructive" : "secondary"}>
-                                                {student.credits}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {Number(student.balance_due) > 0 ? (
-                                                <div className="flex items-center justify-center gap-1">
-                                                    <AlertCircle className="h-4 w-4 text-destructive" />
-                                                    <span className="font-semibold text-destructive">
-                                                        ${Number(student.balance_due).toFixed(2)}
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-muted-foreground">$0.00</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            {student.credits === 0 ? (
-                                                <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">
-                                                    Needs Renewal
-                                                </Badge>
-                                            ) : (
-                                                <Badge variant="default">Active</Badge>
-                                            )}
-                                        </TableCell>
+                <Tabs defaultValue="active" className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <TabsList>
+                            <TabsTrigger value="active">Active</TabsTrigger>
+                            <TabsTrigger value="inactive">Inactive</TabsTrigger>
+                        </TabsList>
+                    </div>
 
-                                        <TableCell className="text-right">
-                                            <div className="flex items-center justify-end gap-1">
+                    <TabsContent value="active" className="space-y-4">
+                        <div className="rounded-md border">
+                            <StudentTable
+                                students={sortedStudents.filter(s => !s.status || s.status === 'active')}
+                                sortConfig={sortConfig}
+                                handleSort={handleSort}
+                                onLog={onLog}
+                                onSchedule={onSchedule}
+                                onDelete={onDelete}
+                                onMessage={onMessage}
+                                getClassroomLink={getClassroomLink}
+                            />
+                        </div>
+                    </TabsContent>
 
-                                                {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
-                                                {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
-                                                <AutoScheduleButton student={student} />
-                                                {/* -------------------------------- */}
-                                                {/* -------------------------------- */}
-
-                                                {/* --- NEW BUTTON: JOIN CLASSROOM --- */}
-                                                <Button
-                                                    size="sm"
-                                                    // We use 'secondary' or a distinct color like 'indigo' 
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white border-0"
-                                                    onClick={() => window.open(getClassroomLink(student), '_blank')}
-                                                    title="Open Teacher Interface"
-                                                >
-                                                    <MonitorPlay className="h-4 w-4 mr-1" />
-                                                    Room
-                                                </Button>
-
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => onMessage(student.id)}
-                                                >
-                                                    <MessageCircle className="h-4 w-4 mr-1" />
-                                                    Msg
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => onLog(student)}
-                                                >
-                                                    <Upload className="h-4 w-4 mr-1" />
-                                                    Log
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="default"
-                                                    onClick={() => onSchedule(student)}
-                                                >
-                                                    <Plus className="h-4 w-4 mr-1" />
-                                                    Schedule
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="px-2"
-                                                    onClick={() => onDelete(student)}
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+                    <TabsContent value="inactive" className="space-y-4">
+                        <div className="rounded-md border">
+                            <StudentTable
+                                students={sortedStudents.filter(s => s.status === 'inactive')}
+                                sortConfig={sortConfig}
+                                handleSort={handleSort}
+                                onLog={onLog}
+                                onSchedule={onSchedule}
+                                onDelete={onDelete}
+                                onMessage={onMessage}
+                                getClassroomLink={getClassroomLink}
+                            />
+                        </div>
+                    </TabsContent>
+                </Tabs>
             </CardContent>
         </Card>
     )
 }
+
+function StudentTable({
+    students,
+    sortConfig,
+    handleSort,
+    onLog,
+    onSchedule,
+    onDelete,
+    onMessage,
+    getClassroomLink
+}: {
+    students: StudentRoster[]
+    sortConfig: SortConfig
+    handleSort: (key: SortKey) => void
+    onLog: (student: StudentRoster) => void
+    onSchedule: (student: StudentRoster) => void
+    onDelete: (student: StudentRoster) => void
+    onMessage: (studentId: string) => void
+    getClassroomLink: (student: StudentRoster) => string
+}) {
+    return (
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead className="font-semibold">
+                        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('name')}>
+                            Name
+                            <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'name' ? 'opacity-100' : 'opacity-40'}`} />
+                        </Button>
+                    </TableHead>
+                    <TableHead className="font-semibold">Contact</TableHead>
+                    <TableHead className="font-semibold">
+                        <Button variant="ghost" size="sm" className="-ml-3 h-8 gap-1" onClick={() => handleSort('lesson_day')}>
+                            Weekday
+                            <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'lesson_day' ? 'opacity-100' : 'opacity-40'}`} />
+                        </Button>
+                    </TableHead>
+                    <TableHead className="font-semibold text-center">
+                        <Button variant="ghost" size="sm" className="h-8 gap-1" onClick={() => handleSort('credits')}>
+                            Credits
+                            <ArrowUpDown className={`h-4 w-4 ${sortConfig.key === 'credits' ? 'opacity-100' : 'opacity-40'}`} />
+                        </Button>
+                    </TableHead>
+                    <TableHead className="font-semibold text-center">Balance Due</TableHead>
+                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold text-right">Actions</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {students.length === 0 ? (
+                    <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                            No students found
+                        </TableCell>
+                    </TableRow>
+                ) : (
+                    students.map((student) => (
+                        <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
+                            <TableCell>
+                                <EditStudentModal student={student} />
+                            </TableCell>
+                            <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
+                            <TableCell>
+                                <div className="text-sm">
+                                    <div>{student.email}</div>
+                                    <div className="text-muted-foreground">{student.phone}</div>
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                {student.lesson_day ? (
+                                    <Badge variant="outline">{student.lesson_day}</Badge>
+                                ) : (
+                                    <span className="text-muted-foreground text-sm">-</span>
+                                )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                                <Badge variant={student.credits <= 1 ? "destructive" : "secondary"}>
+                                    {student.credits}
+                                </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                                {Number(student.balance_due) > 0 ? (
+                                    <div className="flex items-center justify-center gap-1">
+                                        <AlertCircle className="h-4 w-4 text-destructive" />
+                                        <span className="font-semibold text-destructive">
+                                            ${Number(student.balance_due).toFixed(2)}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className="text-muted-foreground">$0.00</span>
+                                )}
+                            </TableCell>
+                            <TableCell>
+                                {student.credits === 0 ? (
+                                    <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">
+                                        Needs Renewal
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="default">Active</Badge>
+                                )}
+                            </TableCell>
+
+                            <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+
+                                    {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
+                                    {/* --- NEW AUTO-SCHEDULE BUTTON --- */}
+                                    <AutoScheduleButton student={student} />
+                                    {/* -------------------------------- */}
+                                    {/* -------------------------------- */}
+
+                                    {/* --- NEW BUTTON: JOIN CLASSROOM --- */}
+                                    <Button
+                                        size="sm"
+                                        // We use 'secondary' or a distinct color like 'indigo' 
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white border-0"
+                                        onClick={() => window.open(getClassroomLink(student), '_blank')}
+                                        title="Open Teacher Interface"
+                                    >
+                                        <MonitorPlay className="h-4 w-4 mr-1" />
+                                        Room
+                                    </Button>
+
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => onMessage(student.id)}
+                                    >
+                                        <MessageCircle className="h-4 w-4 mr-1" />
+                                        Msg
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => onLog(student)}
+                                    >
+                                        <Upload className="h-4 w-4 mr-1" />
+                                        Log
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="default"
+                                        onClick={() => onSchedule(student)}
+                                    >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Schedule
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="px-2"
+                                        onClick={() => onDelete(student)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ))
+                )}
+            </TableBody>
+        </Table>
+    )
+}
+

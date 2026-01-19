@@ -37,6 +37,7 @@ export interface Database {
                     studio_name: string | null
                     parent_email: string | null
                     public_id: string | null
+                    status: 'active' | 'inactive' | null
                     created_at: string
                     updated_at: string
                 }
@@ -55,6 +56,7 @@ export interface Database {
                     timezone?: string | null
                     studio_name?: string | null
                     public_id?: string | null
+                    status?: 'active' | 'inactive' | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -73,6 +75,7 @@ export interface Database {
                     timezone?: string | null
                     studio_name?: string | null
                     public_id?: string | null
+                    status?: 'active' | 'inactive' | null
                     created_at?: string
                     updated_at?: string
                 }

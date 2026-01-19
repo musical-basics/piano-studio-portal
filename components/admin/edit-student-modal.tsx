@@ -161,6 +161,22 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                     </div>
 
                     <div className="space-y-2">
+                        <Label>Status</Label>
+                        <Select
+                            name="status"
+                            defaultValue={student.status || 'active'}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2">
                         <Label>Time Zone</Label>
                         <Select
                             value={timezone}
