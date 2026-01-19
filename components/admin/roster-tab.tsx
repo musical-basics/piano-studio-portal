@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2 } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { bulkScheduleLessons } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
@@ -150,7 +150,33 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                         <CardTitle className="text-2xl font-serif">Student Roster</CardTitle>
                         <CardDescription>Complete overview of all active students</CardDescription>
                     </div>
-                    <AddStudentModal />
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => {
+                            const headers = ["Name", "Contact Email", "Weekday", "Credits"]
+                            const csvContent = [
+                                headers.join(","),
+                                ...students.map(student => [
+                                    `"${student.name || ''}"`,
+                                    `"${student.email || ''}"`,
+                                    `"${student.lesson_day || ''}"`,
+                                    `"${student.credits}"`
+                                ].join(","))
+                            ].join("\n")
+
+                            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+                            const link = document.createElement("a")
+                            const url = URL.createObjectURL(blob)
+                            link.setAttribute("href", url)
+                            link.setAttribute("download", `student_roster_${new Date().toISOString().split('T')[0]}.csv`)
+                            document.body.appendChild(link)
+                            link.click()
+                            document.body.removeChild(link)
+                        }}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Export CSV
+                        </Button>
+                        <AddStudentModal />
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
