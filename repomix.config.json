@@ -1,0 +1,15 @@
+{
+    "ignore": {
+        "useGitignore": true,
+        "useDefaultPatterns": true,
+        "customPatterns": [
+            "tsconfig.tsbuildinfo",
+            "_backup/**",
+            "piano_backup.sql",
+            "pnpm-lock.yaml",
+            "public/**",
+            ".next/**",
+            "node_modules/**"
+        ]
+    }
+}

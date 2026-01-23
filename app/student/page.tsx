@@ -46,10 +46,24 @@ export default async function StudentPage() {
   }
 
   // Find next scheduled lesson
-  const today = new Date().toISOString().split('T')[0]
+  // 1. Get current time in UTC
+  const now = new Date()
+
+  // 2. Subtract 24 hours to create a safety buffer. 
+  // This handles the case where it's Friday in UTC but still Thursday in PST.
+  const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000))
+  const queryDate = yesterday.toISOString().split('T')[0]
+
   const upcomingLessons = (lessons || [])
-    .filter(l => l.status === 'scheduled' && l.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date))
+    // Filter lessons >= "Yesterday" to be safe
+    .filter(l => l.status === 'scheduled' && l.date >= queryDate)
+    .sort((a, b) => {
+      // Sort by Date first
+      const dateCompare = a.date.localeCompare(b.date)
+      if (dateCompare !== 0) return dateCompare
+      // If same date, sort by Time
+      return a.time.localeCompare(b.time)
+    })
 
   const nextScheduledLesson = upcomingLessons[0]
 
