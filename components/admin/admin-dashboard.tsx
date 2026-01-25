@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail } from "lucide-react"
 import { AdminChat } from "./admin-chat"
@@ -1213,6 +1214,17 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col gap-3 py-4">
+                        <Button
+                            variant="default"
+                            onClick={() => handleSendReminder('exact' as any)}
+                            className="justify-start bg-blue-600 hover:bg-blue-700"
+                        >
+                            <Clock className="mr-2 h-4 w-4" />
+                            Send "Exact Time Remaining"
+                        </Button>
+
+                        <Separator />
+
                         <Button variant="outline" onClick={() => handleSendReminder('24h')} className="justify-start">
                             <Clock className="mr-2 h-4 w-4" />
                             Send "Tomorrow" Reminder (24h)

@@ -3,10 +3,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
+import { differenceInMinutes, format } from 'date-fns'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-export async function sendManualReminder(lessonId: string, variant: '24h' | '2h' | '15m') {
+export async function sendManualReminder(lessonId: string, variant: '24h' | '2h' | '15m' | 'exact') {
     console.log(`[ManualReminder] Starting ${variant} reminder for lesson ${lessonId}`)
     const supabase = await createClient()
 
@@ -22,11 +23,27 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         return { error: 'Lesson not found' }
     }
 
+    // Calculate exact time remaining
+    const lessonDate = new Date(`${lesson.date}T${lesson.time}`)
+    const now = new Date()
+
+    // Calculate total minutes difference
+    const totalMinutes = differenceInMinutes(lessonDate, now)
+    const hours = Math.floor(totalMinutes / 60)
+    const mins = totalMinutes % 60
+
+    let durationString = ""
+    if (hours > 0) durationString += `${hours} hour${hours > 1 ? 's' : ''}`
+    if (hours > 0 && mins > 0) durationString += " and "
+    if (mins > 0) durationString += `${mins} minute${mins > 1 ? 's' : ''}`
+    if (totalMinutes <= 0) durationString = "just a few moments"
+
     // 2. Prepare Email Subject based on variant
     const subjects = {
         '24h': 'Reminder: Piano Lesson Tomorrow',
         '2h': 'Reminder: Lesson starts in 2 hours',
-        '15m': 'Join Now: Piano Lesson Starting!'
+        '15m': 'Join Now: Piano Lesson Starting!',
+        'exact': `Lesson coming up in exactly ${durationString}`
     }
 
     try {
@@ -57,7 +74,8 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
                 studentName: lesson.student.name,
                 time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
                 zoomLink: lesson.zoom_link || lesson.student.zoom_link, // Fallback to student's default link
-                variant: variant
+                variant: variant === 'exact' ? 'exact' : variant,
+                exactDuration: durationString
             })
         })
 
@@ -69,13 +87,15 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         console.log('[ManualReminder] Email sent successfully:', emailData)
 
         // 4. Update Database (so Cron job doesn't double-send)
-        const column = variant === '24h' ? 'reminder_24h_sent' : variant === '2h' ? 'reminder_2h_sent' : 'reminder_15m_sent'
-        const { error: updateError } = await supabase.from('lessons').update({ [column]: true }).eq('id', lessonId)
+        if (variant !== 'exact') {
+            const column = variant === '24h' ? 'reminder_24h_sent' : variant === '2h' ? 'reminder_2h_sent' : 'reminder_15m_sent'
+            const { error: updateError } = await supabase.from('lessons').update({ [column]: true }).eq('id', lessonId)
 
-        if (updateError) {
-            console.error('[ManualReminder] Database update failed (RLS likely):', updateError)
-        } else {
-            console.log('[ManualReminder] Database updated successfully')
+            if (updateError) {
+                console.error('[ManualReminder] Database update failed (RLS likely):', updateError)
+            } else {
+                console.log('[ManualReminder] Database updated successfully')
+            }
         }
 
         return { success: true, message: `Sent ${variant} reminder to ${lesson.student.name}` }

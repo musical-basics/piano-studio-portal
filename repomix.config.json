@@ -9,7 +9,10 @@
             "pnpm-lock.yaml",
             "public/**",
             ".next/**",
-            "node_modules/**"
+            "node_modules/**",
+            "_temp/**",
+            ".DS_Store",
+            ".cursorrules"
         ]
     }
 }

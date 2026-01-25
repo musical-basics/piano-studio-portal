@@ -7,7 +7,8 @@ interface LessonReminderEmailProps {
     studentName: string
     time: string
     zoomLink?: string | null
-    variant: '24h' | '2h' | '15m'
+    variant: '24h' | '2h' | '15m' | 'exact'
+    exactDuration?: string
 }
 
 export default function LessonReminderEmail({
@@ -15,6 +16,7 @@ export default function LessonReminderEmail({
     time,
     zoomLink,
     variant = '24h',
+    exactDuration,
 }: LessonReminderEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
@@ -37,10 +39,16 @@ export default function LessonReminderEmail({
             heading: 'It’s almost time! ⏰',
             body: `Your lesson is about to begin. Please verify your audio settings and click the link below to join.`,
             btnText: 'Join Zoom Meeting'
+        },
+        'exact': {
+            subject: `Lesson Update: Starting in ${exactDuration}`,
+            heading: 'Lesson Reminder 🎹',
+            body: `Just a quick note that your piano lesson is coming up in exactly ${exactDuration}.`,
+            btnText: 'Join Zoom Meeting'
         }
     }
 
-    const text = content[variant]
+    const text = variant === 'exact' ? content['exact'] : content[variant]
 
     return (
         <Html>
