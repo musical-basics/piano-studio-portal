@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Send, Music, User, Search, Loader2, Paperclip } from "lucide-react"
+import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft } from "lucide-react"
 import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
@@ -265,8 +265,12 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     // REPLACED <Card> with standard <div> to fix flex layout issues
     <div className="h-[600px] flex items-stretch overflow-hidden border rounded-xl bg-background shadow-sm">
 
-      {/* LEFT SIDEBAR - Explicit width and border */}
-      <div className="w-[300px] md:w-[320px] flex flex-col border-r bg-muted/20 shrink-0">
+      {/* LEFT SIDEBAR - Responsive visibility */}
+      <div className={`
+        flex-col border-r bg-muted/20 shrink-0 
+        ${selectedStudent ? 'hidden md:flex' : 'flex w-full'} 
+        md:w-[320px]
+      `}>
 
         {/* Header */}
         <div className="p-4 border-b shrink-0 bg-background/50 backdrop-blur">
@@ -336,12 +340,25 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
         </div>
       </div>
 
-      {/* RIGHT CHAT AREA */}
-      <div className="flex-1 flex flex-col min-w-0 bg-background h-full">
+      {/* RIGHT CHAT AREA - Responsive visibility */}
+      <div className={`
+        flex-1 flex-col min-w-0 bg-background h-full 
+        ${selectedStudent ? 'flex' : 'hidden md:flex'}
+      `}>
         {selectedStudent ? (
           <>
             {/* Chat Header */}
             <div className="p-4 border-b flex items-center gap-3 shrink-0 bg-background/80 backdrop-blur z-10 h-[72px]">
+              {/* Back Button for Mobile */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden -ml-2"
+                onClick={() => setSelectedStudent(null)}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+
               <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center">
                 <User className="h-5 w-5 text-primary" />
               </div>
