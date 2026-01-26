@@ -23,9 +23,17 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         return { error: 'Lesson not found' }
     }
 
-    // Calculate exact time remaining
+    // Calculate exact time remaining (Shifted Reference Frame)
+    // We treat both dates as "Wall Clock Time" in the Studio's Timezone (America/Los_Angeles)
+    // regardless of the server's actual timezone (UTC).
+
+    // 1. Lesson Date (Already in Wall Clock Time from DB)
     const lessonDate = new Date(`${lesson.date}T${lesson.time}`)
-    const now = new Date()
+
+    // 2. Current Time (Shifted to LA Wall Clock Time)
+    // toLocaleString returns "M/D/YYYY, HH:MM:SS" in the specified timezone
+    const nowInStudioTimeStr = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+    const now = new Date(nowInStudioTimeStr)
 
     // Calculate total minutes difference
     const totalMinutes = differenceInMinutes(lessonDate, now)
