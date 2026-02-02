@@ -17,6 +17,7 @@ import type { StudentRoster } from "@/types/admin"
 import { AddStudentModal } from "./add-student-modal"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
+import { PricingPlan } from "@/app/actions/pricing"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'
@@ -31,6 +32,7 @@ interface RosterTabProps {
     onSchedule: (student: StudentRoster) => void
     onDelete: (student: StudentRoster) => void
     onMessage: (studentId: string) => void
+    pricingPlans: PricingPlan[]
 }
 
 function AutoScheduleButton({ student }: { student: StudentRoster }) {
@@ -95,7 +97,7 @@ function AutoScheduleButton({ student }: { student: StudentRoster }) {
     )
 }
 
-export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: RosterTabProps) {
+export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pricingPlans }: RosterTabProps) {
     const { toast } = useToast()
     const router = useRouter()
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'lesson_day', direction: 'asc' })
@@ -200,6 +202,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                 onDelete={onDelete}
                                 onMessage={onMessage}
                                 getClassroomLink={getClassroomLink}
+                                pricingPlans={pricingPlans}
                             />
                         </div>
                     </TabsContent>
@@ -215,6 +218,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage }: 
                                 onDelete={onDelete}
                                 onMessage={onMessage}
                                 getClassroomLink={getClassroomLink}
+                                pricingPlans={pricingPlans}
                             />
                         </div>
                     </TabsContent>
@@ -232,7 +236,8 @@ function StudentTable({
     onSchedule,
     onDelete,
     onMessage,
-    getClassroomLink
+    getClassroomLink,
+    pricingPlans
 }: {
     students: StudentRoster[]
     sortConfig: SortConfig
@@ -242,6 +247,7 @@ function StudentTable({
     onDelete: (student: StudentRoster) => void
     onMessage: (studentId: string) => void
     getClassroomLink: (student: StudentRoster) => string
+    pricingPlans: PricingPlan[]
 }) {
     return (
         <Table>
@@ -283,7 +289,7 @@ function StudentTable({
                     students.map((student) => (
                         <TableRow key={student.id} className={Number(student.balance_due) > 0 ? "bg-destructive/5" : ""}>
                             <TableCell>
-                                <EditStudentModal student={student} />
+                                <EditStudentModal student={student} pricingPlans={pricingPlans} />
                             </TableCell>
                             <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
                             <TableCell>

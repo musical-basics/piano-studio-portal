@@ -111,6 +111,10 @@ export default async function AdminPage() {
   // Fetch Resources for the library selector
   const { resources } = await getResources()
 
+  // Fetch Pricing Plans
+  const { getPricingPlans } = await import("@/app/actions/pricing")
+  const { plans: pricingPlans } = await getPricingPlans()
+
   return (
     <AdminDashboard
       admin={profile}
@@ -120,6 +124,7 @@ export default async function AdminPage() {
       totalUnread={totalUnread}
       inquiries={inquiries || []}
       resources={resources || []}
+      pricingPlans={pricingPlans || []}
     />
   )
 }

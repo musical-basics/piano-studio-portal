@@ -17,8 +17,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail } from "lucide-react"
+import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign } from "lucide-react"
 import { AdminChat } from "./admin-chat"
+import { PricingManager } from "@/components/admin/pricing-manager"
+import { PricingPlan } from "@/app/actions/pricing"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson, bulkScheduleLessons } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
@@ -52,9 +54,10 @@ export interface AdminDashboardProps {
     totalUnread: number
     inquiries: Inquiry[]
     resources: Resource[]
+    pricingPlans: PricingPlan[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries, resources }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -667,7 +670,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
             <main className="container mx-auto px-4 py-8">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-                    <TabsList className="grid w-full max-w-4xl grid-cols-3 sm:grid-cols-6 h-auto sm:h-10">
+                    <TabsList className="w-full justify-start overflow-x-auto h-auto p-1">
                         <TabsTrigger value="dashboard" className="gap-2">
                             <LayoutDashboard className="h-4 w-4" />
                             <span className="hidden sm:inline">Today</span>
@@ -708,6 +711,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </Badge>
                             )}
                         </TabsTrigger>
+                        <TabsTrigger value="pricing" className="gap-2">
+                            <DollarSign className="h-4 w-4" />
+                            <span className="hidden sm:inline">Pricing</span>
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="dashboard" className="space-y-8">
@@ -734,6 +741,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onSchedule={handleOpenSchedule}
                             onDelete={handleDeleteStudent}
                             onMessage={handleJumpToMessage}
+                            pricingPlans={pricingPlans}
                         />
                     </TabsContent>
 
@@ -765,6 +773,18 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
                     <TabsContent value="inquiries" className="m-0 h-full p-4 lg:p-10 overflow-auto">
                         <InquiriesTab inquiries={inquiries} />
+                    </TabsContent>
+
+                    <TabsContent value="pricing" className="p-4 lg:p-10">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-2xl font-serif">Pricing Plans</CardTitle>
+                                <CardDescription>Manage subscription plans and credit packages</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <PricingManager initialPlans={pricingPlans} />
+                            </CardContent>
+                        </Card>
                     </TabsContent>
 
                     <TabsContent value="calendar">

@@ -5,132 +5,89 @@ import Stripe from 'stripe'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
-/**
- * Create a Stripe Checkout Session
- * Handles both One-Time Packs and Monthly Subscriptions
- */
-export async function createCheckoutSession(
-    purchaseType: 'single' | 'pack' | 'subscription',
-    lessonDuration?: number
-) {
+export async function createCheckoutSession(pricingPointId: string) {
     const supabase = await createClient()
-
-    // 1. Authenticate User
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
 
-    // 2. Get User's Lesson Duration from DB (Security Best Practice)
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('email, name, lesson_duration')
-        .eq('id', user.id)
+    if (!user) return { error: 'Unauthorized' }
+
+    // 1. Fetch the Pricing Point details from DB
+    const { data: point, error } = await supabase
+        .from('pricing_points')
+        .select('*')
+        .eq('id', pricingPointId)
         .single()
 
-    const duration = lessonDuration || profile?.lesson_duration || 30
+    if (error || !point) {
+        return { error: 'Invalid pricing option selected.' }
+    }
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', user.id)
+        .single()
 
     try {
         let sessionParams: Stripe.Checkout.SessionCreateParams;
 
-        // ==========================================
-        // PATH A: SUBSCRIPTION (Autopay)
-        // ==========================================
-        if (purchaseType === 'subscription') {
-            // Select the correct Price ID based on duration
-            let priceId = '';
-            if (duration === 30) priceId = process.env.STRIPE_SUB_PRICE_30!;
-            else if (duration === 45) priceId = process.env.STRIPE_SUB_PRICE_45!;
-            else if (duration === 60) priceId = process.env.STRIPE_SUB_PRICE_60!;
-
-            if (!priceId) {
-                return { error: `Subscription configuration missing for ${duration} min lessons` }
+        if (point.type === 'subscription') {
+            if (!point.stripe_price_id) {
+                return { error: 'System Error: Subscription Price ID missing.' }
             }
 
             sessionParams = {
                 mode: 'subscription',
                 payment_method_types: ['card'],
                 customer_email: profile?.email || undefined,
-                line_items: [
-                    {
-                        price: priceId, // Must use Price ID for subscriptions
-                        quantity: 1,
-                    },
-                ],
-                // Attach metadata to the Subscription so it persists on every recurring invoice
+                line_items: [{ price: point.stripe_price_id, quantity: 1 }],
                 subscription_data: {
                     metadata: {
                         userId: user.id,
-                        credits: '4' // The recurring amount
+                        credits: point.credits.toString()
                     }
                 },
                 metadata: {
                     userId: user.id,
-                    credits: '4', // Subscriptions add 4 credits per cycle
-                    type: 'subscription',
-                    duration: duration.toString()
+                    credits: point.credits.toString(),
+                    type: 'subscription'
                 },
-                success_url: `${appUrl}/student?success=true&session_id={CHECKOUT_SESSION_ID}`,
+                success_url: `${appUrl}/student?success=true`,
                 cancel_url: `${appUrl}/student?canceled=true`,
             }
-        }
-
-        // ==========================================
-        // PATH B: ONE-TIME PURCHASE (Single/Pack)
-        // ==========================================
-        else {
-            // Get pricing from DB for one-time calculations
-            const { data: pricing } = await supabase
-                .from('pricing_tiers')
-                .select('single_price, pack_price')
-                .eq('duration', duration)
-                .single()
-
-            if (!pricing) {
-                return { error: 'Pricing not configured for your lesson duration' }
-            }
-
-            const quantity = purchaseType === 'single' ? 1 : 4
-            const totalAmount = purchaseType === 'single' ? pricing.single_price : pricing.pack_price
-            const description = purchaseType === 'single'
-                ? `1 x ${duration}-minute lesson`
-                : `4 x ${duration}-minute lessons (4-Pack)`
-
+        } else {
+            // One-time payment
             sessionParams = {
                 mode: 'payment',
                 payment_method_types: ['card'],
                 customer_email: profile?.email || undefined,
-                line_items: [
-                    {
-                        price_data: {
-                            currency: 'usd',
-                            product_data: {
-                                name: `Piano Lesson Credit (${duration} min)`,
-                                description: description,
-                            },
-                            unit_amount: totalAmount,
+                line_items: [{
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: point.label,
+                            description: point.description || `Includes ${point.credits} lesson credits`,
                         },
-                        quantity: 1, // We treat the whole pack as 1 "item" with a custom price
+                        unit_amount: point.price, // Already in cents from DB
                     },
-                ],
+                    quantity: 1, // We treat it as 1 item
+                }],
                 metadata: {
                     userId: user.id,
-                    credits: quantity.toString(),
-                    type: 'one-time',
-                    duration: duration.toString()
+                    credits: point.credits.toString(),
+                    type: 'one-time'
                 },
                 success_url: `${appUrl}/student?success=true`,
                 cancel_url: `${appUrl}/student?canceled=true`,
             }
         }
 
-        // 3. Create Session
         const session = await stripe.checkout.sessions.create(sessionParams)
         return { url: session.url }
 
-    } catch (error) {
-        console.error('Stripe checkout error:', error)
-        return { error: 'Failed to create checkout session' }
+    } catch (err: any) {
+        console.error('Stripe error:', err)
+        return { error: err.message }
     }
 }

@@ -517,7 +517,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 </TabsTrigger>
                                 <TabsTrigger value="tutorials" className="gap-2">
                                     <PlayCircle className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Tutorials</span>
+                                    <span className="hidden sm:inline">Tutorials (still under construction)</span>
                                 </TabsTrigger>
                                 <TabsTrigger value="messages" className="gap-2 relative">
                                     <MessageCircle className="h-4 w-4" />
@@ -660,7 +660,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                             <TabsContent value="tutorials" className="space-y-4">
                                 <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-2xl font-serif font-semibold">Video Tutorials</h2>
+                                    <h2 className="text-2xl font-serif font-semibold">Tutorials (still under construction)</h2>
                                     <Badge variant="secondary">{mockTutorials.length} videos</Badge>
                                 </div>
                                 <div className="grid gap-4">

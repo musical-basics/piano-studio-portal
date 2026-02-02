@@ -25,6 +25,7 @@ import { Pencil, Loader2, Save } from "lucide-react"
 import { updateStudent } from "@/app/actions/users"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile } from "@/lib/supabase/database.types"
+import { PricingPlan } from "@/app/actions/pricing"
 
 function SubmitButton() {
     const { pending } = useFormStatus()
@@ -48,13 +49,15 @@ function SubmitButton() {
 
 interface EditStudentModalProps {
     student: Profile
+    pricingPlans: PricingPlan[]
 }
 
-export function EditStudentModal({ student }: EditStudentModalProps) {
+export function EditStudentModal({ student, pricingPlans }: EditStudentModalProps) {
     const [open, setOpen] = useState(false)
     const [lessonDuration, setLessonDuration] = useState(
         String(student.lesson_duration || 30)
     )
+    const [pricingPlanId, setPricingPlanId] = useState((student as any).pricing_plan_id || "")
     const [lessonTime, setLessonTime] = useState(
         (student as any).lesson_time || "15:30"
     )
@@ -69,6 +72,7 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
         formData.set('lessonDuration', lessonDuration)
         formData.set('lessonTime', lessonTime)
         formData.set('timezone', timezone)
+        formData.set('pricingPlanId', pricingPlanId)
 
         try {
             const result = await updateStudent(formData)
@@ -250,7 +254,30 @@ export function EditStudentModal({ student }: EditStudentModalProps) {
                             </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                            This determines the student&apos;s pricing tier
+                            This determines the lesson length for scheduling
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Pricing Plan</Label>
+                        <Select
+                            value={pricingPlanId}
+                            onValueChange={setPricingPlanId}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select a pricing plan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">No Specific Plan</SelectItem>
+                                {pricingPlans.map(plan => (
+                                    <SelectItem key={plan.id} value={plan.id}>
+                                        {plan.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                            Determines the pricing options they see when buying credits
                         </p>
                     </div>
 
