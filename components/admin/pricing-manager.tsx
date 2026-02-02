@@ -35,17 +35,22 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
 
     // Track which plan has the active form
     const [activePlanId, setActivePlanId] = useState<string | null>(null)
+    const [isCreatingPlan, setIsCreatingPlan] = useState(false)
 
     const handleCreatePlan = async () => {
-        if (!newPlanName) return
+        if (!newPlanName || isCreatingPlan) return
+        setIsCreatingPlan(true)
         const res = await createPricingPlan(newPlanName)
         if (res.success && res.plan) {
+            // Optimistic update
             setPlans([...plans, res.plan])
             setNewPlanName("")
             toast({ title: "Plan Created", description: `Plan "${res.plan.name}" created.` })
+            router.refresh()
         } else {
             toast({ variant: "destructive", title: "Error", description: res.error })
         }
+        setIsCreatingPlan(false)
     }
 
     const handleEditPoint = (point: PricingPoint) => {
@@ -133,7 +138,9 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
                     <Label>New Pricing Plan Name</Label>
                     <Input value={newPlanName} onChange={e => setNewPlanName(e.target.value)} placeholder="e.g. Adult Beginners" />
                 </div>
-                <Button onClick={handleCreatePlan}>Create Plan</Button>
+                <Button onClick={handleCreatePlan} disabled={isCreatingPlan || !newPlanName}>
+                    {isCreatingPlan ? "Creating..." : "Create Plan"}
+                </Button>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
