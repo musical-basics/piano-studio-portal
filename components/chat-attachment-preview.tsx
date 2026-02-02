@@ -112,8 +112,10 @@ export function ChatAttachmentPreview({
     )
 }
 
-interface PendingAttachment {
-    file: File
+export interface PendingAttachment {
+    id?: string
+    file?: File
+    libraryFile?: { url: string; name: string; type: string; size: number }
     preview?: string // For image previews (data URL)
     uploading?: boolean
 }
@@ -139,7 +141,7 @@ export function ChatPendingAttachments({
                         <div className="relative">
                             <img
                                 src={attachment.preview}
-                                alt={attachment.file.name}
+                                alt={attachment.file?.name || attachment.libraryFile?.name || 'Attachment'}
                                 className={`h-16 w-16 object-cover rounded-lg border ${attachment.uploading ? 'opacity-50' : ''
                                     }`}
                             />
@@ -157,7 +159,7 @@ export function ChatPendingAttachments({
                         >
                             <FileText className="h-4 w-4 text-muted-foreground" />
                             <span className="text-xs truncate max-w-[80px]">
-                                {attachment.file.name}
+                                {attachment.file?.name || attachment.libraryFile?.name || 'Unknown file'}
                             </span>
                             {attachment.uploading && (
                                 <div className="h-3 w-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />

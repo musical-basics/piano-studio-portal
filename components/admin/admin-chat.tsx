@@ -4,10 +4,11 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft } from "lucide-react"
+import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder } from "lucide-react"
 import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
-import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
+import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
+import { LibraryFileSelector } from "@/components/admin/library-file-selector"
 
 type StudentWithMessages = Profile & {
   lastMessage: Message | null
@@ -31,8 +32,8 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
 
-  // Attachment states
-  const [pendingAttachments, setPendingAttachments] = useState<{ file: File; preview?: string; uploading?: boolean }[]>([])
+  // Attachment states - Modified to support both File objects and Library resources
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -131,19 +132,35 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     try {
       // Upload all pending attachments first
       const uploadedAttachments: MessageAttachment[] = []
+
       for (const pending of tempAttachments) {
-        const formData = new FormData()
-        formData.append('file', pending.file)
-        const result = await uploadChatAttachment(formData)
-        if (result.attachment) {
-          uploadedAttachments.push(result.attachment)
-        } else if (result.error) {
-          console.error('Failed to upload attachment:', result.error)
-          alert(`Failed to upload attachment: ${result.error}`)
-          setIsSending(false)
-          setNewMessage(tempMessage)
-          setPendingAttachments(tempAttachments)
-          return
+        // Case 1: Library File (Already uploaded)
+        if (pending.libraryFile) {
+          uploadedAttachments.push({
+            type: pending.libraryFile.type.includes('image') ? 'image' : 'file',
+            url: pending.libraryFile.url,
+            name: pending.libraryFile.name,
+            size: pending.libraryFile.size
+          })
+          continue
+        }
+
+        // Case 2: New File Upload
+        if (pending.file) {
+          const formData = new FormData()
+          formData.append('file', pending.file)
+          const result = await uploadChatAttachment(formData)
+
+          if (result.attachment) {
+            uploadedAttachments.push(result.attachment)
+          } else if (result.error) {
+            console.error('Failed to upload attachment:', result.error)
+            alert(`Failed to upload attachment: ${result.error}`)
+            setIsSending(false)
+            setNewMessage(tempMessage)
+            setPendingAttachments(tempAttachments)
+            return
+          }
         }
       }
 
@@ -182,9 +199,10 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    const newAttachments = Array.from(files).map(file => {
+    const newAttachments: PendingAttachment[] = Array.from(files).map(file => {
       const isImage = file.type.startsWith('image/')
       return {
+        id: Math.random().toString(36).substring(7),
         file,
         preview: isImage ? URL.createObjectURL(file) : undefined,
         uploading: false
@@ -197,6 +215,21 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
+  }
+
+  const handleLibrarySelect = (file: { url: string; name: string; type: string; size: number }) => {
+    // Check if ends with image extension or type includes image
+    // Since we only get file_url sometimes, simple check
+    const isImage = file.type.includes('image') || /\.(jpg|jpeg|png|gif|webp)$/i.test(file.url)
+
+    const newAttachment: PendingAttachment = {
+      id: Math.random().toString(36).substring(7),
+      libraryFile: file,
+      preview: isImage ? file.url : undefined, // Use URL directly for library images
+      uploading: false
+    }
+
+    setPendingAttachments(prev => [...prev, newAttachment].slice(0, 5))
   }
 
   const handleRemoveAttachment = (index: number) => {
@@ -443,10 +476,25 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSending || pendingAttachments.length >= 5}
-                  title="Add attachment"
+                  title="Upload file"
                 >
                   <Paperclip className="h-4 w-4" />
                 </Button>
+
+                {/* Library Button */}
+                <LibraryFileSelector
+                  onSelect={handleLibrarySelect}
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={isSending || pendingAttachments.length >= 5}
+                      title="Add from Library"
+                    >
+                      <Folder className="h-4 w-4" />
+                    </Button>
+                  }
+                />
 
                 <Input
                   value={newMessage}
