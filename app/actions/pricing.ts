@@ -167,6 +167,23 @@ export async function updatePricingPoint(id: string, updates: Partial<PricingPoi
     return { success: !error, error: error?.message }
 }
 
+
+
+/**
+ * Admin: Update a Pricing Plan
+ */
+export async function updatePricingPlan(id: string, name: string) {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+        .from('pricing_plans')
+        .update({ name })
+        .eq('id', id)
+
+    revalidatePath('/admin')
+    return { success: !error, error: error?.message }
+}
+
 /**
  * Admin: Delete a Pricing Plan
  */

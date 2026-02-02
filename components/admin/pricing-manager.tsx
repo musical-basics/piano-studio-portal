@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { createPricingPlan, createPricingPoint, updatePricingPoint, deletePricingPoint, deletePricingPlan, PricingPlan, PricingPoint } from "@/app/actions/pricing"
-import { Plus, Trash2, Repeat, Pencil, MoreVertical } from "lucide-react"
+import { createPricingPlan, createPricingPoint, updatePricingPoint, deletePricingPoint, deletePricingPlan, updatePricingPlan, PricingPlan, PricingPoint } from "@/app/actions/pricing"
+import { Plus, Trash2, Repeat, Pencil, MoreVertical, Check, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import {
@@ -43,6 +43,10 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
     const [activePlanId, setActivePlanId] = useState<string | null>(null)
     const [isCreatingPlan, setIsCreatingPlan] = useState(false)
 
+    // Plan Editing State
+    const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
+    const [editingPlanName, setEditingPlanName] = useState("")
+
     const handleCreatePlan = async () => {
         if (!newPlanName || isCreatingPlan) return
         setIsCreatingPlan(true)
@@ -57,6 +61,33 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
             toast({ variant: "destructive", title: "Error", description: res.error })
         }
         setIsCreatingPlan(false)
+    }
+
+    const startEditingPlan = (plan: PricingPlan) => {
+        setEditingPlanId(plan.id)
+        setEditingPlanName(plan.name)
+    }
+
+    const cancelEditingPlan = () => {
+        setEditingPlanId(null)
+        setEditingPlanName("")
+    }
+
+    const handleUpdatePlan = async (id: string) => {
+        if (!editingPlanName.trim()) {
+            toast({ variant: "destructive", title: "Error", description: "Plan name cannot be empty." })
+            return
+        }
+
+        const res = await updatePricingPlan(id, editingPlanName)
+        if (res.success) {
+            toast({ title: "Plan Updated", description: "Plan name updated successfully." })
+            setPlans(plans.map(p => p.id === id ? { ...p, name: editingPlanName } : p))
+            setEditingPlanId(null)
+            router.refresh()
+        } else {
+            toast({ variant: "destructive", title: "Error", description: res.error })
+        }
     }
 
     const handleDeletePlan = async (id: string, name: string) => {
@@ -166,20 +197,43 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
                 {plans.map(plan => (
                     <Card key={plan.id} className="relative">
                         <CardHeader className="bg-muted/20 flex flex-row items-center justify-between pb-2">
-                            <CardTitle className="text-lg">{plan.name}</CardTitle>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                        <MoreVertical className="h-4 w-4" />
+                            {editingPlanId === plan.id ? (
+                                <div className="flex items-center gap-2 w-full pr-8">
+                                    <Input
+                                        value={editingPlanName}
+                                        onChange={(e) => setEditingPlanName(e.target.value)}
+                                        className="h-8 bg-background"
+                                    />
+                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-100" onClick={() => handleUpdatePlan(plan.id)}>
+                                        <Check className="h-4 w-4" />
                                     </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeletePlan(plan.id, plan.name)}>
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Delete Plan
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={cancelEditingPlan}>
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <CardTitle className="text-lg">{plan.name}</CardTitle>
+                            )}
+
+                            {!editingPlanId && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" className="h-8 w-8 p-0">
+                                            <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => startEditingPlan(plan)}>
+                                            <Pencil className="mr-2 h-4 w-4" />
+                                            Edit Name
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeletePlan(plan.id, plan.name)}>
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete Plan
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
                         </CardHeader>
                         <CardContent className="pt-6 space-y-4">
                             {/* Existing Points */}
