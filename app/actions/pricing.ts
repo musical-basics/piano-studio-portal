@@ -163,5 +163,20 @@ export async function updatePricingPoint(id: string, updates: Partial<PricingPoi
 
     revalidatePath('/admin')
     revalidatePath('/student')
+    revalidatePath('/student')
+    return { success: !error, error: error?.message }
+}
+
+/**
+ * Admin: Delete a Pricing Plan
+ */
+export async function deletePricingPlan(id: string) {
+    const supabase = await createClient()
+
+    // Assuming ON DELETE CASCADE is set up in the database for related pricing points
+    // If not, we should delete points first manually
+    const { error } = await supabase.from('pricing_plans').delete().eq('id', id)
+
+    revalidatePath('/admin')
     return { success: !error, error: error?.message }
 }

@@ -6,10 +6,16 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { createPricingPlan, createPricingPoint, updatePricingPoint, deletePricingPoint, PricingPlan, PricingPoint } from "@/app/actions/pricing"
-import { Plus, Trash2, Repeat, Pencil } from "lucide-react"
+import { createPricingPlan, createPricingPoint, updatePricingPoint, deletePricingPoint, deletePricingPlan, PricingPlan, PricingPoint } from "@/app/actions/pricing"
+import { Plus, Trash2, Repeat, Pencil, MoreVertical } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface PricingManagerProps {
     initialPlans: PricingPlan[]
@@ -51,6 +57,19 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
             toast({ variant: "destructive", title: "Error", description: res.error })
         }
         setIsCreatingPlan(false)
+    }
+
+    const handleDeletePlan = async (id: string, name: string) => {
+        if (confirm(`Are you sure you want to delete the plan "${name}"? This action cannot be undone.`)) {
+            const res = await deletePricingPlan(id)
+            if (res.success) {
+                toast({ title: "Plan Deleted", description: `Plan "${name}" removed.` })
+                setPlans(plans.filter(p => p.id !== id))
+                router.refresh()
+            } else {
+                toast({ variant: "destructive", title: "Error", description: res.error })
+            }
+        }
     }
 
     const handleEditPoint = (point: PricingPoint) => {
@@ -146,8 +165,21 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
             <div className="grid md:grid-cols-2 gap-6">
                 {plans.map(plan => (
                     <Card key={plan.id} className="relative">
-                        <CardHeader className="bg-muted/20">
-                            <CardTitle>{plan.name}</CardTitle>
+                        <CardHeader className="bg-muted/20 flex flex-row items-center justify-between pb-2">
+                            <CardTitle className="text-lg">{plan.name}</CardTitle>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                        <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeletePlan(plan.id, plan.name)}>
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete Plan
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         </CardHeader>
                         <CardContent className="pt-6 space-y-4">
                             {/* Existing Points */}
