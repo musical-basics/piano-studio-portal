@@ -139,6 +139,11 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
           uploadedAttachments.push(result.attachment)
         } else if (result.error) {
           console.error('Failed to upload attachment:', result.error)
+          alert(`Failed to upload attachment: ${result.error}`)
+          setIsSending(false)
+          setNewMessage(tempMessage)
+          setPendingAttachments(tempAttachments)
+          return
         }
       }
 
@@ -167,7 +172,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
       console.error('Error sending message:', error)
       setNewMessage(tempMessage)
       setPendingAttachments(tempAttachments)
-      alert("Failed to send")
+      alert("Failed to send message: " + (error instanceof Error ? error.message : "Unknown error"))
     } finally {
       setIsSending(false)
     }

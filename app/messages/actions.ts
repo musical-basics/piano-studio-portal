@@ -297,36 +297,50 @@ export async function uploadChatAttachment(formData: FormData): Promise<{ attach
     const filePath = `chat-attachments/${user.id}/${timestamp}_${sanitizedName}`
 
     // Use Service Role Key to bypass RLS for storage
-    const supabaseAdmin = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_KEY!
-    )
-
-    // Upload to Supabase Storage using Admin client
-    const { data, error } = await supabaseAdmin.storage
-        .from('lesson_materials')
-        .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: file.type // Explicitly set content type
-        })
-
-    if (error) {
-        console.error('Error uploading chat attachment:', error)
-        return { error: error.message }
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY
+    if (!serviceKey) {
+        console.error('UPLOAD ERROR: SUPABASE_SERVICE_KEY is missing')
+        return { error: 'Server configuration error: Missing service key' }
     }
 
-    // Get public URL using Admin client
-    const { data: { publicUrl } } = supabaseAdmin.storage
-        .from('lesson_materials')
-        .getPublicUrl(data.path)
+    try {
+        const supabaseAdmin = createSupabaseClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            serviceKey
+        )
 
-    const attachment: MessageAttachment = {
-        type: isImage ? 'image' : 'file',
-        url: publicUrl,
-        name: file.name,
-        size: file.size
+        console.log(`Attempting upload with service key for file: ${filePath}`)
+
+        // Upload to Supabase Storage using Admin client
+        const { data, error } = await supabaseAdmin.storage
+            .from('lesson_materials')
+            .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: false,
+                contentType: file.type // Explicitly set content type
+            })
+
+        if (error) {
+            console.error('Error uploading chat attachment (Supabase Error):', error)
+            return { error: `Upload failed: ${error.message}` }
+        }
+
+        // Get public URL using Admin client
+        const { data: { publicUrl } } = supabaseAdmin.storage
+            .from('lesson_materials')
+            .getPublicUrl(data.path)
+
+        return {
+            attachment: {
+                type: isImage ? 'image' : 'file',
+                url: publicUrl,
+                name: file.name,
+                size: file.size
+            }
+        }
+
+    } catch (err: any) {
+        console.error('Unexpected error during upload:', err)
+        return { error: `Unexpected upload error: ${err.message || err}` }
     }
-
-    return { attachment }
 }
