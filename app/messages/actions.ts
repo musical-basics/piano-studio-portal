@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
 import { Resend } from 'resend'
 import { MessageNotification } from '@/components/emails/message-notification'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // Initialize Resend (will be undefined if no API key)
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -295,12 +296,19 @@ export async function uploadChatAttachment(formData: FormData): Promise<{ attach
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const filePath = `chat-attachments/${user.id}/${timestamp}_${sanitizedName}`
 
-    // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
+    // Use Service Role Key to bypass RLS for storage
+    const supabaseAdmin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!
+    )
+
+    // Upload to Supabase Storage using Admin client
+    const { data, error } = await supabaseAdmin.storage
         .from('lesson_materials')
         .upload(filePath, file, {
             cacheControl: '3600',
-            upsert: false
+            upsert: false,
+            contentType: file.type // Explicitly set content type
         })
 
     if (error) {
@@ -308,8 +316,8 @@ export async function uploadChatAttachment(formData: FormData): Promise<{ attach
         return { error: error.message }
     }
 
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
+    // Get public URL using Admin client
+    const { data: { publicUrl } } = supabaseAdmin.storage
         .from('lesson_materials')
         .getPublicUrl(data.path)
 

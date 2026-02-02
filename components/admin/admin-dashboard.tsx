@@ -22,7 +22,7 @@ import { AdminChat } from "./admin-chat"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase/client"
+import { uploadSheetMusic } from "@/app/actions/uploads"
 import { deleteStudent } from "@/app/actions/users"
 import { deleteEvent, type AdminEvent } from "@/app/actions/events"
 import { sendManualReminder } from "@/app/actions/reminders"
@@ -489,12 +489,6 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             return
         }
 
-        // Get the lesson ID for the file path
-        // If ad-hoc logging, we don't have a lesson ID yet to upload to. 
-        // We'll need to prevent upload until save, OR (simpler for now) just disable upload for ad-hoc logging
-        // A better UX would be to allow it, upload to a temp location, then move it. 
-        // For now, let's warn the user or just disable it if !lessonId
-
         const lessonId = isEdit ? editingLesson?.id : selectedLesson?.id
 
         if (!lessonId && selectedStudentForLog) {
@@ -510,7 +504,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             toast({
                 variant: "destructive",
                 title: "Upload Failed",
-                description: "No lesson selected"
+                description: "No lesson selected (save the lesson first)"
             })
             return
         }
@@ -518,32 +512,24 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setIsUploading(true)
 
         try {
-            const supabase = createClient()
+            // Prepare FormData for Server Action
+            const formData = new FormData()
+            formData.append('file', file)
 
-            // Create unique filename with timestamp
-            const timestamp = Date.now()
-            const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-            const filePath = `sheet_music / ${lessonId}/${timestamp}_${safeName}`
+            // Call Server Action
+            const result = await uploadSheetMusic(formData, lessonId)
 
-            // Upload to Supabase Storage
-            const { data, error: uploadError } = await supabase.storage
-                .from('lesson_materials')
-                .upload(filePath, file, { upsert: true })
-
-            if (uploadError) {
-                throw uploadError
+            if (result.error) {
+                throw new Error(result.error)
             }
 
-            // Get public URL
-            const { data: { publicUrl } } = supabase.storage
-                .from('lesson_materials')
-                .getPublicUrl(filePath)
-
-            setSheetMusicUrl(publicUrl)
-            toast({
-                title: "Upload Complete",
-                description: "PDF uploaded successfully"
-            })
+            if (result.url) {
+                setSheetMusicUrl(result.url)
+                toast({
+                    title: "Upload Complete",
+                    description: "PDF uploaded successfully"
+                })
+            }
         } catch (error) {
             console.error('Upload error:', error)
             toast({
@@ -553,7 +539,6 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             })
         } finally {
             setIsUploading(false)
-            // Reset file input
             if (isEdit && editFileInputRef.current) {
                 editFileInputRef.current.value = ''
             } else if (fileInputRef.current) {

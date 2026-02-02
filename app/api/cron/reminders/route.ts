@@ -105,8 +105,8 @@ export async function GET(request: Request) {
             }
 
             // --- 15 Minute Reminder ---
-            // Window: 0 to 20 mins
-            if (diffMinutes >= 0 && diffMinutes < 20 && !lesson.reminder_15m_sent) {
+            // Window: 0 to 25 mins (widened to catch early)
+            if (diffMinutes >= 0 && diffMinutes < 25 && !lesson.reminder_15m_sent) {
                 console.log(`[Cron] Sending 15m reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
                 const { error: emailError } = await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
