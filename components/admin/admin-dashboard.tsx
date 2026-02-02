@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { logout } from "@/app/login/actions"
-import { logLesson, markNoShow, scheduleLesson, updateLesson } from "@/app/actions/lessons"
+import { logLesson, markNoShow, scheduleLesson, updateLesson, bulkScheduleLessons } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
 import { uploadSheetMusic } from "@/app/actions/uploads"
 import { deleteStudent } from "@/app/actions/users"
@@ -195,9 +195,24 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             })
         } else {
             console.log('Success, closing modal')
+
+            // Auto-schedule check for Roster Log
+            let autoScheduleMsg = ""
+            if (selectedStudentForLog && selectedStudentForLog.lesson_day && selectedStudentForLog.lesson_time) {
+                try {
+                    console.log('Attempting auto-schedule for', selectedStudentForLog.name)
+                    const scheduleRes = await bulkScheduleLessons(selectedStudentForLog.id, 1)
+                    if (!scheduleRes.error) {
+                        autoScheduleMsg = " Next lesson scheduled."
+                    }
+                } catch (err) {
+                    console.error('Auto-schedule failed', err)
+                }
+            }
+
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson. Credit deducted.`
+                description: `Successfully logged lesson. Credit deducted.${autoScheduleMsg}`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
