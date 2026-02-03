@@ -119,6 +119,11 @@ export function PricingManager({ initialPlans }: PricingManagerProps) {
             return
         }
 
+        if (pointType === 'subscription' && !stripeId) {
+            toast({ variant: "destructive", title: "Error", description: "Stripe Price ID is required for subscriptions" })
+            return
+        }
+
         try {
             const priceInCents = Math.round(parseFloat(pointPrice) * 100)
             const credits = parseInt(pointCredits)

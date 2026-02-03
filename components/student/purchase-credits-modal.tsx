@@ -68,32 +68,40 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
         ) : (
           <div className="space-y-3 py-4">
             {plan.points.map((point) => (
-              <button
-                key={point.id}
-                onClick={() => setSelectedPointId(point.id)}
-                className={`w-full text-left p-4 rounded-lg border-2 transition-all relative overflow-hidden ${selectedPointId === point.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                  }`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold text-lg flex flex-wrap items-center gap-2">
-                      {point.label}
-                      {point.type === 'subscription' && (
-                        <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">
-                          Autopay
-                        </span>
-                      )}
+              <div key={point.id} className="relative">
+                {point.type === 'subscription' && (
+                  <div className="absolute -top-2.5 left-4 bg-green-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full z-10 border border-white shadow-sm">
+                    Recommended
+                  </div>
+                )}
+                <button
+                  onClick={() => setSelectedPointId(point.id)}
+                  className={`w-full text-left p-4 rounded-lg border-2 transition-all relative overflow-hidden ${selectedPointId === point.id
+                    ? (point.type === 'subscription' ? "border-green-600 bg-green-50/50" : "border-primary bg-primary/5")
+                    : (point.type === 'subscription' ? "border-green-200 hover:border-green-600" : "border-border hover:border-primary/50")
+                    }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold text-lg flex flex-wrap items-center gap-2">
+                        {point.label}
+                        {point.type === 'subscription' && (
+                          <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">
+                            Autopay
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {point.description || `${point.credits} Credits`}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {point.description || `${point.credits} Credits`}
-                    </p>
+                    <div className="text-right">
+                      <span className="text-xl font-bold">${(point.price / 100).toFixed(0)}</span>
+                      {point.type === 'subscription' && <span className="text-xs text-muted-foreground block">/mo</span>}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xl font-bold">${(point.price / 100).toFixed(0)}</span>
-                    {point.type === 'subscription' && <span className="text-xs text-muted-foreground block">/mo</span>}
-                  </div>
-                </div>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         )}
