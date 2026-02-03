@@ -74,17 +74,15 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
                 className={`w-full text-left p-4 rounded-lg border-2 transition-all relative overflow-hidden ${selectedPointId === point.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
                   }`}
               >
-                {point.type === 'subscription' && (
-                  <div className="absolute top-0 right-0 bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">
-                    AUTOPAY
-                  </div>
-                )}
-
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="font-semibold text-lg flex items-center gap-2">
+                    <div className="font-semibold text-lg flex flex-wrap items-center gap-2">
                       {point.label}
-                      {point.type === 'subscription' && <Repeat className="h-3 w-3 text-muted-foreground" />}
+                      {point.type === 'subscription' && (
+                        <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">
+                          Autopay
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {point.description || `${point.credits} Credits`}
@@ -107,13 +105,10 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
             )}
           </Button>
           <p className="text-xs text-center text-muted-foreground mt-3">
-            {selectedPoint?.type === 'subscription'
-              ? "Recurring monthly charge. Cancel anytime."
-              : "Secure payment via Stripe"
-            }
+            Purchased Lesson Credits Never Expire.
           </p>
         </div>
       </DialogContent>
-    </Dialog>
+    </Dialog >
   )
 }
