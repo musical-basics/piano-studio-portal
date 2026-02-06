@@ -91,3 +91,58 @@ export async function createCheckoutSession(pricingPointId: string) {
         return { error: err.message }
     }
 }
+
+/**
+ * Create a checkout session specifically for paying off the Outstanding Balance
+ */
+export async function createBalancePaymentSession() {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) return { error: 'Unauthorized' }
+
+    // 1. Fetch current balance
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('balance_due, email')
+        .eq('id', user.id)
+        .single()
+
+    if (!profile || Number(profile.balance_due) <= 0) {
+        return { error: 'No outstanding balance to pay.' }
+    }
+
+    const amountInCents = Math.round(Number(profile.balance_due) * 100)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+    try {
+        const session = await stripe.checkout.sessions.create({
+            mode: 'payment',
+            payment_method_types: ['card'],
+            customer_email: profile.email || undefined,
+            line_items: [{
+                price_data: {
+                    currency: 'usd',
+                    product_data: {
+                        name: 'Outstanding Balance Payment',
+                        description: 'Payment for miscellaneous charges (Sheet music, late fees, etc.)',
+                    },
+                    unit_amount: amountInCents,
+                },
+                quantity: 1,
+            }],
+            metadata: {
+                userId: user.id,
+                type: 'balance_payment', // Distinct type for webhook
+                amountPaid: amountInCents.toString()
+            },
+            success_url: `${appUrl}/student?success=true`,
+            cancel_url: `${appUrl}/student?canceled=true`,
+        })
+
+        return { url: session.url }
+    } catch (err: any) {
+        console.error('Stripe error:', err)
+        return { error: err.message }
+    }
+}

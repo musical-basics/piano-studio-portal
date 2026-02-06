@@ -36,6 +36,7 @@ import { MakeupScheduler } from "./makeup-scheduler"
 import { CancellationModal } from "./cancellation-modal"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
+import { createBalancePaymentSession } from "@/app/actions/stripe"
 import { MessagesPanel } from "./messages-panel"
 import { ChatWidget } from "./chat-widget"
 import { logout } from "@/app/login/actions"
@@ -104,6 +105,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     const [selectedLesson, setSelectedLesson] = useState<UILesson | null>(null)
     const [showLessonDetail, setShowLessonDetail] = useState(false)
     const [showPurchaseModal, setShowPurchaseModal] = useState(false)
+    const [isPayingBalance, setIsPayingBalance] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
     const [isConfirming, setIsConfirming] = useState(false)
 
@@ -206,6 +208,18 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     }
     const handleRenewPackage = () => {
         setShowPurchaseModal(true)
+    }
+
+    const handlePayBalance = async () => {
+        setIsPayingBalance(true)
+        const result = await createBalancePaymentSession()
+
+        if (result.error) {
+            toast({ variant: "destructive", title: "Error", description: result.error })
+            setIsPayingBalance(false)
+        } else if (result.url) {
+            window.location.href = result.url
+        }
     }
 
     const handleDownload = (resource: Resource) => {
@@ -497,7 +511,20 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     ${Number(profile.balance_due).toFixed(2)}
                                 </p>
                             </div>
-                            <AlertCircle className={`h-6 w-6 ${Number(profile.balance_due) > 0 ? "text-destructive" : "text-success"}`} />
+
+                            {Number(profile.balance_due) > 0 ? (
+                                <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={handlePayBalance}
+                                    disabled={isPayingBalance}
+                                    className="h-8"
+                                >
+                                    {isPayingBalance ? <Loader2 className="h-3 w-3 animate-spin" /> : "Pay Now"}
+                                </Button>
+                            ) : (
+                                <AlertCircle className="h-6 w-6 text-success" />
+                            )}
                         </CardContent>
                     </Card>
                 </div>

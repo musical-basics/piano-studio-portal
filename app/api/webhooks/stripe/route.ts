@@ -30,24 +30,52 @@ export async function POST(req: Request) {
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object as Stripe.Checkout.Session
         const userId = session.metadata?.userId
-        const creditsToAdd = Number(session.metadata?.credits || 0)
+        const type = session.metadata?.type
 
-        if (userId && creditsToAdd > 0) {
-            // Find current credits first to add safely
-            const { data: profile } = await supabaseAdmin
-                .from('profiles')
-                .select('credits')
-                .eq('id', userId)
-                .single()
+        if (userId) {
+            // CASE A: Balance Payment
+            if (type === 'balance_payment') {
+                const amountPaidCents = Number(session.metadata?.amountPaid || 0)
+                const amountPaid = amountPaidCents / 100
 
-            const newBalance = (profile?.credits || 0) + creditsToAdd
+                // Fetch current balance to subtract carefully
+                const { data: profile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('balance_due')
+                    .eq('id', userId)
+                    .single()
 
-            await supabaseAdmin
-                .from('profiles')
-                .update({ credits: newBalance })
-                .eq('id', userId)
+                // Reset balance (or subtract if partial payments were allowed, but here we assume full)
+                const currentBalance = Number(profile?.balance_due || 0)
+                const newBalance = Math.max(0, currentBalance - amountPaid)
 
-            console.log(`✅ Added ${creditsToAdd} credits to user ${userId} (Checkout)`)
+                await supabaseAdmin
+                    .from('profiles')
+                    .update({ balance_due: newBalance })
+                    .eq('id', userId)
+
+                console.log(`✅ Balance payment processed for user ${userId}: Paid $${amountPaid}`)
+            }
+            // CASE B: Standard Credit Purchase
+            else {
+                const creditsToAdd = Number(session.metadata?.credits || 0)
+                if (creditsToAdd > 0) {
+                    const { data: profile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('credits')
+                        .eq('id', userId)
+                        .single()
+
+                    const newBalance = (profile?.credits || 0) + creditsToAdd
+
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({ credits: newBalance })
+                        .eq('id', userId)
+
+                    console.log(`✅ Added ${creditsToAdd} credits to user ${userId} (Checkout)`)
+                }
+            }
         }
     }
 
