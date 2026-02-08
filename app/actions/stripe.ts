@@ -80,6 +80,9 @@ export async function createCheckoutSession(pricingPointId: string) {
                 },
                 success_url: `${appUrl}/student?success=true`,
                 cancel_url: `${appUrl}/student?canceled=true`,
+                payment_intent_data: {
+                    capture_method: 'manual',
+                },
             }
         }
 
@@ -138,6 +141,9 @@ export async function createBalancePaymentSession() {
             },
             success_url: `${appUrl}/student?success=true`,
             cancel_url: `${appUrl}/student?canceled=true`,
+            payment_intent_data: {
+                capture_method: 'manual',
+            },
         })
 
         return { url: session.url }
