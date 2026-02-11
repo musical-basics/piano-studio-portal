@@ -123,9 +123,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         }
     }, [nextLesson])
 
-    const handleReschedule = () => {
-        setShowMakeupScheduler(true)
-    }
+    // const handleReschedule = () => {
+    //     setShowMakeupScheduler(true)
+    // }
 
     const handleCancel = () => {
         setShowCancellationModal(true)
@@ -465,10 +465,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     )}
 
                                     {/* 3. Existing Actions */}
-                                    <Button size="lg" variant="outline" onClick={handleReschedule}>
+                                    {/* <Button size="lg" variant="outline" onClick={handleReschedule}>
                                         <CalendarClock className="h-5 w-5 mr-2" />
                                         Reschedule
-                                    </Button>
+                                    </Button> */}
                                     <Button size="lg" variant="destructive" onClick={handleCancel}>
                                         <CalendarX className="h-5 w-5 mr-2" />
                                         Cancel
