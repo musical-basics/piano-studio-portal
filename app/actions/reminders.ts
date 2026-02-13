@@ -74,6 +74,9 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
             }
         }
 
+        const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
+        const classroomLink = lesson.student.public_id ? `${classroomBase}/${lesson.student.public_id}` : null
+
         const { data: emailData, error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: lesson.student.email,
@@ -82,6 +85,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
                 studentName: lesson.student.name,
                 time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
                 zoomLink: lesson.zoom_link || lesson.student.zoom_link, // Fallback to student's default link
+                classroomLink,
                 variant: variant === 'exact' ? 'exact' : variant,
                 exactDuration: durationString
             })

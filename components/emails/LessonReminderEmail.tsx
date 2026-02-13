@@ -7,6 +7,7 @@ interface LessonReminderEmailProps {
     studentName: string
     time: string
     zoomLink?: string | null
+    classroomLink?: string | null
     variant: '24h' | '2h' | '15m' | 'exact'
     exactDuration?: string
 }
@@ -15,6 +16,7 @@ export default function LessonReminderEmail({
     studentName,
     time,
     zoomLink,
+    classroomLink,
     variant = '24h',
     exactDuration,
 }: LessonReminderEmailProps) {
@@ -82,6 +84,15 @@ export default function LessonReminderEmail({
                                     </Text>
                                 )}
                             </>
+                        )}
+
+                        {classroomLink && (
+                            <Text style={zoomLinkText}>
+                                <strong>Classroom Link:</strong>{' '}
+                                <a href={classroomLink} style={{ color: '#10b981', textDecoration: 'underline' }}>
+                                    {classroomLink}
+                                </a>
+                            </Text>
                         )}
                     </Section>
                 </Container>

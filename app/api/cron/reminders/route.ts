@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 
     const { data: lessons, error } = await supabase
         .from('lessons')
-        .select('*, profiles(email, name)')
+        .select('*, profiles(email, name, public_id)')
         .in('date', [todayStr, tomorrowStr])
         .neq('status', 'cancelled') // Don't remind cancelled lessons
 
@@ -60,6 +60,8 @@ export async function GET(request: Request) {
             // Window: 24h to 25h (1440 mins to 1500 mins)
             if (diffMinutes >= 1440 && diffMinutes < 1500 && !lesson.reminder_24h_sent) {
                 console.log(`[Cron] Sending 24h reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
+                const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
+                const classroomLink = lesson.profiles.public_id ? `${classroomBase}/${lesson.profiles.public_id}` : null
                 const { error: emailError } = await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: lesson.profiles.email,
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
                         studentName: lesson.profiles.name || 'Student',
                         time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
                         zoomLink: lesson.zoom_link,
+                        classroomLink,
                         variant: '24h'
                     })
                 })
@@ -84,6 +87,8 @@ export async function GET(request: Request) {
             // Window: 2h to 3h (120 mins to 180 mins)
             if (diffMinutes >= 120 && diffMinutes < 180 && !lesson.reminder_2h_sent) {
                 console.log(`[Cron] Sending 2h reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
+                const classroomBase2h = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
+                const classroomLink2h = lesson.profiles.public_id ? `${classroomBase2h}/${lesson.profiles.public_id}` : null
                 const { error: emailError } = await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: lesson.profiles.email,
@@ -92,6 +97,7 @@ export async function GET(request: Request) {
                         studentName: lesson.profiles.name || 'Student',
                         time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
                         zoomLink: lesson.zoom_link,
+                        classroomLink: classroomLink2h,
                         variant: '2h'
                     })
                 })
@@ -108,6 +114,8 @@ export async function GET(request: Request) {
             // Window: 0 to 25 mins (widened to catch early)
             if (diffMinutes >= 0 && diffMinutes < 25 && !lesson.reminder_15m_sent) {
                 console.log(`[Cron] Sending 15m reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
+                const classroomBase15m = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
+                const classroomLink15m = lesson.profiles.public_id ? `${classroomBase15m}/${lesson.profiles.public_id}` : null
                 const { error: emailError } = await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: lesson.profiles.email,
@@ -116,6 +124,7 @@ export async function GET(request: Request) {
                         studentName: lesson.profiles.name || 'Student',
                         time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
                         zoomLink: lesson.zoom_link,
+                        classroomLink: classroomLink15m,
                         variant: '15m'
                     })
                 })
