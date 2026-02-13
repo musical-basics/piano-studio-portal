@@ -54,6 +54,7 @@ type UILesson = Lesson & {
     duration?: number
     teacher_notes?: string
     credit_snapshot?: number | null
+    credit_snapshot_before?: number | null
 }
 
 export interface StudentDashboardProps {
@@ -739,50 +740,59 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                         </Tabs>
                     </div>
 
-                    {/* Upcoming Events */}
+                    {/* Lesson & Credits History */}
                     <div className="space-y-4">
-                        <h2 className="text-2xl font-serif font-semibold">Upcoming Events</h2>
-                        <div className="space-y-4">
-                            {events.map((event) => (
-                                <Card key={event.id}>
-                                    <CardHeader className="pb-3">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <CardTitle className="text-lg font-serif leading-tight">{event.title}</CardTitle>
-                                        </div>
-                                        <CardDescription className="text-sm">{event.description}</CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3">
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                                            <span>
-                                                {event.date} at {event.start_time}
-                                            </span>
-                                        </div>
-                                        {/* Capacity tracking not yet implemented */}
-
-                                        {event.invite_status === 'going' ? (
-                                            <div className="flex items-center gap-2 w-full">
-                                                <div className="flex-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 py-2 rounded-md text-center text-sm font-medium border border-green-200 dark:border-green-800">
-                                                    ✅ Enrolled
-                                                </div>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="px-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/50"
-                                                    onClick={() => handleUnenroll(event.id)}
-                                                    title="Unenroll from event"
-                                                >
-                                                    Unenroll
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <Button size="sm" className="w-full" onClick={() => handleSignUpClick(event)}>
-                                                Sign Up
-                                            </Button>
-                                        )}
+                        <h2 className="text-2xl font-serif font-semibold">Lesson & Credits History</h2>
+                        <div className="space-y-3">
+                            {completedLessons.length === 0 ? (
+                                <Card>
+                                    <CardContent className="text-center py-8">
+                                        <p className="text-muted-foreground">No completed lessons yet</p>
                                     </CardContent>
                                 </Card>
-                            ))}
+                            ) : (
+                                completedLessons.slice(0, 15).map((lesson) => (
+                                    <Card key={lesson.id} className="hover:shadow-sm transition-shadow">
+                                        <CardContent className="p-4 space-y-2">
+                                            {/* Date */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Music className="h-4 w-4 text-muted-foreground" />
+                                                    <span className="text-sm font-medium">
+                                                        {formatDate(lesson.date)}
+                                                    </span>
+                                                </div>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {formatTime(lesson.time)}
+                                                </span>
+                                            </div>
+
+                                            {/* Credit trail */}
+                                            {(lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null) && (
+                                                <div className="flex items-center gap-1.5 text-xs bg-muted/50 rounded px-2 py-1.5">
+                                                    <span className="text-muted-foreground font-medium">Credits:</span>
+                                                    <span className="font-mono font-semibold">
+                                                        {(lesson as any).credit_snapshot_before ?? '?'}
+                                                    </span>
+                                                    <span className="text-muted-foreground">→</span>
+                                                    <span className="text-red-500 font-mono font-semibold">-1</span>
+                                                    <span className="text-muted-foreground">→</span>
+                                                    <span className="font-mono font-semibold">
+                                                        {lesson.credit_snapshot}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Teacher notes */}
+                                            {lesson.teacher_notes && (
+                                                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                                                    {lesson.teacher_notes}
+                                                </p>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
