@@ -92,6 +92,9 @@ export interface Database {
                     sheet_music_url: string | null
                     duration: number
                     is_confirmed: boolean
+                    credit_snapshot: number | null
+                    credit_snapshot_before: number | null
+                    zoom_link: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -106,6 +109,9 @@ export interface Database {
                     sheet_music_url?: string | null
                     duration?: number
                     is_confirmed?: boolean
+                    credit_snapshot?: number | null
+                    credit_snapshot_before?: number | null
+                    zoom_link?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -120,6 +126,9 @@ export interface Database {
                     sheet_music_url?: string | null
                     duration?: number
                     is_confirmed?: boolean
+                    credit_snapshot?: number | null
+                    credit_snapshot_before?: number | null
+                    zoom_link?: string | null
                     created_at?: string
                     updated_at?: string
                 }
