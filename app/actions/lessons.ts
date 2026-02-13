@@ -7,6 +7,7 @@ import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
 import { createGoogleCalendarEvent } from '@/lib/google-calendar'
+import { addDays, format } from 'date-fns'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -147,7 +148,7 @@ export async function logLesson(
     // Get the lesson to find the student_id and date
     const { data: lesson, error: lessonFetchError } = await supabase
         .from('lessons')
-        .select('student_id, status, date')
+        .select('student_id, status, date, time, duration, zoom_link')
         .eq('id', lessonId)
         .single()
 
@@ -204,7 +205,48 @@ export async function logLesson(
         }
     }
 
-    // STEP 3: Revalidate paths immediately so UI updates
+    // STEP 3: Auto-create next week's lesson (only on first completion)
+    if (!isAlreadyCompleted && lesson.date && lesson.time) {
+        try {
+            const currentLessonDate = new Date(`${lesson.date}T00:00:00`)
+            const nextWeekDate = addDays(currentLessonDate, 7)
+            const nextWeekDateStr = format(nextWeekDate, 'yyyy-MM-dd')
+
+            // Check if a lesson already exists for this student on that date
+            const { data: existingLesson } = await supabase
+                .from('lessons')
+                .select('id')
+                .eq('student_id', lesson.student_id)
+                .eq('date', nextWeekDateStr)
+                .neq('status', 'cancelled')
+                .maybeSingle()
+
+            if (!existingLesson) {
+                const { error: createError } = await supabase
+                    .from('lessons')
+                    .insert({
+                        student_id: lesson.student_id,
+                        date: nextWeekDateStr,
+                        time: lesson.time,
+                        duration: lesson.duration || 60,
+                        status: 'scheduled',
+                        zoom_link: lesson.zoom_link || null,
+                    })
+
+                if (createError) {
+                    console.error('logLesson: Auto-create next lesson failed:', createError)
+                } else {
+                    console.log(`logLesson: Auto-created next lesson for ${nextWeekDateStr} at ${lesson.time}`)
+                }
+            } else {
+                console.log(`logLesson: Lesson already exists for ${nextWeekDateStr}, skipping auto-create`)
+            }
+        } catch (autoCreateError) {
+            console.error('logLesson: Auto-create next lesson error:', autoCreateError)
+        }
+    }
+
+    // STEP 4: Revalidate paths immediately so UI updates
     revalidatePath('/admin')
     revalidatePath('/student')
 
