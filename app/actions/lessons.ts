@@ -379,17 +379,63 @@ export async function logPastLesson(
         return { error: createError.message }
     }
 
-    // Deduct 1 credit
+    // Deduct 1 credit and save snapshots
     if (student) {
+        const startingBalance = student.credits
+        const newBalance = startingBalance - 1
+
         const { error: creditError } = await supabase
             .from('profiles')
-            .update({ credits: student.credits - 1 })
+            .update({ credits: newBalance })
             .eq('id', studentId)
 
         if (creditError) {
             console.error('Failed to deduct credit after logging lesson:', creditError)
-            // We don't rollback the lesson creation, but we log the error.
-            // In a real app we might want to alert the admin.
+        }
+
+        // Save credit snapshots to the lesson
+        if (newLesson) {
+            await supabase
+                .from('lessons')
+                .update({
+                    credit_snapshot_before: startingBalance,
+                    credit_snapshot: newBalance
+                })
+                .eq('id', newLesson.id)
+
+            console.log('logPastLesson: Credit snapshot saved:', startingBalance, '->', newBalance)
+        }
+    }
+
+    // Auto-create next week's lesson
+    if (date && time) {
+        try {
+            const currentLessonDate = new Date(`${date}T00:00:00`)
+            const nextWeekDate = addDays(currentLessonDate, 7)
+            const nextWeekDateStr = format(nextWeekDate, 'yyyy-MM-dd')
+
+            const { data: existingLesson } = await supabase
+                .from('lessons')
+                .select('id')
+                .eq('student_id', studentId)
+                .eq('date', nextWeekDateStr)
+                .neq('status', 'cancelled')
+                .maybeSingle()
+
+            if (!existingLesson) {
+                await supabase
+                    .from('lessons')
+                    .insert({
+                        student_id: studentId,
+                        date: nextWeekDateStr,
+                        time: time,
+                        duration: duration || 60,
+                        status: 'scheduled',
+                    })
+                console.log(`logPastLesson: Auto-created next lesson for ${nextWeekDateStr} at ${time}`)
+            }
+        } catch (autoCreateError) {
+            console.error('logPastLesson: Auto-create next lesson error:', autoCreateError)
         }
     }
 
