@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign, User } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { bulkScheduleLessons } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
@@ -19,6 +19,7 @@ import { ChargeStudentModal } from "./charge-student-modal"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
 import { PricingPlan } from "@/app/actions/pricing"
+import { StudentProfileSheet } from "./student-profile-sheet"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'
@@ -251,6 +252,7 @@ function StudentTable({
     pricingPlans: PricingPlan[]
 }) {
     const [chargeStudent, setChargeStudent] = useState<StudentRoster | null>(null)
+    const [profileStudent, setProfileStudent] = useState<StudentRoster | null>(null)
 
     return (
         <>
@@ -295,7 +297,14 @@ function StudentTable({
                                 <TableCell>
                                     <EditStudentModal student={student} pricingPlans={pricingPlans} />
                                 </TableCell>
-                                <TableCell className="font-medium">{student.name || 'Unknown'}</TableCell>
+                                <TableCell className="font-medium">
+                                    <button
+                                        className="hover:underline hover:text-blue-600 transition-colors text-left cursor-pointer"
+                                        onClick={() => setProfileStudent(student)}
+                                    >
+                                        {student.name || 'Unknown'}
+                                    </button>
+                                </TableCell>
                                 <TableCell>
                                     <div className="text-sm">
                                         <div>{student.email}</div>
@@ -415,6 +424,12 @@ function StudentTable({
                 />
             )
             }
+
+            <StudentProfileSheet
+                student={profileStudent}
+                open={!!profileStudent}
+                onOpenChange={(open) => !open && setProfileStudent(null)}
+            />
         </>
     )
 }

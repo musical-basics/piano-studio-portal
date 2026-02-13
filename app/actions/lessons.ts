@@ -187,7 +187,8 @@ export async function logLesson(
             .single()
 
         if (studentCredits) {
-            const newBalance = studentCredits.credits - 1
+            const startingBalance = studentCredits.credits
+            const newBalance = startingBalance - 1
 
             // Update student's credit balance
             await supabase
@@ -195,13 +196,16 @@ export async function logLesson(
                 .update({ credits: newBalance })
                 .eq('id', lesson.student_id)
 
-            // Save the snapshot to the lesson for static receipt display
+            // Save both snapshots: before and after
             await supabase
                 .from('lessons')
-                .update({ credit_snapshot: newBalance })
+                .update({
+                    credit_snapshot_before: startingBalance,
+                    credit_snapshot: newBalance
+                })
                 .eq('id', lessonId)
 
-            console.log('logLesson: Credit deducted, snapshot saved:', newBalance)
+            console.log('logLesson: Credit deducted, snapshot saved:', startingBalance, '->', newBalance)
         }
     }
 
