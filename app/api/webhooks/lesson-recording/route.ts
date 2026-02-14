@@ -1,53 +1,68 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY!
-)
-
 export async function POST(req: Request) {
+    // 1. Initialize "God Mode" Client — bypasses all RLS policies
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+
     const secret = req.headers.get('x-webhook-secret')
 
-    // Simple security check
     if (secret !== process.env.PIANO_STUDIO_SECRET) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { studentId, recordingUrl, recordedAt } = await req.json()
+    const { studentId, recordingUrl } = await req.json()
 
-    // 1. Find the next active lesson for this student
-    // "Loose" logic: grab the earliest scheduled/logging lesson regardless of exact hour/day
-    const { data: lesson } = await supabase
+    console.log(`[Webhook] Searching for lesson for student: ${studentId}`)
+
+    // 2. Find the lesson — filter to yesterday+ so we don't match stale old lessons
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    const { data: lesson, error } = await supabase
         .from('lessons')
-        .select('id')
+        .select('id, date, time')
         .eq('student_id', studentId)
         .in('status', ['scheduled', 'logging'])
+        .gte('date', yesterday.toISOString().split('T')[0])
         .order('date', { ascending: true })
         .order('time', { ascending: true })
         .limit(1)
         .single()
 
+    if (error) {
+        console.error('[Webhook] Database error:', error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
     if (lesson) {
-        // 2a. Found it! Update the correct column 'video_url'
-        await supabase
+        console.log(`[Webhook] Found lesson ${lesson.id} on ${lesson.date}. Attaching video...`)
+
+        // 3. Update the Video URL
+        const { error: updateError } = await supabase
             .from('lessons')
             .update({
-                video_url: recordingUrl,
+                video_url: recordingUrl
             })
             .eq('id', lesson.id)
 
-        console.log(`[Webhook] Attached recording to lesson ${lesson.id}`)
-    } else {
-        // 2b. No lesson scheduled?
-        // Create a "Draft" or "Unmatched Recording" record so you don't lose it.
-        await supabase.from('unmatched_recordings').insert({
-            student_id: studentId,
-            url: recordingUrl,
-            created_at: recordedAt
-        })
-        console.log(`[Webhook] No lesson found for ${studentId}, saved to unmatched queue.`)
-    }
+        if (updateError) {
+            console.error('[Webhook] Update failed:', updateError)
+            return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+        }
 
-    return NextResponse.json({ success: true })
+        return NextResponse.json({ success: true, lessonId: lesson.id })
+    } else {
+        console.log('[Webhook] No matching scheduled lesson found.')
+        return NextResponse.json({ message: 'No lesson found' }, { status: 200 })
+    }
 }
