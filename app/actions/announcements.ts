@@ -158,7 +158,7 @@ export async function sendAnnouncement(
                     const emails = students.map(s => s.email).filter(Boolean) as string[]
                     if (emails.length > 0) {
                         const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-                        const adminEmail = adminProfile?.email || 'support@musicalbasics.com'
+                        const adminEmail = user.email || 'support@musicalbasics.com'
                         const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
                         // The "BCC Blast" Strategy
