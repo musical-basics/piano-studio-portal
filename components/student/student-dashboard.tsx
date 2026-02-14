@@ -26,6 +26,7 @@ import {
     CheckCircle2,
     HelpCircle,
     Loader2,
+    Megaphone,
 } from "lucide-react"
 import {
     mockEvents,
@@ -66,6 +67,7 @@ export interface StudentDashboardProps {
     teacherName?: string
     events?: StudentEvent[]
     resources?: Resource[]
+    latestAnnouncement?: { id: string; subject: string; body: string; created_at: string } | null
 }
 
 // Category badge colors
@@ -77,7 +79,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [] }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -740,8 +742,30 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                         </Tabs>
                     </div>
 
-                    {/* Lesson & Credits History */}
+                    {/* Announcement Alert */}
                     <div className="space-y-4">
+                        {latestAnnouncement && (
+                            <Card className="border-indigo-200 bg-indigo-50 dark:bg-indigo-900/10 shadow-sm">
+                                <CardContent className="p-4 space-y-2">
+                                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                                        <Megaphone className="h-4 w-4 shrink-0" />
+                                        <h3 className="font-semibold text-sm">{latestAnnouncement.subject}</h3>
+                                    </div>
+                                    <p className="text-sm text-indigo-600/80 dark:text-indigo-300/70 whitespace-pre-wrap leading-relaxed">
+                                        {latestAnnouncement.body}
+                                    </p>
+                                    <p className="text-xs text-indigo-400">
+                                        Posted {new Date(latestAnnouncement.created_at).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                        })}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Lesson & Credits History */}
                         <h2 className="text-2xl font-serif font-semibold">Lesson & Credits History</h2>
                         <div className="space-y-3">
                             {completedLessons.length === 0 ? (

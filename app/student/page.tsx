@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { StudentDashboard } from "@/components/student/student-dashboard"
 import { getStudentEvents } from "@/app/actions/events"
 import { getStudentResources } from "@/app/actions/resources"
+import { getLatestAnnouncement } from "@/app/actions/announcements"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -86,6 +87,9 @@ export default async function StudentPage() {
   // Fetch resources assigned to this student
   const { resources } = await getStudentResources()
 
+  // Fetch latest announcement for this student
+  const latestAnnouncement = await getLatestAnnouncement(user.id)
+
   return (
     <StudentDashboard
       profile={profile}
@@ -96,6 +100,7 @@ export default async function StudentPage() {
       teacherName={teacher?.name || "Professor"}
       events={upcomingEvents}
       resources={resources}
+      latestAnnouncement={latestAnnouncement}
     />
   )
 }

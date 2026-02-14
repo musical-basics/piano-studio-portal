@@ -3,6 +3,7 @@ import { ScheduledTab } from "@/components/admin/scheduled-tab"
 import { CompletedTab } from "@/components/admin/completed-tab"
 import { RosterTab } from "@/components/admin/roster-tab"
 import { InquiriesTab } from "@/components/admin/inquiries-tab"
+import { AnnouncementTab } from "@/components/admin/announcement-tab"
 import { MasterCalendar } from "./master-calendar"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import React, { useState, useRef, Suspense, useMemo } from "react"
@@ -17,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign } from "lucide-react"
+import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -718,6 +719,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             <DollarSign className="h-4 w-4" />
                             <span className="hidden sm:inline">Pricing</span>
                         </TabsTrigger>
+                        <TabsTrigger value="announcements" className="gap-2">
+                            <Megaphone className="h-4 w-4" />
+                            <span className="hidden sm:inline">Announce</span>
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="dashboard" className="space-y-8">
@@ -788,6 +793,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 <PricingManager initialPlans={pricingPlans} />
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    <TabsContent value="announcements" className="p-4 lg:p-10">
+                        <AnnouncementTab students={students} />
                     </TabsContent>
 
                     <TabsContent value="calendar">
