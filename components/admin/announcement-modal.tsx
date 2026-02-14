@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,6 +36,19 @@ export function AnnouncementModal({ open, onOpenChange, students, initial, onCom
     const [selectedStudents, setSelectedStudents] = useState<string[]>(initial?.recipient_ids || [])
     const [isSaving, setIsSaving] = useState(false)
     const [isSending, setIsSending] = useState(false)
+
+    // Sync form state when initial data changes (clicking a different row)
+    useEffect(() => {
+        if (initial) {
+            setSubject(initial.subject)
+            setBody(initial.body)
+            setSelectedStudents(initial.recipient_ids || [])
+        } else {
+            setSubject("")
+            setBody("")
+            setSelectedStudents([])
+        }
+    }, [initial])
 
     const isViewOnly = initial?.status === 'sent'
     const allSelected = selectedStudents.length === students.length && students.length > 0
