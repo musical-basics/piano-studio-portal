@@ -2,9 +2,19 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+
+// Service-role client — bypasses RLS
+function getAdminSupabase() {
+    return createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+}
 
 /**
  * Send an announcement to selected students.
@@ -15,15 +25,16 @@ export async function sendAnnouncement(
     body: string,
     studentIds: string[]
 ) {
+    // Auth check via session client
     const supabase = await createClient()
-
-    // Verify user is admin
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
         return { error: 'Unauthorized' }
     }
 
-    const { data: adminProfile } = await supabase
+    const adminDb = getAdminSupabase()
+
+    const { data: adminProfile } = await adminDb
         .from('profiles')
         .select('role, name, studio_name')
         .eq('id', user.id)
@@ -34,7 +45,7 @@ export async function sendAnnouncement(
     }
 
     // 1. Create the Announcement Record
-    const { data: announcement, error: annError } = await supabase
+    const { data: announcement, error: annError } = await adminDb
         .from('announcements')
         .insert({
             subject,
@@ -55,7 +66,7 @@ export async function sendAnnouncement(
         student_id: studentId
     }))
 
-    const { error: linkError } = await supabase
+    const { error: linkError } = await adminDb
         .from('announcement_recipients')
         .insert(recipientsData)
 
@@ -68,7 +79,7 @@ export async function sendAnnouncement(
     if (resend) {
         (async () => {
             try {
-                const { data: students } = await supabase
+                const { data: students } = await adminDb
                     .from('profiles')
                     .select('email, name')
                     .in('id', studentIds)
@@ -115,9 +126,9 @@ export async function sendAnnouncement(
  * Get the latest announcement for a specific student.
  */
 export async function getLatestAnnouncement(studentId: string) {
-    const supabase = await createClient()
+    const adminDb = getAdminSupabase()
 
-    const { data, error } = await supabase
+    const { data, error } = await adminDb
         .from('announcement_recipients')
         .select(`
             announcement_id,
@@ -140,7 +151,6 @@ export async function getLatestAnnouncement(studentId: string) {
 
     if (!data?.announcements) return null
 
-    // Supabase returns the joined data as an object (single) since it's a FK
     const ann = data.announcements as any
     return {
         id: ann.id,
