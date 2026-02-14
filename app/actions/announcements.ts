@@ -145,7 +145,7 @@ export async function sendAnnouncement(
             })))
     }
 
-    // Send emails (fire-and-forget)
+    // Send individual emails per student (fire-and-forget)
     if (resend && studentIds.length > 0) {
         (async () => {
             try {
@@ -155,19 +155,14 @@ export async function sendAnnouncement(
                     .in('id', studentIds)
 
                 if (students && students.length > 0) {
-                    const emails = students.map(s => s.email).filter(Boolean) as string[]
-                    if (emails.length > 0) {
-                        const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-                        const adminEmail = user.email || 'support@musicalbasics.com'
-                        const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
+                    const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
+                    const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
-                        // The "BCC Blast" Strategy
-                        await resend.emails.send({
+                    const emailPayloads = students
+                        .filter(s => s.email)
+                        .map(s => ({
                             from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                            // Public recipient is the admin (prevents students seeing each other)
-                            to: adminEmail,
-                            // Students are hidden in BCC
-                            bcc: emails,
+                            to: s.email,
                             subject: `📢 ${subject}`,
                             html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
                                 <h2 style="color: #333;">📢 ${subject}</h2>
@@ -177,9 +172,11 @@ export async function sendAnnouncement(
                                     View in your portal: <a href="${portalUrl}/student" style="color: #4f46e5;">Student Dashboard</a>
                                 </p>
                             </div>`
-                        })
-                        console.log(`[Announcement] BCC Blast sent to ${emails.length} students via ${adminEmail}`)
-                    }
+                        }))
+
+                    // Send as batch (individual emails, each student only sees their own)
+                    await resend.batch.send(emailPayloads)
+                    console.log(`[Announcement] Sent ${emailPayloads.length} individual emails`)
                 }
             } catch (emailError) {
                 console.error('[Announcement] Email failed (non-blocking):', emailError)
