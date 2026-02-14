@@ -145,43 +145,48 @@ export async function sendAnnouncement(
             })))
     }
 
-    // Send individual emails per student (fire-and-forget)
+    // Send individual emails per student (AWAITED, not fire-and-forget)
     if (resend && studentIds.length > 0) {
-        (async () => {
-            try {
-                const { data: students } = await adminDb
-                    .from('profiles')
-                    .select('email, name')
-                    .in('id', studentIds)
+        try {
+            console.log(`[Announcement] Starting email send for ${studentIds.length} students`)
 
-                if (students && students.length > 0) {
-                    const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-                    const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
+            const { data: students } = await adminDb
+                .from('profiles')
+                .select('email, name')
+                .in('id', studentIds)
 
-                    const emailPayloads = students
-                        .filter(s => s.email)
-                        .map(s => ({
-                            from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                            to: s.email,
-                            subject: `📢 ${subject}`,
-                            html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                                <h2 style="color: #333;">📢 ${subject}</h2>
-                                <p style="color: #555; white-space: pre-wrap; line-height: 1.6;">${body}</p>
-                                <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-                                <p style="color: #999; font-size: 14px;">
-                                    View in your portal: <a href="${portalUrl}/student" style="color: #4f46e5;">Student Dashboard</a>
-                                </p>
-                            </div>`
-                        }))
+            console.log(`[Announcement] Fetched ${students?.length || 0} student profiles`)
 
-                    // Send as batch (individual emails, each student only sees their own)
-                    await resend.batch.send(emailPayloads)
-                    console.log(`[Announcement] Sent ${emailPayloads.length} individual emails`)
-                }
-            } catch (emailError) {
-                console.error('[Announcement] Email failed (non-blocking):', emailError)
+            if (students && students.length > 0) {
+                const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
+                const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
+
+                const emailPayloads = students
+                    .filter(s => s.email)
+                    .map(s => ({
+                        from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                        to: s.email,
+                        subject: `📢 ${subject}`,
+                        html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #333;">📢 ${subject}</h2>
+                            <p style="color: #555; white-space: pre-wrap; line-height: 1.6;">${body}</p>
+                            <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+                            <p style="color: #999; font-size: 14px;">
+                                View in your portal: <a href="${portalUrl}/student" style="color: #4f46e5;">Student Dashboard</a>
+                            </p>
+                        </div>`
+                    }))
+
+                console.log(`[Announcement] Sending ${emailPayloads.length} individual emails to:`, emailPayloads.map(e => e.to))
+
+                const batchResult = await resend.batch.send(emailPayloads)
+                console.log(`[Announcement] Batch result:`, JSON.stringify(batchResult))
             }
-        })()
+        } catch (emailError) {
+            console.error('[Announcement] Email send failed:', emailError)
+        }
+    } else {
+        console.log(`[Announcement] Skipping emails: resend=${!!resend}, studentIds.length=${studentIds.length}`)
     }
 
     revalidatePath('/admin')
