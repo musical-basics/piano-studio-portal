@@ -130,6 +130,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
         setSelectedStudentForLog(null)
+        setVideoUrl(lesson.video_url || '')
+        setSheetMusicUrl(lesson.sheet_music_url || '')
+        setLessonNotes(lesson.notes || '')
         setShowLogLessonModal(true)
     }
 
