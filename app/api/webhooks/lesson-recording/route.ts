@@ -16,33 +16,24 @@ export async function POST(req: Request) {
 
     const { studentId, recordingUrl, recordedAt } = await req.json()
 
-    // 1. Find the Scheduled Lesson for TODAY
-    // We look for a lesson that started within the last 24 hours
-    // and belongs to this student.
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    // NOTE: You might need to adjust this query based on your exact schema
-    const { data: lesson, error } = await supabase
+    // 1. Find the next active lesson for this student
+    // "Loose" logic: grab the earliest scheduled/logging lesson regardless of exact hour/day
+    const { data: lesson } = await supabase
         .from('lessons')
-        .select('id, status')
+        .select('id')
         .eq('student_id', studentId)
-        .gte('start_time', today.toISOString())
+        .in('status', ['scheduled', 'logging'])
+        .order('date', { ascending: true })
+        .order('time', { ascending: true })
         .limit(1)
         .single()
 
-    if (error) {
-        console.log(`[Webhook] Query error (may just mean no lesson found): ${error.message}`)
-    }
-
     if (lesson) {
-        // 2a. Found a lesson! Attach the URL.
+        // 2a. Found it! Update the correct column 'video_url'
         await supabase
             .from('lessons')
             .update({
-                recording_url: recordingUrl,
-                // Optional: If you want to auto-mark it as "Needs Logging"
-                // status: lesson.status === 'scheduled' ? 'needs_log' : lesson.status
+                video_url: recordingUrl,
             })
             .eq('id', lesson.id)
 
