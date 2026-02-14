@@ -1,14 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, Send } from "lucide-react"
-import { sendAnnouncement } from "@/app/actions/announcements"
+import { Badge } from "@/components/ui/badge"
+import { Megaphone, Plus, Trash2, Loader2 } from "lucide-react"
+import { getAnnouncements, deleteAnnouncementDraft } from "@/app/actions/announcements"
+import { AnnouncementModal, type AnnouncementData } from "@/components/admin/announcement-modal"
 import { useToast } from "@/hooks/use-toast"
 import type { StudentRoster } from "@/types/admin"
 
@@ -16,153 +14,163 @@ interface AnnouncementTabProps {
     students: StudentRoster[]
 }
 
+type AnnouncementRow = {
+    id: string
+    subject: string
+    body: string
+    status: 'draft' | 'sent'
+    created_at: string
+    sent_at: string | null
+    recipient_count: number
+    recipient_ids: string[]
+}
+
 export function AnnouncementTab({ students }: AnnouncementTabProps) {
     const { toast } = useToast()
-    const [subject, setSubject] = useState("")
-    const [body, setBody] = useState("")
-    const [selectedStudents, setSelectedStudents] = useState<string[]>([])
-    const [isSending, setIsSending] = useState(false)
+    const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [showModal, setShowModal] = useState(false)
+    const [editData, setEditData] = useState<AnnouncementData | null>(null)
+    const [deletingId, setDeletingId] = useState<string | null>(null)
 
-    const allSelected = selectedStudents.length === students.length && students.length > 0
-
-    const handleSelectAll = () => {
-        if (allSelected) {
-            setSelectedStudents([])
-        } else {
-            setSelectedStudents(students.map(s => s.id))
-        }
+    const fetchList = async () => {
+        setIsLoading(true)
+        const data = await getAnnouncements()
+        setAnnouncements(data)
+        setIsLoading(false)
     }
 
-    const handleToggleStudent = (studentId: string, checked: boolean) => {
-        if (checked) {
-            setSelectedStudents(prev => [...prev, studentId])
-        } else {
-            setSelectedStudents(prev => prev.filter(id => id !== studentId))
-        }
+    useEffect(() => { fetchList() }, [])
+
+    const handleNew = () => {
+        setEditData(null)
+        setShowModal(true)
     }
 
-    const handleSend = async () => {
-        if (!subject.trim() || !body.trim() || selectedStudents.length === 0) return
+    const handleRowClick = (row: AnnouncementRow) => {
+        setEditData({
+            id: row.id,
+            subject: row.subject,
+            body: row.body,
+            status: row.status,
+            recipient_ids: row.recipient_ids
+        })
+        setShowModal(true)
+    }
 
-        setIsSending(true)
-        const result = await sendAnnouncement(subject.trim(), body.trim(), selectedStudents)
-        setIsSending(false)
-
+    const handleDelete = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation()
+        if (!confirm("Delete this draft?")) return
+        setDeletingId(id)
+        const result = await deleteAnnouncementDraft(id)
+        setDeletingId(null)
         if (result.error) {
-            toast({
-                variant: "destructive",
-                title: "Send Failed",
-                description: result.error
-            })
+            toast({ variant: "destructive", title: "Error", description: result.error })
         } else {
-            toast({
-                title: "Announcement Sent",
-                description: result.message
-            })
-            setSubject("")
-            setBody("")
-            setSelectedStudents([])
+            toast({ title: "Draft Deleted" })
+            fetchList()
         }
+    }
+
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        })
     }
 
     return (
-        <div className="space-y-6 max-w-4xl">
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-2xl font-serif">Draft Announcement</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {/* Subject */}
-                    <div className="space-y-2">
-                        <Label htmlFor="ann-subject" className="text-base">Subject</Label>
-                        <Input
-                            id="ann-subject"
-                            placeholder="e.g. Classroom is officially working!"
-                            value={subject}
-                            onChange={e => setSubject(e.target.value)}
-                        />
-                    </div>
+        <div className="space-y-6 max-w-5xl">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <Megaphone className="h-6 w-6 text-indigo-600" />
+                    <h2 className="text-2xl font-serif font-semibold">Announcements</h2>
+                </div>
+                <Button onClick={handleNew} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Announcement
+                </Button>
+            </div>
 
-                    {/* Body */}
-                    <div className="space-y-2">
-                        <Label htmlFor="ann-body" className="text-base">Message</Label>
-                        <Textarea
-                            id="ann-body"
-                            placeholder="Write your announcement here..."
-                            value={body}
-                            onChange={e => setBody(e.target.value)}
-                            rows={6}
-                            className="resize-none"
-                        />
-                    </div>
-
-                    {/* Recipients */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <Label className="text-base">
-                                Recipients {selectedStudents.length > 0 && (
-                                    <span className="text-muted-foreground font-normal">
-                                        ({selectedStudents.length} selected)
-                                    </span>
-                                )}
-                            </Label>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleSelectAll}
-                            >
-                                {allSelected ? "Deselect All" : "Select All"}
-                            </Button>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[240px] overflow-y-auto border rounded-md p-3">
-                            {students.map(student => (
-                                <div
-                                    key={student.id}
-                                    className="flex items-center gap-2 p-1.5 hover:bg-accent rounded cursor-pointer"
-                                    onClick={() => handleToggleStudent(student.id, !selectedStudents.includes(student.id))}
-                                >
-                                    <Checkbox
-                                        checked={selectedStudents.includes(student.id)}
-                                        onCheckedChange={(checked) =>
-                                            handleToggleStudent(student.id, !!checked)
-                                        }
-                                    />
-                                    <span className="text-sm truncate">
-                                        {student.name || student.email}
-                                    </span>
-                                </div>
-                            ))}
-                            {students.length === 0 && (
-                                <p className="text-sm text-muted-foreground col-span-full text-center py-4">
-                                    No students found
-                                </p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Send Button */}
-                    <div className="flex justify-end pt-2">
-                        <Button
-                            onClick={handleSend}
-                            disabled={isSending || !subject.trim() || !body.trim() || selectedStudents.length === 0}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white"
+            {/* History List */}
+            {isLoading ? (
+                <div className="flex justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+            ) : announcements.length === 0 ? (
+                <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                        <Megaphone className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                        <h3 className="font-semibold text-lg mb-2">No Announcements Yet</h3>
+                        <p className="text-muted-foreground max-w-sm">
+                            Click &quot;New Announcement&quot; to draft your first message to students.
+                        </p>
+                    </CardContent>
+                </Card>
+            ) : (
+                <div className="space-y-2">
+                    {announcements.map(a => (
+                        <Card
+                            key={a.id}
+                            className="hover:shadow-md transition-shadow cursor-pointer border"
+                            onClick={() => handleRowClick(a)}
                         >
-                            {isSending ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Sending...
-                                </>
-                            ) : (
-                                <>
-                                    <Send className="h-4 w-4 mr-2" />
-                                    Send Announcement
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+                            <CardContent className="flex items-center justify-between p-4">
+                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    {/* Status Badge */}
+                                    <Badge
+                                        variant={a.status === 'sent' ? 'default' : 'secondary'}
+                                        className={a.status === 'sent'
+                                            ? 'bg-green-100 text-green-700 hover:bg-green-100 border-green-200 shrink-0'
+                                            : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100 border-yellow-200 shrink-0'
+                                        }
+                                    >
+                                        {a.status === 'sent' ? 'Sent' : 'Draft'}
+                                    </Badge>
+
+                                    {/* Subject */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium truncate">{a.subject || "(No subject)"}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {formatDate(a.sent_at || a.created_at)} · {a.recipient_count} recipient{a.recipient_count === 1 ? '' : 's'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Delete button for drafts */}
+                                {a.status === 'draft' && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-muted-foreground hover:text-destructive shrink-0 ml-2"
+                                        onClick={(e) => handleDelete(e, a.id)}
+                                        disabled={deletingId === a.id}
+                                    >
+                                        {deletingId === a.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Trash2 className="h-4 w-4" />
+                                        )}
+                                    </Button>
+                                )}
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+            )}
+
+            {/* Modal */}
+            <AnnouncementModal
+                open={showModal}
+                onOpenChange={setShowModal}
+                students={students}
+                initial={editData}
+                onComplete={fetchList}
+            />
         </div>
     )
 }

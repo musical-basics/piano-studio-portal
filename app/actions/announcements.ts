@@ -7,7 +7,6 @@ import { Resend } from 'resend'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
-// Service-role client — bypasses RLS
 function getAdminSupabase() {
     return createAdminClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,20 +16,82 @@ function getAdminSupabase() {
 }
 
 /**
- * Send an announcement to selected students.
- * Creates DB records and sends email notifications.
+ * Save or update a draft announcement (no emails sent).
+ */
+export async function saveAnnouncementDraft(
+    subject: string,
+    body: string,
+    studentIds: string[],
+    existingId?: string
+) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const adminDb = getAdminSupabase()
+
+    const { data: profile } = await adminDb
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+    if (profile?.role !== 'admin') return { error: 'Only admins can save drafts' }
+
+    let announcementId = existingId
+
+    if (existingId) {
+        // Update existing draft
+        const { error } = await adminDb
+            .from('announcements')
+            .update({ subject, body })
+            .eq('id', existingId)
+            .eq('status', 'draft')
+
+        if (error) return { error: error.message }
+
+        // Re-sync recipients: delete old, insert new
+        await adminDb
+            .from('announcement_recipients')
+            .delete()
+            .eq('announcement_id', existingId)
+    } else {
+        // Create new draft
+        const { data: newAnn, error } = await adminDb
+            .from('announcements')
+            .insert({ subject, body, teacher_id: user.id, status: 'draft' })
+            .select('id')
+            .single()
+
+        if (error || !newAnn) return { error: error?.message || 'Failed to create draft' }
+        announcementId = newAnn.id
+    }
+
+    // Insert recipient links
+    if (studentIds.length > 0 && announcementId) {
+        await adminDb
+            .from('announcement_recipients')
+            .insert(studentIds.map(sid => ({
+                announcement_id: announcementId,
+                student_id: sid
+            })))
+    }
+
+    revalidatePath('/admin')
+    return { success: true, id: announcementId, message: 'Draft saved.' }
+}
+
+/**
+ * Send an announcement. Creates or updates the record, sets status='sent', triggers emails.
  */
 export async function sendAnnouncement(
     subject: string,
     body: string,
-    studentIds: string[]
+    studentIds: string[],
+    existingId?: string
 ) {
-    // Auth check via session client
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
+    if (!user) return { error: 'Unauthorized' }
 
     const adminDb = getAdminSupabase()
 
@@ -39,44 +100,53 @@ export async function sendAnnouncement(
         .select('role, name, studio_name')
         .eq('id', user.id)
         .single()
+    if (adminProfile?.role !== 'admin') return { error: 'Only admins can send announcements' }
 
-    if (adminProfile?.role !== 'admin') {
-        return { error: 'Only admins can send announcements' }
+    let announcementId = existingId
+
+    if (existingId) {
+        // Update and mark as sent
+        const { error } = await adminDb
+            .from('announcements')
+            .update({ subject, body, status: 'sent', sent_at: new Date().toISOString() })
+            .eq('id', existingId)
+
+        if (error) return { error: error.message }
+
+        // Re-sync recipients
+        await adminDb
+            .from('announcement_recipients')
+            .delete()
+            .eq('announcement_id', existingId)
+    } else {
+        // Create as sent
+        const { data: newAnn, error } = await adminDb
+            .from('announcements')
+            .insert({
+                subject, body,
+                teacher_id: user.id,
+                status: 'sent',
+                sent_at: new Date().toISOString()
+            })
+            .select('id')
+            .single()
+
+        if (error || !newAnn) return { error: error?.message || 'Failed to create announcement' }
+        announcementId = newAnn.id
     }
 
-    // 1. Create the Announcement Record
-    const { data: announcement, error: annError } = await adminDb
-        .from('announcements')
-        .insert({
-            subject,
-            body,
-            teacher_id: user.id
-        })
-        .select()
-        .single()
-
-    if (annError) {
-        console.error('Failed to create announcement:', annError)
-        return { error: annError.message }
+    // Insert recipient links
+    if (studentIds.length > 0 && announcementId) {
+        await adminDb
+            .from('announcement_recipients')
+            .insert(studentIds.map(sid => ({
+                announcement_id: announcementId,
+                student_id: sid
+            })))
     }
 
-    // 2. Create Recipient Links
-    const recipientsData = studentIds.map(studentId => ({
-        announcement_id: announcement.id,
-        student_id: studentId
-    }))
-
-    const { error: linkError } = await adminDb
-        .from('announcement_recipients')
-        .insert(recipientsData)
-
-    if (linkError) {
-        console.error('Failed to create recipient links:', linkError)
-        return { error: linkError.message }
-    }
-
-    // 3. Send Emails (fire-and-forget)
-    if (resend) {
+    // Send emails (fire-and-forget)
+    if (resend && studentIds.length > 0) {
         (async () => {
             try {
                 const { data: students } = await adminDb
@@ -86,7 +156,6 @@ export async function sendAnnouncement(
 
                 if (students && students.length > 0) {
                     const emails = students.map(s => s.email).filter(Boolean) as string[]
-
                     if (emails.length > 0) {
                         const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                         const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
@@ -123,7 +192,60 @@ export async function sendAnnouncement(
 }
 
 /**
- * Get the latest announcement for a specific student.
+ * Get all announcements (drafts + sent) for the admin history list.
+ */
+export async function getAnnouncements() {
+    const adminDb = getAdminSupabase()
+
+    const { data, error } = await adminDb
+        .from('announcements')
+        .select(`
+            id, subject, body, status, created_at, sent_at,
+            announcement_recipients ( student_id )
+        `)
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('Failed to fetch announcements:', error)
+        return []
+    }
+
+    return (data || []).map(a => ({
+        id: a.id,
+        subject: a.subject,
+        body: a.body,
+        status: a.status as 'draft' | 'sent',
+        created_at: a.created_at,
+        sent_at: a.sent_at,
+        recipient_count: (a.announcement_recipients as any[])?.length || 0,
+        recipient_ids: (a.announcement_recipients as any[])?.map((r: any) => r.student_id) || []
+    }))
+}
+
+/**
+ * Delete a draft announcement.
+ */
+export async function deleteAnnouncementDraft(announcementId: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const adminDb = getAdminSupabase()
+
+    const { error } = await adminDb
+        .from('announcements')
+        .delete()
+        .eq('id', announcementId)
+        .eq('status', 'draft')
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/admin')
+    return { success: true }
+}
+
+/**
+ * Get the latest SENT announcement for a specific student (student dashboard).
  */
 export async function getLatestAnnouncement(studentId: string) {
     const adminDb = getAdminSupabase()
@@ -133,25 +255,27 @@ export async function getLatestAnnouncement(studentId: string) {
         .select(`
             announcement_id,
             announcements (
-                id,
-                subject,
-                body,
-                created_at
+                id, subject, body, created_at, status
             )
         `)
         .eq('student_id', studentId)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(5)
 
     if (error) {
         console.error('Failed to fetch latest announcement:', error)
         return null
     }
 
-    if (!data?.announcements) return null
+    // Find the most recent SENT announcement
+    const sent = (data || []).find(d => {
+        const ann = d.announcements as any
+        return ann?.status === 'sent'
+    })
 
-    const ann = data.announcements as any
+    if (!sent?.announcements) return null
+
+    const ann = sent.announcements as any
     return {
         id: ann.id,
         subject: ann.subject,
