@@ -97,7 +97,7 @@ export async function sendAnnouncement(
 
     const { data: adminProfile } = await adminDb
         .from('profiles')
-        .select('role, name, studio_name')
+        .select('role, name, studio_name, email')
         .eq('id', user.id)
         .single()
     if (adminProfile?.role !== 'admin') return { error: 'Only admins can send announcements' }
@@ -158,11 +158,16 @@ export async function sendAnnouncement(
                     const emails = students.map(s => s.email).filter(Boolean) as string[]
                     if (emails.length > 0) {
                         const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
+                        const adminEmail = adminProfile?.email || 'support@musicalbasics.com'
                         const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
+                        // The "BCC Blast" Strategy
                         await resend.emails.send({
                             from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                            to: emails,
+                            // Public recipient is the admin (prevents students seeing each other)
+                            to: adminEmail,
+                            // Students are hidden in BCC
+                            bcc: emails,
                             subject: `📢 ${subject}`,
                             html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
                                 <h2 style="color: #333;">📢 ${subject}</h2>
@@ -173,7 +178,7 @@ export async function sendAnnouncement(
                                 </p>
                             </div>`
                         })
-                        console.log(`[Announcement] Email sent to ${emails.length} students`)
+                        console.log(`[Announcement] BCC Blast sent to ${emails.length} students via ${adminEmail}`)
                     }
                 }
             } catch (emailError) {
