@@ -89,6 +89,7 @@ export async function sendAnnouncement(
     studentIds: string[],
     existingId?: string
 ) {
+    console.log('[Announcement-v4] sendAnnouncement called:', { subject, studentIds: studentIds.length, existingId })
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Unauthorized' }
