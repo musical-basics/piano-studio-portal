@@ -3,8 +3,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay } from "lucide-react"
 import type { TodayLesson, LessonWithStudent } from "@/types/admin"
+
+const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 
 interface DashboardTabProps {
     lessons: TodayLesson[]
@@ -29,6 +31,14 @@ export function DashboardTab({
     onMessage,
     isLoading = false
 }: DashboardTabProps) {
+
+    const getClassroomLink = (studentId: string, name?: string | null, email?: string | null) => {
+        const params = new URLSearchParams({
+            email: email || "",
+            name: name || "",
+        })
+        return `${CLASSROOM_URL}/start/${studentId}?${params.toString()}`
+    }
 
     // Helper functions
     const formatTime = (timeStr: string) => {
@@ -108,6 +118,15 @@ export function DashboardTab({
                                                 </a>
                                             </Button>
                                         )}
+                                        <Button
+                                            size="sm"
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white border-0"
+                                            onClick={() => window.open(getClassroomLink(lesson.student.id, lesson.student.name, lesson.student.email), '_blank')}
+                                            title="Open Teacher Interface"
+                                        >
+                                            <MonitorPlay className="h-4 w-4 mr-1" />
+                                            Room
+                                        </Button>
                                         <Button
                                             size="sm"
                                             variant="outline"
