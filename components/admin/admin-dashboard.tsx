@@ -254,12 +254,36 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     const handleOpenSchedule = (student: StudentRoster) => {
         setSelectedStudent(student)
-        // Default to tomorrow
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        setScheduleDate(tomorrow.toISOString().split('T')[0])
-        setScheduleTime("15:00")
-        setScheduleDuration(60)
+
+        // Autofill date from student's recurring lesson day
+        if (student.lesson_day) {
+            const dayMap: Record<string, number> = {
+                'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+                'Thursday': 4, 'Friday': 5, 'Saturday': 6
+            }
+            const targetDay = dayMap[student.lesson_day]
+            if (targetDay !== undefined) {
+                const today = new Date()
+                const currentDay = today.getDay()
+                let daysUntil = targetDay - currentDay
+                if (daysUntil <= 0) daysUntil += 7 // Always pick the next occurrence
+                const nextDate = new Date(today)
+                nextDate.setDate(today.getDate() + daysUntil)
+                setScheduleDate(nextDate.toISOString().split('T')[0])
+            } else {
+                const tomorrow = new Date()
+                tomorrow.setDate(tomorrow.getDate() + 1)
+                setScheduleDate(tomorrow.toISOString().split('T')[0])
+            }
+        } else {
+            const tomorrow = new Date()
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            setScheduleDate(tomorrow.toISOString().split('T')[0])
+        }
+
+        // Autofill time and duration from student defaults
+        setScheduleTime(student.lesson_time || "15:00")
+        setScheduleDuration((student as any).lesson_duration || 60)
         setIsRescheduling(false)
         setRescheduleLessonId(null)
         setShowScheduleModal(true)
