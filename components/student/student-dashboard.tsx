@@ -43,6 +43,7 @@ import { ChatWidget } from "./chat-widget"
 import { logout } from "@/app/login/actions"
 import { cancelLesson, confirmAttendance } from "@/app/actions/lessons"
 import { rsvpToEvent } from "@/app/actions/events"
+import { notifyStudentJoined } from "@/app/actions/notifications"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { StudentEvent } from "@/app/actions/events"
@@ -435,16 +436,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     <Button
                                         size="lg"
                                         className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md shadow-indigo-900/10"
-                                        asChild
+                                        onClick={() => {
+                                            notifyStudentJoined('classroom') // fire-and-forget
+                                            window.open(`${process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"}/${profile.public_id}`, '_blank')
+                                        }}
                                     >
-                                        <a
-                                            href={`${process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"}/${profile.public_id}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            <MonitorPlay className="h-5 w-5 mr-2" />
-                                            Join Classroom
-                                        </a>
+                                        <MonitorPlay className="h-5 w-5 mr-2" />
+                                        Join Classroom
                                     </Button>
 
                                     {/* 2. FALLBACK: Join Zoom Lesson */}
@@ -453,12 +451,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                             size="lg"
                                             variant="outline"
                                             className="flex-1 min-w-[200px] text-zinc-600 dark:text-zinc-400"
-                                            asChild
+                                            onClick={() => {
+                                                notifyStudentJoined('zoom') // fire-and-forget
+                                                window.open(zoomLink, '_blank')
+                                            }}
                                         >
-                                            <a href={zoomLink} target="_blank" rel="noopener noreferrer">
-                                                <Video className="h-5 w-5 mr-2" />
-                                                Zoom (Backup)
-                                            </a>
+                                            <Video className="h-5 w-5 mr-2" />
+                                            Zoom (Backup)
                                         </Button>
                                     ) : (
                                         <Button size="lg" variant="ghost" className="flex-1 min-w-[200px] text-muted-foreground" disabled>
