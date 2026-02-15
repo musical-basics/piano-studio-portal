@@ -266,7 +266,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                 const today = new Date()
                 const currentDay = today.getDay()
                 let daysUntil = targetDay - currentDay
-                if (daysUntil <= 0) daysUntil += 7 // Always pick the next occurrence
+                if (daysUntil < 0) daysUntil += 7 // Pick today if it matches, otherwise next occurrence
                 const nextDate = new Date(today)
                 nextDate.setDate(today.getDate() + daysUntil)
                 setScheduleDate(nextDate.toISOString().split('T')[0])
