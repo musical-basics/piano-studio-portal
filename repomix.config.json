@@ -12,7 +12,20 @@
             "node_modules/**",
             "_temp/**",
             ".DS_Store",
-            ".cursorrules"
+            ".cursorrules",
+            "components/ui/**",
+            "supabase/migrations/**",
+            "supabase/.branches/**",
+            "supabase/.temp/**",
+            "supabase/snippets/**",
+            "hooks/**",
+            "lib/utils.ts",
+            "repomix-output.xml",
+            "components.json",
+            "tailwind.config.ts",
+            "postcss.config.mjs",
+            "next.config.ts",
+            "tsconfig.json"
         ]
     }
 }
