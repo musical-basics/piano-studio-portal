@@ -241,6 +241,81 @@ export async function logLesson(
                     console.error('logLesson: Auto-create next lesson failed:', createError)
                 } else {
                     console.log(`logLesson: Auto-created next lesson for ${nextWeekDateStr} at ${lesson.time}`)
+
+                    // Send scheduling notification email (fire-and-forget)
+                    if (resend) {
+                        (async () => {
+                            try {
+                                const { data: student } = await supabase
+                                    .from('profiles')
+                                    .select('name, email')
+                                    .eq('id', lesson.student_id)
+                                    .single()
+
+                                if (!student?.email) return
+
+                                const { data: adminData } = await supabase
+                                    .from('profiles')
+                                    .select('name, email, studio_name')
+                                    .eq('id', user!.id)
+                                    .single()
+
+                                const studioName = adminData?.studio_name || 'Lionel Yu Piano Studio'
+                                const adminName = adminData?.name === 'Professor Lionel' ? 'Professor Lionel Yu' : (adminData?.name || 'Teacher')
+
+                                const dateObj = new Date(`${nextWeekDateStr}T00:00:00`)
+                                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                                    month: 'long', day: 'numeric', year: 'numeric'
+                                })
+
+                                const [h, m] = (lesson.time || '12:00').split(':')
+                                const hn = parseInt(h, 10)
+                                const ap = hn >= 12 ? 'pm' : 'am'
+                                const h12 = hn % 12 || 12
+                                const formattedTime = `${h12}:${m}${ap} PST`
+                                const dur = lesson.duration || 60
+
+                                const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
+
+                                // Email to student
+                                await resend.emails.send({
+                                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                                    to: student.email,
+                                    subject: emailSubject,
+                                    react: LessonScheduledEmail({
+                                        studentName: student.name || 'Student',
+                                        date: formattedDate,
+                                        time: formattedTime,
+                                        duration: dur,
+                                        zoomLink: lesson.zoom_link || null,
+                                        recipientName: student.name || 'Student',
+                                        studioName
+                                    })
+                                })
+                                console.log('logLesson: Auto-schedule email sent to', student.email)
+
+                                // Email to teacher
+                                if (adminData?.email) {
+                                    await resend.emails.send({
+                                        from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                                        to: adminData.email,
+                                        subject: emailSubject,
+                                        react: LessonScheduledEmail({
+                                            studentName: student.name || 'Student',
+                                            date: formattedDate,
+                                            time: formattedTime,
+                                            duration: dur,
+                                            zoomLink: lesson.zoom_link || null,
+                                            recipientName: adminName,
+                                            studioName
+                                        })
+                                    })
+                                }
+                            } catch (emailErr) {
+                                console.error('logLesson: Auto-schedule email failed (non-blocking):', emailErr)
+                            }
+                        })()
+                    }
                 }
             } else {
                 console.log(`logLesson: Lesson already exists for ${nextWeekDateStr}, skipping auto-create`)
