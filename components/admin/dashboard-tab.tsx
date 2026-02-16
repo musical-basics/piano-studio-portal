@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle } from "lucide-react"
 import type { TodayLesson, LessonWithStudent } from "@/types/admin"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
@@ -98,6 +98,18 @@ export function DashboardTab({
                                                     <Music className="h-3 w-3" />
                                                     <span>{lesson.student.credits} credits left</span>
                                                 </div>
+                                                {/* Confirmation Status */}
+                                                {lesson.is_confirmed ? (
+                                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 gap-1 px-2 py-0.5 h-6">
+                                                        <CheckCircle2 className="h-3 w-3" />
+                                                        Confirmed
+                                                    </Badge>
+                                                ) : (
+                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 gap-1 px-2 py-0.5 h-6">
+                                                        <HelpCircle className="h-3 w-3" />
+                                                        Unconfirmed
+                                                    </Badge>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
