@@ -11,3 +11,4 @@ scripts/test-connection.ts
 
 # Google Credentials
 piano-studio-scheduler-*.json
+repomix-output.xml
