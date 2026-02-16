@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +28,7 @@ import {
     HelpCircle,
     Loader2,
     Megaphone,
+    Settings,
 } from "lucide-react"
 import {
     mockEvents,
@@ -290,13 +292,18 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 <p className="text-sm text-muted-foreground">{profile.name || 'Student'}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
                             {currentDate && (
-                                <div className="hidden md:block text-right">
+                                <div className="hidden md:block text-right mr-2">
                                     <p className="text-sm text-muted-foreground">Today is</p>
                                     <p className="font-medium">{currentDate}</p>
                                 </div>
                             )}
+                            <Link href="/student/settings">
+                                <Button variant="ghost" size="icon" title="Settings">
+                                    <Settings className="h-5 w-5" />
+                                </Button>
+                            </Link>
                             <form action={logout}>
                                 <Button variant="outline" type="submit">
                                     Sign Out
