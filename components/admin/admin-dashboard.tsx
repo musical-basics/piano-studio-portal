@@ -939,6 +939,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                         <SelectContent>
                                             {resources
                                                 .filter(r => ['Sheet Music', 'Exercises', 'Theory'].includes(r.category))
+                                                .sort((a, b) => a.title.localeCompare(b.title))
                                                 .map(resource => (
                                                     <SelectItem key={resource.id} value={resource.file_url}>
                                                         {resource.title} ({resource.category})
@@ -1168,6 +1169,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                         <SelectContent>
                                             {resources
                                                 .filter(r => ['Sheet Music', 'Exercises', 'Theory'].includes(r.category))
+                                                .sort((a, b) => a.title.localeCompare(b.title))
                                                 .map(resource => (
                                                     <SelectItem key={resource.id} value={resource.file_url}>
                                                         {resource.title} ({resource.category})
