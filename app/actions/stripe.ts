@@ -1,9 +1,48 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+
+/**
+ * Get or create a Stripe Customer for a user.
+ * Saves stripe_customer_id to profiles table for future use.
+ */
+async function getOrCreateStripeCustomer(userId: string, email: string): Promise<string> {
+    const supabaseAdmin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!
+    )
+
+    // Check if we already have a Stripe Customer ID saved
+    const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('stripe_customer_id, name')
+        .eq('id', userId)
+        .single()
+
+    if (profile?.stripe_customer_id) {
+        return profile.stripe_customer_id
+    }
+
+    // Create a new Stripe Customer
+    const customer = await stripe.customers.create({
+        email,
+        name: profile?.name || undefined,
+        metadata: { userId }
+    })
+
+    // Save the Customer ID to the profile
+    await supabaseAdmin
+        .from('profiles')
+        .update({ stripe_customer_id: customer.id })
+        .eq('id', userId)
+
+    console.log(`Created Stripe Customer ${customer.id} for user ${userId}`)
+    return customer.id
+}
 
 export async function createCheckoutSession(pricingPointId: string) {
     const supabase = await createClient()
@@ -29,6 +68,9 @@ export async function createCheckoutSession(pricingPointId: string) {
         .eq('id', user.id)
         .single()
 
+    // Get or create a Stripe Customer for this user
+    const stripeCustomerId = await getOrCreateStripeCustomer(user.id, profile?.email || user.email!)
+
     try {
         let sessionParams: Stripe.Checkout.SessionCreateParams;
 
@@ -40,7 +82,7 @@ export async function createCheckoutSession(pricingPointId: string) {
             sessionParams = {
                 mode: 'subscription',
                 payment_method_types: ['card'],
-                customer_email: profile?.email || undefined,
+                customer: stripeCustomerId,
                 line_items: [{ price: point.stripe_price_id, quantity: 1 }],
                 subscription_data: {
                     metadata: {
@@ -61,7 +103,7 @@ export async function createCheckoutSession(pricingPointId: string) {
             sessionParams = {
                 mode: 'payment',
                 payment_method_types: ['card'],
-                customer_email: profile?.email || undefined,
+                customer: stripeCustomerId,
                 line_items: [{
                     price_data: {
                         currency: 'usd',
@@ -82,6 +124,7 @@ export async function createCheckoutSession(pricingPointId: string) {
                 cancel_url: `${appUrl}/student?canceled=true`,
                 payment_intent_data: {
                     capture_method: 'manual',
+                    setup_future_usage: 'off_session',
                 },
             }
         }
@@ -115,6 +158,9 @@ export async function createBalancePaymentSession() {
         return { error: 'No outstanding balance to pay.' }
     }
 
+    // Get or create a Stripe Customer for this user
+    const stripeCustomerId = await getOrCreateStripeCustomer(user.id, profile.email || user.email!)
+
     const amountInCents = Math.round(Number(profile.balance_due) * 100)
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -122,7 +168,7 @@ export async function createBalancePaymentSession() {
         const session = await stripe.checkout.sessions.create({
             mode: 'payment',
             payment_method_types: ['card'],
-            customer_email: profile.email || undefined,
+            customer: stripeCustomerId,
             line_items: [{
                 price_data: {
                     currency: 'usd',
@@ -143,6 +189,7 @@ export async function createBalancePaymentSession() {
             cancel_url: `${appUrl}/student?canceled=true`,
             payment_intent_data: {
                 capture_method: 'manual',
+                setup_future_usage: 'off_session',
             },
         })
 
