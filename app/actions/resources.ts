@@ -2,6 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { Resend } from 'resend'
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 // Types
 export type ResourceCategory = 'Sheet Music' | 'Theory' | 'Scales' | 'Exercises' | 'Recording'
@@ -381,6 +384,41 @@ export async function updateAssignmentNote(
         .eq('student_id', studentId)
 
     if (error) return { success: false, error: error.message }
+
+    // --- EMAIL NOTIFICATION ---
+    if (resend && notes.trim()) {
+        try {
+            const [studentRes, teacherRes, resourceRes] = await Promise.all([
+                supabase.from('profiles').select('name, email').eq('id', studentId).single(),
+                supabase.from('profiles').select('name, studio_name').eq('id', user.id).single(),
+                supabase.from('resources').select('title').eq('id', resourceId).single()
+            ])
+
+            const student = studentRes.data
+            const teacher = teacherRes.data
+            const resource = resourceRes.data
+
+            if (student?.email && resource) {
+                const { AssignmentNoteEmail } = await import('@/components/emails/assignment-note-email')
+
+                await resend.emails.send({
+                    from: `${teacher?.studio_name || 'Piano Studio'} <notifications@updates.musicalbasics.com>`,
+                    to: student.email,
+                    subject: `New practice instructions: ${resource.title}`,
+                    react: AssignmentNoteEmail({
+                        studentName: student.name || 'Student',
+                        resourceTitle: resource.title,
+                        notes: notes,
+                        teacherName: teacher?.name || 'Your Teacher',
+                        studioName: teacher?.studio_name || 'Lionel Yu Piano Studio'
+                    })
+                })
+                console.log(`Assignment note email sent to ${student.email} for "${resource.title}"`)
+            }
+        } catch (e) {
+            console.error('Failed to send assignment note email:', e)
+        }
+    }
 
     revalidatePath('/admin')
     revalidatePath('/student')

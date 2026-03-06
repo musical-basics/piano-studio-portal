@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Music, Calendar, Clock, ArrowDown, ArrowRight, FileText, Video } from "lucide-react"
 import { getStudentLessonHistory } from "@/app/actions/student-history"
 import { getStudentResources, updateAssignmentNote } from "@/app/actions/resources"
+import { useToast } from "@/hooks/use-toast"
 import type { StudentRoster } from "@/types/admin"
 
 interface StudentProfileSheetProps {
@@ -210,6 +211,7 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
 }
 
 function AssignmentNoteEditor({ resource, studentId }: { resource: any, studentId: string }) {
+    const { toast } = useToast()
     const [note, setNote] = useState(resource.student_note || "")
     const [savedNote, setSavedNote] = useState(resource.student_note || "")
     const [isSaving, setIsSaving] = useState(false)
@@ -217,10 +219,21 @@ function AssignmentNoteEditor({ resource, studentId }: { resource: any, studentI
     const handleSave = async () => {
         setIsSaving(true)
         const result = await updateAssignmentNote(resource.id, studentId, note)
+        setIsSaving(false)
+
         if (result.success) {
             setSavedNote(note)
+            toast({
+                title: "Instructions Saved",
+                description: `Notes for "${resource.title}" have been updated and the student has been notified.`,
+            })
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Save Failed",
+                description: result.error || "Could not save the instructions.",
+            })
         }
-        setIsSaving(false)
     }
 
     return (
