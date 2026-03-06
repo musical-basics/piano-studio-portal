@@ -675,6 +675,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                             {resource.description && (
                                                                 <p className="text-sm text-muted-foreground mb-2">{resource.description}</p>
                                                             )}
+                                                            {resource.student_note && (
+                                                                <div className="mt-2 mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-100 dark:border-blue-800">
+                                                                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300 mb-1">Teacher&apos;s Instructions</p>
+                                                                    <p className="text-sm text-blue-900 dark:text-blue-100 whitespace-pre-wrap">{resource.student_note}</p>
+                                                                </div>
+                                                            )}
                                                             <Badge
                                                                 variant="secondary"
                                                                 className={`text-xs ${categoryColors[resource.category] || ''}`}

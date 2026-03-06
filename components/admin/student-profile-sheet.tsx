@@ -5,8 +5,11 @@ import {
     Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription
 } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 import { Loader2, Music, Calendar, Clock, ArrowDown, ArrowRight, FileText, Video } from "lucide-react"
 import { getStudentLessonHistory } from "@/app/actions/student-history"
+import { getStudentResources, updateAssignmentNote } from "@/app/actions/resources"
 import type { StudentRoster } from "@/types/admin"
 
 interface StudentProfileSheetProps {
@@ -30,19 +33,27 @@ type LessonHistory = {
 
 export function StudentProfileSheet({ student, open, onOpenChange }: StudentProfileSheetProps) {
     const [lessons, setLessons] = useState<LessonHistory[]>([])
+    const [resources, setResources] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
 
     useEffect(() => {
         if (open && student) {
             setLoading(true)
-            getStudentLessonHistory(student.id).then((res) => {
-                if ('lessons' in res) {
-                    setLessons(res.lessons as LessonHistory[])
+            Promise.all([
+                getStudentLessonHistory(student.id),
+                getStudentResources(student.id)
+            ]).then(([lessonRes, resourceRes]) => {
+                if ('lessons' in lessonRes) {
+                    setLessons(lessonRes.lessons as LessonHistory[])
+                }
+                if (resourceRes.resources) {
+                    setResources(resourceRes.resources)
                 }
                 setLoading(false)
             })
         } else {
             setLessons([])
+            setResources([])
         }
     }, [open, student?.id])
 
@@ -168,7 +179,67 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
                         </div>
                     )}
                 </div>
+
+                {/* Assigned Practice Materials */}
+                <div className="px-4 pb-6 mt-6 border-t pt-6">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                        Assigned Practice Materials
+                    </h3>
+
+                    {loading ? (
+                        <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : resources.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">No materials assigned</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {resources.map(resource => (
+                                <AssignmentNoteEditor
+                                    key={resource.id}
+                                    resource={resource}
+                                    studentId={student.id}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
             </SheetContent>
         </Sheet>
+    )
+}
+
+function AssignmentNoteEditor({ resource, studentId }: { resource: any, studentId: string }) {
+    const [note, setNote] = useState(resource.student_note || "")
+    const [savedNote, setSavedNote] = useState(resource.student_note || "")
+    const [isSaving, setIsSaving] = useState(false)
+
+    const handleSave = async () => {
+        setIsSaving(true)
+        const result = await updateAssignmentNote(resource.id, studentId, note)
+        if (result.success) {
+            setSavedNote(note)
+        }
+        setIsSaving(false)
+    }
+
+    return (
+        <div className="border rounded-lg p-3 space-y-2 bg-card">
+            <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{resource.title}</span>
+            </div>
+            <Textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add specific instructions for this student..."
+                className="text-sm min-h-[80px] resize-none"
+            />
+            <div className="flex justify-end">
+                <Button size="sm" onClick={handleSave} disabled={isSaving || note === savedNote}>
+                    {isSaving ? "Saving..." : "Save Note"}
+                </Button>
+            </div>
+        </div>
     )
 }

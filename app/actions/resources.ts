@@ -15,6 +15,7 @@ export interface Resource {
     file_type: string
     created_at: string
     assignment_count?: number
+    student_note?: string | null
 }
 
 export interface ResourceWithAssignments extends Resource {
@@ -134,6 +135,7 @@ export async function getStudentResources(studentId?: string): Promise<{ resourc
     const { data: assignments, error } = await supabase
         .from('resource_assignments')
         .select(`
+            notes,
             resource:resources(*)
         `)
         .eq('student_id', targetStudentId)
@@ -144,7 +146,10 @@ export async function getStudentResources(studentId?: string): Promise<{ resourc
     }
 
     const resources = (assignments || [])
-        .map(a => a.resource)
+        .map(a => {
+            if (!a.resource) return null
+            return { ...(a.resource as Resource), student_note: a.notes }
+        })
         .filter(Boolean) as Resource[]
 
     // Sort by category then by title
@@ -311,27 +316,38 @@ export async function updateResourceAssignments(
         return { success: false, error: 'Only admins can update assignments' }
     }
 
-    // Delete existing assignments
-    const { error: deleteError } = await supabase
+    // Diff-based assignment update to preserve existing notes
+    const { data: existing } = await supabase
         .from('resource_assignments')
-        .delete()
+        .select('student_id')
         .eq('resource_id', resourceId)
 
-    if (deleteError) {
-        console.error('Error deleting old assignments:', deleteError)
-        return { success: false, error: deleteError.message }
+    const existingIds = existing?.map(e => e.student_id) || []
+    const toRemove = existingIds.filter(id => !studentIds.includes(id))
+    const toAdd = studentIds.filter(id => !existingIds.includes(id))
+
+    if (toRemove.length > 0) {
+        const { error: deleteError } = await supabase
+            .from('resource_assignments')
+            .delete()
+            .eq('resource_id', resourceId)
+            .in('student_id', toRemove)
+
+        if (deleteError) {
+            console.error('Error removing assignments:', deleteError)
+            return { success: false, error: deleteError.message }
+        }
     }
 
-    // Insert new assignments
-    if (studentIds.length > 0) {
-        const assignments = studentIds.map(studentId => ({
+    if (toAdd.length > 0) {
+        const newAssignments = toAdd.map(studentId => ({
             resource_id: resourceId,
             student_id: studentId
         }))
 
         const { error: insertError } = await supabase
             .from('resource_assignments')
-            .insert(assignments)
+            .insert(newAssignments)
 
         if (insertError) {
             console.error('Error creating new assignments:', insertError)
@@ -342,6 +358,32 @@ export async function updateResourceAssignments(
     revalidatePath('/admin/library')
     revalidatePath('/student')
 
+    return { success: true }
+}
+
+/**
+ * Update custom notes on a resource assignment
+ */
+export async function updateAssignmentNote(
+    resourceId: string,
+    studentId: string,
+    notes: string
+): Promise<{ success: boolean; error?: string }> {
+    const supabase = await createClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'Unauthorized' }
+
+    const { error } = await supabase
+        .from('resource_assignments')
+        .update({ notes })
+        .eq('resource_id', resourceId)
+        .eq('student_id', studentId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/admin')
+    revalidatePath('/student')
     return { success: true }
 }
 
