@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import {
     Table,
     TableBody,
@@ -49,6 +49,9 @@ import {
     CheckSquare,
     Square,
     Download,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
 } from 'lucide-react'
 import Link from 'next/link'
 import {
@@ -83,10 +86,64 @@ const categoryColors: Record<ResourceCategory, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
+type SortColumn = 'title' | 'category' | null
+type SortDirection = 'asc' | 'desc'
+
 export function LibraryManager({ initialResources, students }: LibraryManagerProps) {
     const { toast } = useToast()
     const [resources, setResources] = useState<Resource[]>(initialResources)
     const [isLoading, setIsLoading] = useState(false)
+
+    // Sort & Filter State
+    const [sortColumn, setSortColumn] = useState<SortColumn>(null)
+    const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+    const [filterCategory, setFilterCategory] = useState<ResourceCategory | null>(null)
+
+    // Derived filtered + sorted resources
+    const displayedResources = useMemo(() => {
+        let result = resources
+
+        // Filter by category
+        if (filterCategory) {
+            result = result.filter(r => r.category === filterCategory)
+        }
+
+        // Sort
+        if (sortColumn) {
+            result = [...result].sort((a, b) => {
+                const aVal = sortColumn === 'title' ? a.title.toLowerCase() : a.category.toLowerCase()
+                const bVal = sortColumn === 'title' ? b.title.toLowerCase() : b.category.toLowerCase()
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+                return 0
+            })
+        }
+
+        return result
+    }, [resources, sortColumn, sortDirection, filterCategory])
+
+    // Toggle sort on a column
+    const handleSort = (column: SortColumn) => {
+        if (sortColumn === column) {
+            // Toggle direction, or reset if already desc
+            if (sortDirection === 'asc') {
+                setSortDirection('desc')
+            } else {
+                setSortColumn(null)
+                setSortDirection('asc')
+            }
+        } else {
+            setSortColumn(column)
+            setSortDirection('asc')
+        }
+    }
+
+    const SortIcon = ({ column }: { column: SortColumn }) => {
+        if (sortColumn !== column) return <ArrowUpDown className="h-3.5 w-3.5 ml-1 opacity-40" />
+        return sortDirection === 'asc'
+            ? <ArrowUp className="h-3.5 w-3.5 ml-1" />
+            : <ArrowDown className="h-3.5 w-3.5 ml-1" />
+    }
 
     // Upload Modal State
     const [showUploadModal, setShowUploadModal] = useState(false)
@@ -344,26 +401,69 @@ export function LibraryManager({ initialResources, students }: LibraryManagerPro
                 </Button>
             </div>
 
+            {/* Category Filter Chips */}
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    onClick={() => setFilterCategory(null)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterCategory === null
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                        }`}
+                >
+                    All
+                </button>
+                {CATEGORIES.map(cat => (
+                    <button
+                        key={cat}
+                        onClick={() => setFilterCategory(filterCategory === cat ? null : cat)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterCategory === cat
+                                ? 'bg-primary text-primary-foreground'
+                                : `${categoryColors[cat]} hover:opacity-80`
+                            }`}
+                    >
+                        {cat}
+                    </button>
+                ))}
+            </div>
+
             {/* Resources Table */}
             <div className="border rounded-lg">
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Title</TableHead>
-                            <TableHead>Category</TableHead>
+                            <TableHead>
+                                <button
+                                    className="flex items-center font-medium hover:text-foreground transition-colors"
+                                    onClick={() => handleSort('title')}
+                                >
+                                    Title
+                                    <SortIcon column="title" />
+                                </button>
+                            </TableHead>
+                            <TableHead>
+                                <button
+                                    className="flex items-center font-medium hover:text-foreground transition-colors"
+                                    onClick={() => handleSort('category')}
+                                >
+                                    Category
+                                    <SortIcon column="category" />
+                                </button>
+                            </TableHead>
                             <TableHead>Assigned To</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {resources.length === 0 ? (
+                        {displayedResources.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
-                                    No resources yet. Click "Upload Resource" to add your first one.
+                                    {resources.length === 0
+                                        ? 'No resources yet. Click "Upload Resource" to add your first one.'
+                                        : 'No resources match the current filter.'}
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            resources.map(resource => (
+                            displayedResources.map(resource => (
                                 <TableRow key={resource.id}>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
