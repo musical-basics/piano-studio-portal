@@ -42,7 +42,6 @@ export function VideoPlayer({ url, title }: VideoPlayerProps) {
         className="w-full h-full"
         src={videoSrc}
         controls
-        controlsList="nodownload"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       >

@@ -63,6 +63,12 @@ export function LessonDetailModal({ lesson, open, onOpenChange }: LessonDetailMo
             <div>
               <h3 className="font-semibold text-lg mb-3 font-serif">Lesson Recording</h3>
               <VideoPlayer url={lesson.video_url} title={`Lesson - ${lesson.date}`} />
+              <Button variant="outline" className="w-full mt-3" asChild>
+                <a href={lesson.video_url} target="_blank" rel="noopener noreferrer">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Recording
+                </a>
+              </Button>
             </div>
           )}
 
