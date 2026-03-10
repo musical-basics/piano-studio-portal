@@ -9,16 +9,38 @@ interface VideoPlayerProps {
   title?: string
 }
 
+/**
+ * Convert Dropbox share URLs to direct-streaming URLs.
+ * Share links (dl=0) serve an HTML preview; we need a raw binary stream.
+ */
+function toDirectUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('dropbox.com')) {
+      // Switch to the direct-content host and force raw download
+      u.hostname = 'dl.dropboxusercontent.com'
+      u.searchParams.set('raw', '1')
+      u.searchParams.delete('dl')
+      return u.toString()
+    }
+  } catch {
+    // Not a valid URL – fall through
+  }
+  return url
+}
+
 export function VideoPlayer({ url, title }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
+
+  const videoSrc = toDirectUrl(url)
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden group">
       {/* Video element */}
       <video
         className="w-full h-full"
-        src={url}
+        src={videoSrc}
         controls
         controlsList="nodownload"
         onPlay={() => setIsPlaying(true)}
