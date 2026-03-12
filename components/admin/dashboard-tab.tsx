@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users } from "lucide-react"
 import type { TodayLesson, LessonWithStudent } from "@/types/admin"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
@@ -38,6 +38,11 @@ export function DashboardTab({
             name: name || "",
         })
         return `${CLASSROOM_URL}/start/${studentId}?${params.toString()}`
+    }
+
+    const getStudentLink = (publicId?: string | null) => {
+        if (!publicId) return null
+        return `${CLASSROOM_URL}/${publicId}`
     }
 
     // Helper functions
@@ -139,6 +144,21 @@ export function DashboardTab({
                                             <MonitorPlay className="h-4 w-4 mr-1" />
                                             Room
                                         </Button>
+                                        {getStudentLink(lesson.student.public_id) && (
+                                            <Button
+                                                size="sm"
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                                                onClick={() => {
+                                                    const link = getStudentLink(lesson.student.public_id)!
+                                                    navigator.clipboard.writeText(link)
+                                                    window.open(link, '_blank')
+                                                }}
+                                                title={`Student's classroom link: ${getStudentLink(lesson.student.public_id)}`}
+                                            >
+                                                <Users className="h-4 w-4 mr-1" />
+                                                Student Link
+                                            </Button>
+                                        )}
                                         <Button
                                             size="sm"
                                             variant="outline"
