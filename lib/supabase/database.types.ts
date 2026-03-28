@@ -185,6 +185,41 @@ export interface Database {
                     updated_at?: string
                 }
             }
+            stripe_webhook_logs: {
+                Row: {
+                    id: string
+                    stripe_event_id: string
+                    event_type: string
+                    user_id: string | null
+                    status: string
+                    error_message: string | null
+                    payload: Json
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    stripe_event_id: string
+                    event_type: string
+                    user_id?: string | null
+                    status: string
+                    error_message?: string | null
+                    payload: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    stripe_event_id?: string
+                    event_type?: string
+                    user_id?: string | null
+                    status?: string
+                    error_message?: string | null
+                    payload?: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+            }
         }
     }
 }

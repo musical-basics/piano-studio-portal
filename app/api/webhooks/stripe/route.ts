@@ -29,6 +29,36 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
     }
 
+    // Extract userId from common paths (might be undefined depending on event type)
+    let initialUserId: string | undefined
+    if (event.type === 'checkout.session.completed') {
+        initialUserId = (event.data.object as any).metadata?.userId
+    } else if (event.type === 'invoice.payment_succeeded') {
+        initialUserId = (event.data.object as any).subscription_details?.metadata?.userId || 
+                        (event.data.object as any).lines?.data?.[0]?.metadata?.userId
+        // We'll update this later in the handler when we actually fetch the subscription
+    }
+
+    try {
+        // Log the incoming event
+        const { error: logErr } = await supabaseAdmin
+            .from('stripe_webhook_logs')
+            .insert({
+                stripe_event_id: event.id,
+                event_type: event.type,
+                user_id: initialUserId || null,
+                status: 'pending',
+                payload: event as any
+            })
+        
+        if (logErr) {
+            console.error(`[Webhook] Failed to log incoming event ${event.id}:`, logErr)
+            // Continue processing anyway, don't fail the webhook just because logging failed
+        }
+    } catch (e) {
+        console.error(`[Webhook] Exception logging incoming event ${event.id}:`, e)
+    }
+
     try {
         // 1. Handle One-Time Purchases & First Subscription Payment
         if (event.type === 'checkout.session.completed') {
@@ -38,6 +68,13 @@ export async function POST(req: Request) {
             console.log(`[Webhook] checkout.session.completed | userId=${userId} type=${type}`)
 
             if (userId) {
+                // ... same logic ...
+                // Quick update to ensure user_id is set in the log if we didn't have it
+                await supabaseAdmin
+                    .from('stripe_webhook_logs')
+                    .update({ user_id: userId })
+                    .eq('stripe_event_id', event.id)
+
                 // Fallback: Save stripe_customer_id if not already saved
                 const stripeCustomerId = session.customer as string | null
                 if (stripeCustomerId) {
@@ -77,7 +114,7 @@ export async function POST(req: Request) {
 
                     if (fetchErr) {
                         console.error(`[Webhook] Failed to fetch balance for user ${userId}:`, fetchErr)
-                        return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                        throw new Error(`Failed to fetch profile: ${fetchErr.message}`)
                     }
 
                     const currentBalance = Number(profile?.balance_due || 0)
@@ -90,7 +127,7 @@ export async function POST(req: Request) {
 
                     if (updateErr) {
                         console.error(`[Webhook] Failed to update balance for user ${userId}:`, updateErr)
-                        return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 })
+                        throw new Error(`Failed to update balance: ${updateErr.message}`)
                     }
 
                     console.log(`[Webhook] ✅ Balance payment processed for user ${userId}: Paid $${amountPaid} | ${currentBalance} → ${newBalance}`)
@@ -109,7 +146,7 @@ export async function POST(req: Request) {
 
                         if (fetchErr) {
                             console.error(`[Webhook] Failed to fetch credits for user ${userId}:`, fetchErr)
-                            return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                            throw new Error(`Failed to fetch profile: ${fetchErr.message}`)
                         }
 
                         const oldCredits = profile?.credits || 0
@@ -122,7 +159,7 @@ export async function POST(req: Request) {
 
                         if (updateErr) {
                             console.error(`[Webhook] Failed to update credits for user ${userId}:`, updateErr)
-                            return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
+                            throw new Error(`Failed to update credits: ${updateErr.message}`)
                         }
 
                         console.log(`[Webhook] ✅ Added ${creditsToAdd} credits to user ${userId} (Checkout) | ${oldCredits} → ${newBalance}`)
@@ -162,12 +199,7 @@ export async function POST(req: Request) {
 
                 if (!subscriptionId) {
                     console.error(`[Webhook] ❌ Could not find subscription ID in invoice! Keys: ${Object.keys(invoiceAny).join(', ')}`)
-                    return NextResponse.json({ 
-                        error: 'Could not extract subscription ID from invoice',
-                        invoiceKeys: Object.keys(invoiceAny),
-                        parent: invoiceAny.parent,
-                        subscription: invoiceAny.subscription,
-                    }, { status: 500 })
+                    throw new Error('Could not extract subscription ID from invoice')
                 }
 
                 console.log(`[Webhook] Fetching subscription ${subscriptionId} from Stripe...`)
@@ -179,13 +211,19 @@ export async function POST(req: Request) {
 
                 if (!userId) {
                     console.error(`[Webhook] ❌ subscription ${subscriptionId} missing userId in metadata!`)
-                    return NextResponse.json({ error: 'Missing userId in subscription metadata' }, { status: 500 })
+                    throw new Error('Missing userId in subscription metadata')
                 }
 
                 if (creditsToAdd <= 0) {
                     console.error(`[Webhook] ❌ subscription ${subscriptionId} has credits=${creditsToAdd} in metadata!`)
-                    return NextResponse.json({ error: 'Missing credits in subscription metadata' }, { status: 500 })
+                    throw new Error('Missing credits in subscription metadata')
                 }
+
+                // Update the log with the correct userId now that we have it
+                await supabaseAdmin
+                    .from('stripe_webhook_logs')
+                    .update({ user_id: userId })
+                    .eq('stripe_event_id', event.id)
 
                 const { data: profile, error: fetchErr } = await supabaseAdmin
                     .from('profiles')
@@ -195,7 +233,7 @@ export async function POST(req: Request) {
 
                 if (fetchErr) {
                     console.error(`[Webhook] Failed to fetch credits for user ${userId}:`, fetchErr)
-                    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                    throw new Error(`Failed to fetch profile: ${fetchErr.message}`)
                 }
 
                 const oldCredits = profile?.credits || 0
@@ -208,7 +246,7 @@ export async function POST(req: Request) {
 
                 if (updateErr) {
                     console.error(`[Webhook] Failed to update credits for user ${userId}:`, updateErr)
-                    return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
+                    throw new Error(`Failed to update credits: ${updateErr.message}`)
                 }
 
                 console.log(`[Webhook] ✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId} | ${oldCredits} → ${newBalance}`)
@@ -238,11 +276,23 @@ export async function POST(req: Request) {
             })
         }
 
+        // Mark Webhook log as successful
+        await supabaseAdmin
+            .from('stripe_webhook_logs')
+            .update({ status: 'success' })
+            .eq('stripe_event_id', event.id)
+
         return NextResponse.json({ received: true })
     } catch (err: any) {
         const errMsg = err?.message || String(err)
         const errStack = err?.stack || 'no stack'
         console.error(`[Webhook] ❌ Unhandled error processing ${event.type}:`, errMsg, errStack)
+
+        // Mark Webhook log as error
+        await supabaseAdmin
+            .from('stripe_webhook_logs')
+            .update({ status: 'error', error_message: errMsg })
+            .eq('stripe_event_id', event.id)
 
         // Fire-and-forget email alert to admin
         notifyAdminOfWebhookFailure(event.type, event.id, errMsg).catch(e => {
