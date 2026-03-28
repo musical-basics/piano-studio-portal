@@ -4,7 +4,9 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2025-11-17.clover' as any,
+})
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
 
 // Use admin client for webhook (no user session available)
@@ -187,7 +189,7 @@ export async function POST(req: Request) {
 
                 const { data: profile, error: fetchErr } = await supabaseAdmin
                     .from('profiles')
-                    .select('credits')
+                    .select('credits, name, email')
                     .eq('id', userId)
                     .single()
 
@@ -210,6 +212,18 @@ export async function POST(req: Request) {
                 }
 
                 console.log(`[Webhook] ✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId} | ${oldCredits} → ${newBalance}`)
+
+                // Send renewal confirmation emails (fire-and-forget)
+                const amountPaid = (invoice.amount_paid ?? 0) / 100
+                notifyRenewalSuccess({
+                    studentName: profile?.name || 'Student',
+                    studentEmail: profile?.email || null,
+                    creditsAdded: creditsToAdd,
+                    newTotal: newBalance,
+                    amountPaid,
+                }).catch(e => {
+                    console.error('[Webhook] Failed to send renewal confirmation:', e)
+                })
             }
         }
 
@@ -380,5 +394,102 @@ async function notifyAdminOfWebhookFailure(eventType: string, eventId: string, e
         console.log(`[Webhook] Failure notification sent to ${admin.email} for ${eventType}`)
     } catch (emailErr) {
         console.error('[Webhook] Failed to send failure notification:', emailErr)
+    }
+}
+
+/**
+ * Send confirmation emails when a subscription renewal successfully adds credits.
+ * Emails both admin (audit trail) and student (receipt).
+ */
+async function notifyRenewalSuccess({ studentName, studentEmail, creditsAdded, newTotal, amountPaid }: {
+    studentName: string
+    studentEmail: string | null
+    creditsAdded: number
+    newTotal: number
+    amountPaid: number
+}) {
+    const resendKey = process.env.RESEND_API_KEY
+    if (!resendKey) {
+        console.log('[Webhook] Resend not configured, skipping renewal confirmation')
+        return
+    }
+
+    const resend = new Resend(resendKey)
+    const date = new Date().toLocaleDateString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        month: 'long', day: 'numeric', year: 'numeric'
+    })
+
+    // Lookup admin email
+    const { data: admin } = await supabaseAdmin
+        .from('profiles')
+        .select('email')
+        .eq('role', 'admin')
+        .limit(1)
+        .single()
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
+
+    // 1. Email to admin (audit trail)
+    if (admin?.email) {
+        try {
+            await resend.emails.send({
+                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                to: admin.email,
+                subject: `✅ Subscription Renewed: ${creditsAdded} credits added for ${studentName}`,
+                html: `
+                    <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
+                        <h2 style="font-size: 20px; margin: 0 0 16px; color: #16a34a;">
+                            ✅ Subscription Renewal Processed
+                        </h2>
+                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Student:</strong> ${studentName}</p>
+                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Amount:</strong> $${amountPaid.toFixed(2)}</p>
+                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Credits Added:</strong> ${creditsAdded}</p>
+                            <p style="font-size: 15px; color: #555; margin: 0;"><strong>New Balance:</strong> ${newTotal} credits</p>
+                        </div>
+                        <p style="font-size: 13px; color: #888;">Date: ${date}</p>
+                    </div>
+                `,
+            })
+            console.log(`[Webhook] Admin renewal confirmation sent to ${admin.email}`)
+        } catch (e) {
+            console.error('[Webhook] Failed to send admin renewal email:', e)
+        }
+    }
+
+    // 2. Email to student (receipt)
+    if (studentEmail) {
+        try {
+            await resend.emails.send({
+                from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+                to: studentEmail,
+                subject: `Your subscription renewed — ${creditsAdded} credits added!`,
+                html: `
+                    <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
+                        <h2 style="font-size: 20px; margin: 0 0 16px; color: #1a1a1a;">
+                            Subscription Renewed 🎹
+                        </h2>
+                        <p style="font-size: 15px; color: #555; margin: 0 0 16px;">
+                            Hi ${studentName}, your subscription has renewed and your credits have been added!
+                        </p>
+                        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Amount Charged:</strong> $${amountPaid.toFixed(2)}</p>
+                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Credits Added:</strong> ${creditsAdded}</p>
+                            <p style="font-size: 15px; color: #555; margin: 0;"><strong>Your Credit Balance:</strong> ${newTotal}</p>
+                        </div>
+                        <a href="${appUrl}/student" style="display: inline-block; background: #111; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+                            Book a Lesson →
+                        </a>
+                        <p style="font-size: 12px; color: #888; margin-top: 24px;">
+                            Date: ${date} • This is a receipt for your subscription renewal.
+                        </p>
+                    </div>
+                `,
+            })
+            console.log(`[Webhook] Student renewal receipt sent to ${studentEmail}`)
+        } catch (e) {
+            console.error('[Webhook] Failed to send student renewal email:', e)
+        }
     }
 }
