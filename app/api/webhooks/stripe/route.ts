@@ -27,124 +27,182 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
     }
 
-    // 1. Handle One-Time Purchases & First Subscription Payment
-    if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as Stripe.Checkout.Session
-        const userId = session.metadata?.userId
-        const type = session.metadata?.type
+    try {
+        // 1. Handle One-Time Purchases & First Subscription Payment
+        if (event.type === 'checkout.session.completed') {
+            const session = event.data.object as Stripe.Checkout.Session
+            const userId = session.metadata?.userId
+            const type = session.metadata?.type
+            console.log(`[Webhook] checkout.session.completed | userId=${userId} type=${type}`)
 
-        if (userId) {
-            // Fallback: Save stripe_customer_id if not already saved
-            const stripeCustomerId = session.customer as string | null
-            if (stripeCustomerId) {
-                const { data: existingProfile } = await supabaseAdmin
-                    .from('profiles')
-                    .select('stripe_customer_id')
-                    .eq('id', userId)
-                    .single()
-
-                if (existingProfile && !existingProfile.stripe_customer_id) {
-                    await supabaseAdmin
+            if (userId) {
+                // Fallback: Save stripe_customer_id if not already saved
+                const stripeCustomerId = session.customer as string | null
+                if (stripeCustomerId) {
+                    const { data: existingProfile, error: profileErr } = await supabaseAdmin
                         .from('profiles')
-                        .update({ stripe_customer_id: stripeCustomerId })
-                        .eq('id', userId)
-                    console.log(`Saved Stripe Customer ID ${stripeCustomerId} for user ${userId} (webhook fallback)`)
-                }
-            }
-
-            // CASE A: Balance Payment
-            if (type === 'balance_payment') {
-                const amountPaidCents = Number(session.metadata?.amountPaid || 0)
-                const amountPaid = amountPaidCents / 100
-
-                // Fetch current balance to subtract carefully
-                const { data: profile } = await supabaseAdmin
-                    .from('profiles')
-                    .select('balance_due')
-                    .eq('id', userId)
-                    .single()
-
-                // Reset balance (or subtract if partial payments were allowed, but here we assume full)
-                const currentBalance = Number(profile?.balance_due || 0)
-                const newBalance = Math.max(0, currentBalance - amountPaid)
-
-                await supabaseAdmin
-                    .from('profiles')
-                    .update({ balance_due: newBalance })
-                    .eq('id', userId)
-
-                console.log(`✅ Balance payment processed for user ${userId}: Paid $${amountPaid}`)
-            }
-            // CASE B: Standard Credit Purchase
-            else {
-                const creditsToAdd = Number(session.metadata?.credits || 0)
-                if (creditsToAdd > 0) {
-                    const { data: profile } = await supabaseAdmin
-                        .from('profiles')
-                        .select('credits')
+                        .select('stripe_customer_id')
                         .eq('id', userId)
                         .single()
 
-                    const newBalance = (profile?.credits || 0) + creditsToAdd
+                    if (profileErr) {
+                        console.error(`[Webhook] Failed to fetch profile for stripe_customer_id save:`, profileErr)
+                    }
 
-                    await supabaseAdmin
+                    if (existingProfile && !existingProfile.stripe_customer_id) {
+                        const { error: updateErr } = await supabaseAdmin
+                            .from('profiles')
+                            .update({ stripe_customer_id: stripeCustomerId })
+                            .eq('id', userId)
+                        if (updateErr) {
+                            console.error(`[Webhook] Failed to save stripe_customer_id:`, updateErr)
+                        } else {
+                            console.log(`[Webhook] Saved Stripe Customer ID ${stripeCustomerId} for user ${userId}`)
+                        }
+                    }
+                }
+
+                // CASE A: Balance Payment
+                if (type === 'balance_payment') {
+                    const amountPaidCents = Number(session.metadata?.amountPaid || 0)
+                    const amountPaid = amountPaidCents / 100
+
+                    const { data: profile, error: fetchErr } = await supabaseAdmin
                         .from('profiles')
-                        .update({ credits: newBalance })
+                        .select('balance_due')
+                        .eq('id', userId)
+                        .single()
+
+                    if (fetchErr) {
+                        console.error(`[Webhook] Failed to fetch balance for user ${userId}:`, fetchErr)
+                        return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                    }
+
+                    const currentBalance = Number(profile?.balance_due || 0)
+                    const newBalance = Math.max(0, currentBalance - amountPaid)
+
+                    const { error: updateErr } = await supabaseAdmin
+                        .from('profiles')
+                        .update({ balance_due: newBalance })
                         .eq('id', userId)
 
-                    console.log(`✅ Added ${creditsToAdd} credits to user ${userId} (Checkout)`)
+                    if (updateErr) {
+                        console.error(`[Webhook] Failed to update balance for user ${userId}:`, updateErr)
+                        return NextResponse.json({ error: 'Failed to update balance' }, { status: 500 })
+                    }
+
+                    console.log(`[Webhook] ✅ Balance payment processed for user ${userId}: Paid $${amountPaid} | ${currentBalance} → ${newBalance}`)
                 }
+                // CASE B: Standard Credit Purchase
+                else {
+                    const creditsToAdd = Number(session.metadata?.credits || 0)
+                    console.log(`[Webhook] Credit purchase | userId=${userId} creditsToAdd=${creditsToAdd}`)
+
+                    if (creditsToAdd > 0) {
+                        const { data: profile, error: fetchErr } = await supabaseAdmin
+                            .from('profiles')
+                            .select('credits')
+                            .eq('id', userId)
+                            .single()
+
+                        if (fetchErr) {
+                            console.error(`[Webhook] Failed to fetch credits for user ${userId}:`, fetchErr)
+                            return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                        }
+
+                        const oldCredits = profile?.credits || 0
+                        const newBalance = oldCredits + creditsToAdd
+
+                        const { error: updateErr } = await supabaseAdmin
+                            .from('profiles')
+                            .update({ credits: newBalance })
+                            .eq('id', userId)
+
+                        if (updateErr) {
+                            console.error(`[Webhook] Failed to update credits for user ${userId}:`, updateErr)
+                            return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
+                        }
+
+                        console.log(`[Webhook] ✅ Added ${creditsToAdd} credits to user ${userId} (Checkout) | ${oldCredits} → ${newBalance}`)
+                    }
+                }
+            } else {
+                console.warn(`[Webhook] checkout.session.completed missing userId in metadata`)
             }
         }
-    }
 
-    // 2. Handle Recurring Subscription Payments (Months 2, 3, 4...)
-    if (event.type === 'invoice.payment_succeeded') {
-        const invoice = event.data.object as Stripe.Invoice
+        // 2. Handle Recurring Subscription Payments (Months 2, 3, 4...)
+        if (event.type === 'invoice.payment_succeeded') {
+            const invoice = event.data.object as Stripe.Invoice
+            console.log(`[Webhook] invoice.payment_succeeded | billing_reason=${invoice.billing_reason} subscription=${(invoice as any).subscription}`)
 
-        // We only care about subscription renewals, not the first payment
-        // 'subscription_create' is handled by checkout.session.completed above
-        if (invoice.billing_reason === 'subscription_cycle') {
+            // We only care about subscription renewals, not the first payment
+            // 'subscription_create' is handled by checkout.session.completed above
+            if (invoice.billing_reason === 'subscription_cycle') {
 
-            // Fetch the subscription to get the metadata we saved
-            const subscriptionId = (invoice as any).subscription as string
-            const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+                // Fetch the subscription to get the metadata we saved
+                const subscriptionId = (invoice as any).subscription as string
+                console.log(`[Webhook] Fetching subscription ${subscriptionId} from Stripe...`)
+                const subscription = await stripe.subscriptions.retrieve(subscriptionId)
 
-            const userId = subscription.metadata?.userId
-            const creditsToAdd = Number(subscription.metadata?.credits || 0) // Should be 4
+                const userId = subscription.metadata?.userId
+                const creditsToAdd = Number(subscription.metadata?.credits || 0)
+                console.log(`[Webhook] Subscription metadata | userId=${userId} credits=${creditsToAdd}`)
 
-            if (userId && creditsToAdd > 0) {
-                const { data: profile } = await supabaseAdmin
+                if (!userId) {
+                    console.error(`[Webhook] ❌ subscription ${subscriptionId} missing userId in metadata!`)
+                    return NextResponse.json({ error: 'Missing userId in subscription metadata' }, { status: 500 })
+                }
+
+                if (creditsToAdd <= 0) {
+                    console.error(`[Webhook] ❌ subscription ${subscriptionId} has credits=${creditsToAdd} in metadata!`)
+                    return NextResponse.json({ error: 'Missing credits in subscription metadata' }, { status: 500 })
+                }
+
+                const { data: profile, error: fetchErr } = await supabaseAdmin
                     .from('profiles')
                     .select('credits')
                     .eq('id', userId)
                     .single()
 
-                const newBalance = (profile?.credits || 0) + creditsToAdd
+                if (fetchErr) {
+                    console.error(`[Webhook] Failed to fetch credits for user ${userId}:`, fetchErr)
+                    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+                }
 
-                await supabaseAdmin
+                const oldCredits = profile?.credits || 0
+                const newBalance = oldCredits + creditsToAdd
+
+                const { error: updateErr } = await supabaseAdmin
                     .from('profiles')
                     .update({ credits: newBalance })
                     .eq('id', userId)
 
-                console.log(`✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId}`)
+                if (updateErr) {
+                    console.error(`[Webhook] Failed to update credits for user ${userId}:`, updateErr)
+                    return NextResponse.json({ error: 'Failed to update credits' }, { status: 500 })
+                }
+
+                console.log(`[Webhook] ✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId} | ${oldCredits} → ${newBalance}`)
             }
         }
+
+        // 3. Handle Payment Ready for Manual Capture
+        if (event.type === 'payment_intent.amount_capturable_updated') {
+            const paymentIntent = event.data.object as Stripe.PaymentIntent
+            console.log(`[Webhook] Payment ${paymentIntent.id} ready for capture: $${(paymentIntent.amount / 100).toFixed(2)}`)
+
+            // Fire-and-forget notification email
+            notifyAdminOfPendingCapture(paymentIntent).catch(err => {
+                console.error('[Webhook] Failed to notify admin:', err)
+            })
+        }
+
+        return NextResponse.json({ received: true })
+    } catch (err) {
+        console.error(`[Webhook] ❌ Unhandled error processing ${event.type}:`, err)
+        return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
     }
-
-    // 3. Handle Payment Ready for Manual Capture
-    // This fires when a payment with capture_method: 'manual' is authorized
-    if (event.type === 'payment_intent.amount_capturable_updated') {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent
-        console.log(`[Webhook] Payment ${paymentIntent.id} ready for capture: $${(paymentIntent.amount / 100).toFixed(2)}`)
-
-        // Fire-and-forget notification email
-        notifyAdminOfPendingCapture(paymentIntent).catch(err => {
-            console.error('[Webhook] Failed to notify admin:', err)
-        })
-    }
-
-    return NextResponse.json({ received: true })
 }
 
 /**
