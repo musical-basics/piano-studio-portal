@@ -229,6 +229,12 @@ export async function POST(req: Request) {
         const errMsg = err?.message || String(err)
         const errStack = err?.stack || 'no stack'
         console.error(`[Webhook] ❌ Unhandled error processing ${event.type}:`, errMsg, errStack)
+
+        // Fire-and-forget email alert to admin
+        notifyAdminOfWebhookFailure(event.type, event.id, errMsg).catch(e => {
+            console.error('[Webhook] Failed to send failure notification email:', e)
+        })
+
         return NextResponse.json({ 
             error: 'Webhook handler failed', 
             message: errMsg,
@@ -311,5 +317,68 @@ async function notifyAdminOfPendingCapture(paymentIntent: Stripe.PaymentIntent) 
         console.log(`[Webhook] Capture notification sent to ${admin.email} for $${amount} from ${studentName}`)
     } catch (err) {
         console.error('[Webhook] Failed to send capture notification:', err)
+    }
+}
+
+/**
+ * Send admin an email when a webhook event fails to process.
+ */
+async function notifyAdminOfWebhookFailure(eventType: string, eventId: string, errorMessage: string) {
+    const resendKey = process.env.RESEND_API_KEY
+    if (!resendKey) {
+        console.log('[Webhook] Resend not configured, skipping failure notification')
+        return
+    }
+
+    const resend = new Resend(resendKey)
+
+    // Lookup admin email
+    const { data: admin } = await supabaseAdmin
+        .from('profiles')
+        .select('email')
+        .eq('role', 'admin')
+        .limit(1)
+        .single()
+
+    if (!admin?.email) {
+        console.error('[Webhook] No admin email found for failure notification')
+        return
+    }
+
+    const stripeEventUrl = `https://dashboard.stripe.com/events/${eventId}`
+    const timestamp = new Date().toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true
+    })
+
+    try {
+        await resend.emails.send({
+            from: 'Piano Studio <notifications@updates.musicalbasics.com>',
+            to: admin.email,
+            subject: `🚨 Webhook Failed: ${eventType}`,
+            html: `
+                <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
+                    <h2 style="font-size: 20px; margin: 0 0 16px; color: #dc2626;">
+                        🚨 Stripe Webhook Failed
+                    </h2>
+                    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                        <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Event Type:</strong> ${eventType}</p>
+                        <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Time:</strong> ${timestamp}</p>
+                        <p style="font-size: 15px; color: #555; margin: 0;"><strong>Error:</strong></p>
+                        <pre style="background: #fff; border: 1px solid #e5e7eb; border-radius: 4px; padding: 12px; font-size: 13px; overflow-x: auto; margin: 8px 0 0 0; color: #dc2626;">${errorMessage}</pre>
+                    </div>
+                    <p style="font-size: 14px; color: #888; margin: 0 0 16px;">
+                        ⚠️ If this was a payment event, credits may not have been applied. Check the student's account.
+                    </p>
+                    <a href="${stripeEventUrl}" style="display: inline-block; background: #dc2626; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+                        View Event in Stripe →
+                    </a>
+                </div>
+            `,
+        })
+        console.log(`[Webhook] Failure notification sent to ${admin.email} for ${eventType}`)
+    } catch (emailErr) {
+        console.error('[Webhook] Failed to send failure notification:', emailErr)
     }
 }
