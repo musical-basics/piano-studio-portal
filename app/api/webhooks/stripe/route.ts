@@ -199,9 +199,15 @@ export async function POST(req: Request) {
         }
 
         return NextResponse.json({ received: true })
-    } catch (err) {
-        console.error(`[Webhook] ❌ Unhandled error processing ${event.type}:`, err)
-        return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
+    } catch (err: any) {
+        const errMsg = err?.message || String(err)
+        const errStack = err?.stack || 'no stack'
+        console.error(`[Webhook] ❌ Unhandled error processing ${event.type}:`, errMsg, errStack)
+        return NextResponse.json({ 
+            error: 'Webhook handler failed', 
+            message: errMsg,
+            stack: errStack 
+        }, { status: 500 })
     }
 }
 
