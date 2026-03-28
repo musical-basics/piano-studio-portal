@@ -140,8 +140,34 @@ export async function POST(req: Request) {
             // 'subscription_create' is handled by checkout.session.completed above
             if (invoice.billing_reason === 'subscription_cycle') {
 
-                // Fetch the subscription to get the metadata we saved
-                const subscriptionId = (invoice as any).subscription as string
+                // Extract subscription ID - handle different Stripe API versions
+                const invoiceAny = invoice as any
+                let subscriptionId: string | undefined
+                
+                // Try multiple locations where subscription ID might live
+                if (typeof invoiceAny.subscription === 'string') {
+                    subscriptionId = invoiceAny.subscription
+                } else if (invoiceAny.subscription?.id) {
+                    subscriptionId = invoiceAny.subscription.id
+                } else if (invoiceAny.parent?.subscription_details?.subscription) {
+                    subscriptionId = invoiceAny.parent.subscription_details.subscription
+                } else if (invoice.lines?.data?.[0]) {
+                    const lineAny = invoice.lines.data[0] as any
+                    subscriptionId = lineAny.subscription || lineAny.parent?.subscription_details?.subscription
+                }
+                
+                console.log(`[Webhook] Extracted subscriptionId=${subscriptionId} | invoice.subscription=${JSON.stringify(invoiceAny.subscription)} | invoice.parent=${JSON.stringify(invoiceAny.parent)}`)
+
+                if (!subscriptionId) {
+                    console.error(`[Webhook] ❌ Could not find subscription ID in invoice! Keys: ${Object.keys(invoiceAny).join(', ')}`)
+                    return NextResponse.json({ 
+                        error: 'Could not extract subscription ID from invoice',
+                        invoiceKeys: Object.keys(invoiceAny),
+                        parent: invoiceAny.parent,
+                        subscription: invoiceAny.subscription,
+                    }, { status: 500 })
+                }
+
                 console.log(`[Webhook] Fetching subscription ${subscriptionId} from Stripe...`)
                 const subscription = await stripe.subscriptions.retrieve(subscriptionId)
 
