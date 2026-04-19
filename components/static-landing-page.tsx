@@ -1,310 +1,289 @@
-"use client"
-
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Music, Clock, Calendar, Award, Facebook, Instagram, Mail } from "lucide-react"
-import { InquiryModal } from "@/components/inquiry-modal"
-import { useState } from "react"
+import { InquiryForm } from "@/components/inquiry-form"
+import { getApprovedReviews } from "@/app/actions/reviews"
 
-export function StaticLandingPage() {
-    const [showInquiryModal, setShowInquiryModal] = useState(false)
+const formatReviewDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+
+const renderStars = (rating: number) => {
+    const filled = Math.max(0, Math.min(5, rating))
+    return "★".repeat(filled) + "☆".repeat(5 - filled)
+}
+
+export async function StaticLandingPage() {
+    const allReviews = await getApprovedReviews()
+    const featuredReviews = (allReviews ?? []).slice(0, 3)
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="scroll-smooth bg-white text-gray-950 font-sans antialiased selection:bg-black selection:text-white">
             {/* Navigation */}
-            <nav className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sticky top-0 z-50">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+            <nav className="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 z-50">
+                <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Music className="h-6 w-6" />
-                        <span className="font-serif text-xl font-bold">Piano Studio</span>
+                        <span className="font-serif text-xl font-bold">Lionel Yu Piano Studio</span>
                     </div>
-                    <Link href="/login">
-                        <Button variant="outline" size="sm">
-                            Student Login
-                        </Button>
+                    <Link
+                        href="/login"
+                        className="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"
+                    >
+                        Student Login
                     </Link>
                 </div>
             </nav>
 
-            {/* Hero Section */}
+            {/* Spacer for fixed nav */}
+            <div className="h-16" />
+
+            {/* Hero */}
             <section className="relative py-20 lg:py-32 overflow-hidden">
-                {/* Background Piano Keys Pattern */}
                 <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
                     <div
                         className="w-full h-full"
                         style={{
-                            backgroundImage: `repeating-linear-gradient(
-                90deg,
-                #000 0px,
-                #000 60px,
-                #fff 60px,
-                #fff 70px,
-                #000 70px,
-                #000 100px,
-                #fff 100px,
-                #fff 110px
-              )`,
+                            backgroundImage:
+                                "repeating-linear-gradient(90deg, #000 0px, #000 60px, #fff 60px, #fff 70px, #000 70px, #000 100px, #fff 100px, #fff 110px)",
                             backgroundSize: "100% 200px",
                         }}
                     />
                 </div>
 
-                <div className="container mx-auto px-4">
+                <div className="max-w-7xl mx-auto px-4">
                     <div className="grid lg:grid-cols-2 gap-12 items-center">
-                        {/* Left Content */}
                         <div className="space-y-8">
                             <div className="space-y-4">
-                                <h1 className="font-serif text-5xl lg:text-6xl font-bold text-balance leading-tight">
+                                <h1 className="font-serif text-5xl lg:text-6xl font-bold leading-tight">
                                     Master Piano with Excellence
                                 </h1>
-                                <p className="text-xl text-muted-foreground text-pretty leading-relaxed">
-                                    Transform your musical journey with personalized instruction, flexible scheduling, and a proven system
-                                    designed for serious students.
+                                <p className="text-xl text-gray-500 leading-relaxed">
+                                    Transform your musical journey with personalized instruction, flexible scheduling, and a
+                                    proven system designed for serious students.
                                 </p>
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-4">
-                                <Button size="lg" className="text-base h-12 px-8" onClick={() => setShowInquiryModal(true)}>
-                                    Inquire for Lessons
-                                </Button>
-                                <Link href="/student">
-                                    <Button variant="outline" size="lg" className="text-base h-12 px-8 w-full sm:w-auto bg-transparent">
-                                        Student Portal
-                                    </Button>
+                                <Link
+                                    href="/login"
+                                    className="inline-flex h-12 items-center justify-center rounded-md bg-black px-8 text-base font-medium text-white shadow hover:bg-gray-800 transition-colors"
+                                >
+                                    Student Portal
                                 </Link>
+                                <a
+                                    href="#contact"
+                                    className="inline-flex h-12 items-center justify-center rounded-md border border-gray-200 bg-transparent px-8 text-base font-medium shadow-sm hover:bg-gray-50 transition-colors"
+                                >
+                                    Inquire for Lessons
+                                </a>
                             </div>
 
-                            {/* Stats */}
-                            <div className="grid grid-cols-3 gap-6 pt-8 border-t">
+                            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-gray-100">
                                 <div>
-                                    <div className="font-serif text-3xl font-bold">15+</div>
-                                    <div className="text-sm text-muted-foreground">Years Teaching</div>
+                                    <div className="font-serif text-3xl font-bold">1.27m</div>
+                                    <div className="text-sm text-gray-500">YouTube Subscribers</div>
                                 </div>
                                 <div>
-                                    <div className="font-serif text-3xl font-bold">200+</div>
-                                    <div className="text-sm text-muted-foreground">Students Taught</div>
+                                    <div className="font-serif text-3xl font-bold">50+</div>
+                                    <div className="text-sm text-gray-500">Students Taught</div>
                                 </div>
                                 <div>
-                                    <div className="font-serif text-3xl font-bold">98%</div>
-                                    <div className="text-sm text-muted-foreground">Satisfaction Rate</div>
+                                    <div className="font-serif text-3xl font-bold">100%</div>
+                                    <div className="text-sm text-gray-500">Satisfaction Rate</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Right Image */}
                         <div className="relative">
-                            <div className="aspect-[4/5] rounded-lg overflow-hidden border-2 border-border shadow-2xl">
+                            <div className="aspect-[4/5] rounded-lg overflow-hidden border-2 border-gray-100 shadow-2xl">
                                 <img
-                                    src="/professional-piano-teacher-at-grand-piano-in-elega.jpg"
+                                    src="/lionel-yu-at-piano.JPG"
                                     alt="Professional Piano Instruction"
                                     className="w-full h-full object-cover"
                                 />
                             </div>
-                            {/* Decorative Element */}
-                            <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-primary/10 rounded-full -z-10" />
-                            <div className="absolute -top-6 -right-6 w-24 h-24 bg-primary/5 rounded-full -z-10" />
+                            <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-gray-900/10 rounded-full -z-10" />
+                            <div className="absolute -top-6 -right-6 w-24 h-24 bg-gray-900/5 rounded-full -z-10" />
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* About Me Section */}
-            <section className="py-20 bg-muted/30">
-                <div className="container mx-auto px-4">
+            {/* About */}
+            <section className="py-20 bg-gray-50/50">
+                <div className="max-w-7xl mx-auto px-4">
                     <div className="max-w-3xl mx-auto">
                         <div className="text-center space-y-4 mb-12">
                             <h2 className="font-serif text-4xl font-bold">About Your Teacher</h2>
-                            <div className="h-1 w-20 bg-primary mx-auto" />
+                            <div className="h-1 w-20 bg-black mx-auto" />
                         </div>
 
-                        <div className="space-y-6 text-lg leading-relaxed">
+                        <div className="space-y-6 text-lg leading-relaxed text-gray-700">
                             <p>
-                                With over 15 years of experience teaching piano to students of all ages and skill levels, I bring a
-                                unique blend of classical training and modern pedagogy to every lesson. My approach is rooted in
-                                building strong technical foundations while nurturing each student's individual musical voice.
+                                With over 30 years of piano experience and having played in some of the world's biggest concert
+                                halls, I teach students of all ages and skill levels, bringing a unique mixture of classical
+                                technique and modern musicality to each student. My approach is rooted in building strong
+                                technical foundations while nurturing each student's individual musical voice.
                             </p>
 
                             <p>
-                                I hold a Master's degree in Piano Performance from a prestigious conservatory and have performed
-                                internationally as a soloist and chamber musician. But my greatest joy comes from witnessing the moment
-                                when a student discovers their own musical potential.
+                                I have studied at Juilliard, Peabody and NYU Music Schools and with some of the world's best
+                                pianists, such as Stanislav Khristenko, Assaff Weisman, Peter Dugan, and others. But my greatest
+                                joy comes from witnessing the moment when a student discovers their own musical potential.
                             </p>
 
-                            <Card className="border-l-4 border-l-primary bg-background">
-                                <CardContent className="pt-6">
-                                    <p className="font-serif text-xl italic text-balance">
-                                        "My teaching philosophy centers on three pillars: discipline, creativity, and joy. I believe that
-                                        mastery comes from consistent practice, but the journey should always be filled with the excitement
-                                        of musical discovery."
-                                    </p>
-                                </CardContent>
-                            </Card>
+                            <div className="rounded-lg border-l-4 border-l-black bg-white p-6 shadow-sm">
+                                <p className="font-serif text-xl italic text-gray-800">
+                                    &ldquo;My teaching philosophy centers on three pillars: discipline, creativity, and joy. I
+                                    believe that mastery comes from consistent practice, but the journey should always be filled
+                                    with the excitement of musical discovery.&rdquo;
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* Studio Policy Section */}
+            {/* Studio System */}
             <section className="py-20">
-                <div className="container mx-auto px-4">
+                <div className="max-w-7xl mx-auto px-4">
                     <div className="max-w-4xl mx-auto">
                         <div className="text-center space-y-4 mb-12">
                             <h2 className="font-serif text-4xl font-bold">The Studio System</h2>
-                            <p className="text-xl text-muted-foreground">Flexible consistency for serious students</p>
-                            <div className="h-1 w-20 bg-primary mx-auto" />
+                            <p className="text-xl text-gray-500">Flexible consistency for serious students</p>
+                            <div className="h-1 w-20 bg-black mx-auto" />
                         </div>
 
                         <div className="grid md:grid-cols-3 gap-6">
-                            {/* Credit-Based System */}
-                            <Card className="border-2 hover:border-primary transition-colors">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="h-12 w-12 bg-primary rounded-lg flex items-center justify-center">
-                                        <Calendar className="h-6 w-6 text-primary-foreground" />
+                            <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                                <div className="space-y-4">
+                                    <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                        <Calendar className="h-6 w-6" />
                                     </div>
                                     <h3 className="font-serif text-xl font-bold">Credit-Based Packages</h3>
-                                    <p className="text-muted-foreground leading-relaxed">
-                                        Purchase 4-lesson packages that work with your schedule. No rigid monthly commitments—just
-                                        consistent progress at your pace.
+                                    <p className="text-gray-500 leading-relaxed">
+                                        Purchase 4-lesson packages that work with your schedule. No rigid monthly
+                                        commitments&mdash;just consistent progress at your pace.
                                     </p>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
 
-                            {/* Flexible Rescheduling */}
-                            <Card className="border-2 hover:border-primary transition-colors">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="h-12 w-12 bg-primary rounded-lg flex items-center justify-center">
-                                        <Clock className="h-6 w-6 text-primary-foreground" />
+                            <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                                <div className="space-y-4">
+                                    <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                        <Clock className="h-6 w-6" />
                                     </div>
                                     <h3 className="font-serif text-xl font-bold">Fair Cancellation Policy</h3>
-                                    <p className="text-muted-foreground leading-relaxed">
-                                        Life happens. Reschedule with 24+ hours notice at no charge. We'll find you a makeup slot that works
-                                        for your week.
+                                    <p className="text-gray-500 leading-relaxed">
+                                        Life happens. Reschedule with 24+ hours notice at no charge. We'll find you a makeup
+                                        slot that works for your week.
                                     </p>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
 
-                            {/* Professional Accountability */}
-                            <Card className="border-2 hover:border-primary transition-colors">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="h-12 w-12 bg-primary rounded-lg flex items-center justify-center">
-                                        <Award className="h-6 w-6 text-primary-foreground" />
+                            <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                                <div className="space-y-4">
+                                    <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                        <Award className="h-6 w-6" />
                                     </div>
                                     <h3 className="font-serif text-xl font-bold">Professional Standards</h3>
-                                    <p className="text-muted-foreground leading-relaxed">
-                                        Clear expectations, detailed lesson notes, and recorded sessions ensure you get maximum value from
-                                        every minute of instruction.
+                                    <p className="text-gray-500 leading-relaxed">
+                                        Clear expectations, detailed lesson notes, and recorded sessions ensure you get maximum
+                                        value from every minute of instruction.
                                     </p>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
                         </div>
 
-                        <Card className="mt-8 bg-primary/5 border-primary/20">
-                            <CardContent className="pt-6">
-                                <p className="text-center text-lg">
-                                    <strong className="font-serif">The Result?</strong> Students make faster progress because they can
-                                    maintain weekly momentum without the stress of rigid scheduling. It's the perfect balance of structure
-                                    and flexibility.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    </div>
-                </div>
-            </section>
-
-            {/* Testimonials Section */}
-            <section className="py-20 bg-muted/30">
-                <div className="container mx-auto px-4">
-                    <div className="max-w-5xl mx-auto">
-                        <div className="text-center space-y-4 mb-12">
-                            <h2 className="font-serif text-4xl font-bold">What Students Say</h2>
-                            <div className="h-1 w-20 bg-primary mx-auto" />
-                        </div>
-
-                        <div className="grid md:grid-cols-3 gap-6">
-                            <Card className="bg-background">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="flex gap-1">
-                                        {[...Array(5)].map((_, i) => (
-                                            <Music key={i} className="h-4 w-4 fill-primary text-primary" />
-                                        ))}
-                                    </div>
-                                    <p className="text-muted-foreground italic leading-relaxed">
-                                        "The credit system is brilliant! I travel for work and this is the only studio that accommodates my
-                                        schedule without penalty. My technique has improved more in 6 months here than 2 years elsewhere."
-                                    </p>
-                                    <div className="pt-4 border-t">
-                                        <p className="font-semibold">Sarah M.</p>
-                                        <p className="text-sm text-muted-foreground">Adult Student, 2 years</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <Card className="bg-background">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="flex gap-1">
-                                        {[...Array(5)].map((_, i) => (
-                                            <Music key={i} className="h-4 w-4 fill-primary text-primary" />
-                                        ))}
-                                    </div>
-                                    <p className="text-muted-foreground italic leading-relaxed">
-                                        "My daughter loves her lessons! The recorded sessions are invaluable for practice at home. The
-                                        teacher strikes the perfect balance between challenging her and keeping it fun."
-                                    </p>
-                                    <div className="pt-4 border-t">
-                                        <p className="font-semibold">Jennifer L.</p>
-                                        <p className="text-sm text-muted-foreground">Parent of Student, 3 years</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <Card className="bg-background">
-                                <CardContent className="pt-6 space-y-4">
-                                    <div className="flex gap-1">
-                                        {[...Array(5)].map((_, i) => (
-                                            <Music key={i} className="h-4 w-4 fill-primary text-primary" />
-                                        ))}
-                                    </div>
-                                    <p className="text-muted-foreground italic leading-relaxed">
-                                        "Professional, organized, and incredibly talented. The online portal with lesson notes and sheet
-                                        music keeps everything in one place. This is how modern music education should work."
-                                    </p>
-                                    <div className="pt-4 border-t">
-                                        <p className="font-semibold">David K.</p>
-                                        <p className="text-sm text-muted-foreground">Advanced Student, 1 year</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                        <div className="mt-8 rounded-lg bg-gray-50 border border-gray-200 p-6">
+                            <p className="text-center text-lg text-gray-700">
+                                <strong className="font-serif">The Result?</strong> Students make faster progress because they
+                                can maintain weekly momentum without the stress of rigid scheduling. It's the perfect balance
+                                of structure and flexibility.
+                            </p>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* CTA Section */}
-            <section className="py-20 border-t">
-                <div className="container mx-auto px-4">
-                    <div className="max-w-3xl mx-auto text-center space-y-8">
-                        <h2 className="font-serif text-4xl font-bold text-balance">Ready to Begin Your Musical Journey?</h2>
-                        <p className="text-xl text-muted-foreground text-pretty">
-                            Limited openings available for serious students. Schedule a consultation to discuss your goals and find
-                            the perfect lesson time.
+            {/* Testimonials */}
+            {featuredReviews.length > 0 && (
+                <section className="py-20 bg-gray-50/50">
+                    <div className="max-w-7xl mx-auto px-4">
+                        <div className="max-w-5xl mx-auto">
+                            <div className="text-center space-y-4 mb-12">
+                                <h2 className="font-serif text-4xl font-bold">What Students Say</h2>
+                                <div className="h-1 w-20 bg-black mx-auto" />
+                            </div>
+
+                            <div className="grid md:grid-cols-3 gap-6">
+                                {featuredReviews.map((review: any) => {
+                                    const profileCreatedAt = review.profiles?.created_at
+                                    const studentSince = profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null
+
+                                    return (
+                                        <div
+                                            key={review.id}
+                                            className="rounded-xl bg-white p-6 shadow-sm border border-gray-100"
+                                        >
+                                            <div className="space-y-4">
+                                                <div className="flex gap-1">
+                                                    <span className="text-black tracking-wider">
+                                                        {renderStars(review.rating)}
+                                                    </span>
+                                                </div>
+                                                <p className="text-gray-600 italic leading-relaxed">
+                                                    &ldquo;{review.text}&rdquo;
+                                                </p>
+                                                <div className="pt-4 border-t border-gray-100">
+                                                    <p className="font-semibold">{review.name}</p>
+                                                    <p className="text-sm text-gray-500">
+                                                        {studentSince
+                                                            ? `Student since ${studentSince}`
+                                                            : formatReviewDate(review.created_at)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            <div className="mt-10 text-center">
+                                <Link
+                                    href="/reviews"
+                                    className="inline-flex items-center text-sm font-medium text-black hover:underline"
+                                >
+                                    Read more reviews →
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* Contact / Inquiry */}
+            <section className="py-24 bg-gray-50 border-t border-gray-100" id="contact">
+                <div className="max-w-3xl mx-auto px-6">
+                    <div className="text-center mb-12">
+                        <h2 className="font-serif text-4xl font-bold mb-4">Ready to Begin Your Musical Journey?</h2>
+                        <p className="text-gray-500 text-lg">
+                            Send me a message to discuss your goals and schedule a consultation.
                         </p>
-                        <Button size="lg" className="text-base h-12 px-8" onClick={() => setShowInquiryModal(true)}>
-                            Inquire for Lessons
-                        </Button>
+                    </div>
 
-                        <InquiryModal open={showInquiryModal} onOpenChange={setShowInquiryModal} />
+                    <div className="rounded-xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100">
+                        <InquiryForm />
                     </div>
                 </div>
             </section>
 
             {/* Footer */}
-            <footer className="border-t bg-muted/30">
-                <div className="container mx-auto px-4 py-12">
+            <footer className="border-t border-gray-100 bg-gray-50/50">
+                <div className="max-w-7xl mx-auto px-4 py-12">
                     <div className="flex flex-col md:flex-row justify-between items-center gap-6">
                         <div className="flex items-center gap-2">
                             <Music className="h-6 w-6" />
-                            <span className="font-serif text-lg font-bold">Piano Studio</span>
+                            <span className="font-serif text-lg font-bold">Lionel Yu Piano Studio</span>
                         </div>
 
                         <div className="flex gap-6">
@@ -312,7 +291,7 @@ export function StaticLandingPage() {
                                 href="https://facebook.com"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                className="text-gray-500 hover:text-black transition-colors"
                             >
                                 <Facebook className="h-5 w-5" />
                                 <span className="sr-only">Facebook</span>
@@ -321,21 +300,21 @@ export function StaticLandingPage() {
                                 href="https://instagram.com"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                className="text-gray-500 hover:text-black transition-colors"
                             >
                                 <Instagram className="h-5 w-5" />
                                 <span className="sr-only">Instagram</span>
                             </a>
                             <a
-                                href="mailto:contact@pianostudio.com"
-                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                href="mailto:support@musicalbasics.com"
+                                className="text-gray-500 hover:text-black transition-colors"
                             >
                                 <Mail className="h-5 w-5" />
                                 <span className="sr-only">Email</span>
                             </a>
                         </div>
 
-                        <p className="text-sm text-muted-foreground">© 2025 Piano Studio. All rights reserved.</p>
+                        <p className="text-sm text-gray-500">© 2025 Lionel Yu Piano Studio. All rights reserved.</p>
                     </div>
                 </div>
             </footer>
