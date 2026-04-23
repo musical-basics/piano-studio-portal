@@ -4,117 +4,26 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
-import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
-import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
-import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 import { addDays, format } from 'date-fns'
+import {
+    checkAvailabilityCore,
+    listLessonsCore,
+    scheduleLessonCore,
+    rescheduleLessonCore,
+    cancelLessonCore,
+} from '@/lib/core/lessons'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
-/**
- * Check if a time slot is available (not booked by ANY student)
- */
 export async function checkAvailability(date: string, time: string, duration: number = 60, excludeLessonId?: string) {
     const supabase = await createClient()
-
-    // Calculate end time of the proposed slot
-    const startDateTime = new Date(`${date}T${time}`)
-    const endDateTime = new Date(startDateTime.getTime() + duration * 60000)
-
-    // We need to check for overlaps. 
-    // A lesson overlaps if:
-    // (StartA < EndB) AND (EndA > StartB)
-
-    // Simplified: Check for exact match first (most common case in grid system)
-    // For a real grid system, we usually stick to fixed slots.
-    // Querying for *overlapping* intervals in SQL is cleaner but 'time' is stored as string 'HH:MM'.
-    // So we fetch lessons on that date and filter in JS for overlap to be safe and simple given the schema.
-
-    const { data: lessons } = await supabase
-        .from('lessons')
-        .select('id, time, duration, status')
-        .eq('date', date)
-        .neq('status', 'cancelled') // Cancelled lessons don't block
-
-    if (!lessons) return true
-
-    const isTaken = lessons.some(lesson => {
-        if (excludeLessonId && lesson.id === excludeLessonId) return false
-
-        const lessonStart = new Date(`${date}T${lesson.time}`)
-        const lessonDuration = lesson.duration || 60
-        const lessonEnd = new Date(lessonStart.getTime() + lessonDuration * 60000)
-
-        // Check overlap
-        const overlaps = (startDateTime < lessonEnd) && (endDateTime > lessonStart)
-        return overlaps
-    })
-
-    return !isTaken
+    return checkAvailabilityCore(supabase as any, date, time, duration, excludeLessonId)
 }
 
-/**
- * Get all lessons within a specific date range (inclusive), joined with student profile
- */
 export async function getLessonsForDateRange(startDate: string, endDate: string) {
     const supabase = await createClient()
-
-    // Fetch lessons
-    const { data: lessons, error: lessonsError } = await supabase
-        .from('lessons')
-        .select(`
-            *,
-            student:profiles!lessons_student_id_fkey (
-                id,
-                name,
-                email
-            )
-        `)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .neq('status', 'cancelled')
-        .order('date', { ascending: true })
-        .order('time', { ascending: true })
-
-    if (lessonsError) {
-        console.error('Error fetching lessons range:', lessonsError)
-    }
-
-    // Fetch events
-    // converting startDate/endDate strings to ISO for comparison if needed, 
-    // but Postgres matches string YYYY-MM-DD against timestamptz often fine. 
-    // Safest is to explicitly cast or use range.
-    // Events have 'start_time' (timestamptz).
-    const startIso = `${startDate}T00:00:00`
-    const endIso = `${endDate}T23:59:59`
-
-    const { data: events, error: eventsError } = await supabase
-        .from('events')
-        .select(`
-            *,
-            event_invites (
-                student_id,
-                status,
-                updated_at,
-                student_notes,
-                profiles (
-                   name
-                )
-            )
-        `)
-        .gte('start_time', startIso)
-        .lte('start_time', endIso)
-        .order('start_time', { ascending: true })
-
-    if (eventsError) {
-        console.error('Error fetching events range:', eventsError)
-    }
-
-    return {
-        lessons: lessons || [],
-        events: events || []
-    }
+    return listLessonsCore(supabase as any, startDate, endDate)
 }
 
 /**
@@ -641,174 +550,32 @@ export async function markNoShow(lessonId: string) {
 }
 
 /**
- * Cancel a lesson - refunds credit only if cancelled >24 hours in advance
- * Uses admin client to bypass RLS for updates
+ * Cancel a lesson - deletes the row, deletes Zoom meeting, sends cancellation email.
+ * Admin: any scheduled/completed lesson. Student: own scheduled lesson only.
  */
 export async function cancelLesson(lessonId: string) {
     const supabase = await createClient()
-
-    // Get current user
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
+    if (!user) return { error: 'Unauthorized' }
 
-    // Get the lesson
-    const { data: lesson, error: lessonFetchError } = await supabase
-        .from('lessons')
-        .select('student_id, date, time, status')
-        .eq('id', lessonId)
-        .single()
-
-    if (lessonFetchError || !lesson) {
-        return { error: 'Lesson not found' }
-    }
-
-    // Get zoom_meeting_id if exists (fetch it)
-    const { data: lessonDetails } = await supabase
-        .from('lessons')
-        .select('zoom_meeting_id')
-        .eq('id', lessonId)
-        .single()
-    const zoomMeetingId = lessonDetails?.zoom_meeting_id
-
-    // Verify user owns this lesson or is admin
     const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-    const isAdmin = profile?.role === 'admin'
-    const isOwner = lesson.student_id === user.id
+    const actorRole: 'admin' | 'student' = profile?.role === 'admin' ? 'admin' : 'student'
 
-    if (!isAdmin && !isOwner) {
-        return { error: 'You can only cancel your own lessons' }
-    }
-
-    // CRITICAL: Check if already cancelled to prevent duplicate refunds
-    if (lesson.status === 'cancelled') {
-        return { error: 'This lesson has already been cancelled' }
-    }
-
-    if (lesson.status !== 'scheduled' && !isAdmin) {
-        return { error: 'Can only cancel scheduled lessons' }
-    }
-
-    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
-    const supabaseAdmin = createAdminClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_KEY!,
-        {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false
-            }
-        }
-    )
-
-    // Check if lesson is more than 24 hours away (use local time)
-    const timeStr = lesson.time || '12:00'
-    const lessonDateTime = new Date(`${lesson.date}T${timeStr}:00`)
-    const now = new Date()
-    const hoursUntilLesson = (lessonDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
-    const isWithin24Hours = hoursUntilLesson > 0 && hoursUntilLesson < 24
-
-    // IMPORTANT: If ADMIN cancels, they override the 24-hour rule (always refund unless they mark no-show)
-    // If OWNER cancels, they are subject to 24-hour rule
-    const shouldRefund = isAdmin || !isWithin24Hours
-
-    // Step 1: DELETE the lesson row (prevents duplicate cancellation)
-    const { error: deleteError } = await supabaseAdmin
-        .from('lessons')
-        .delete()
-        .eq('id', lessonId)
-
-    if (deleteError) {
-        console.error('Delete lesson error:', deleteError)
-        return { error: 'Failed to cancel lesson: ' + deleteError.message }
-    }
-
-    // Attempt to delete from Zoom
-    if (zoomMeetingId) {
-        try {
-            const { deleteZoomMeeting } = await import('@/lib/zoom')
-            const deleted = await deleteZoomMeeting(zoomMeetingId)
-            if (deleted) console.log(`Zoom meeting ${zoomMeetingId} deleted.`)
-        } catch (e) {
-            console.error('Failed to delete Zoom meeting:', e)
-        }
-    }
-
-    console.log(`Lesson ${lessonId} deleted. Refund: ${shouldRefund}`)
-
-    // Send Cancellation Email
-    if (resend) {
-        try {
-            // Fetch student email if not already present
-            const { data: student } = await supabase
-                .from('profiles')
-                .select('name, email')
-                .eq('id', lesson.student_id)
-                .single()
-
-            if (student?.email) {
-                // Get Admin params
-                const { data: adminProfile } = await supabase
-                    .from('profiles')
-                    .select('name, studio_name')
-                    .eq('id', user.id)
-                    .single()
-
-                const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-
-                // Format Date/Time
-                const dateObj = new Date(`${lesson.date}T00:00:00`)
-                const formattedDate = dateObj.toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
-                })
-
-                const [hours, minutes] = (lesson.time || '12:00').split(':')
-                const hourNum = parseInt(hours, 10)
-                const ampm = hourNum >= 12 ? 'pm' : 'am'
-                const hour12 = hourNum % 12 || 12
-                const formattedTime = `${hour12}:${minutes}${ampm} PST`
-
-                await resend.emails.send({
-                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to: student.email,
-                    subject: `Lesson Canceled: ${formattedDate} at ${formattedTime}`,
-                    react: LessonCanceledEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDate,
-                        time: formattedTime,
-                        recipientName: student.name || 'Student',
-                        studioName
-                    })
-                })
-                console.log('Cancellation email sent to:', student.email)
-            }
-        } catch (emailError) {
-            console.error('Failed to send cancellation email:', emailError)
-        }
-    }
-
-    // Step 2: Revalidate paths to refresh UI
-    revalidatePath('/admin')
-    revalidatePath('/student')
-
-    return {
-        success: true,
-        refunded: false,
-        message: 'Lesson cancelled.'
-    }
+    return cancelLessonCore({
+        client: supabase as any,
+        actorId: user.id,
+        actorRole,
+        lessonId,
+    })
 }
 
 /**
  * Reschedule a lesson (admin only)
- * This updates the date/time of an existing lesson WITHOUT changing credit balance
  */
 export async function rescheduleLesson(
     lessonId: string,
@@ -817,12 +584,8 @@ export async function rescheduleLesson(
     newDuration: number = 60
 ) {
     const supabase = await createClient()
-
-    // Verify user is admin
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
+    if (!user) return { error: 'Unauthorized' }
 
     const { data: adminProfile } = await supabase
         .from('profiles')
@@ -834,133 +597,14 @@ export async function rescheduleLesson(
         return { error: 'Only admins can reschedule lessons' }
     }
 
-    // Get the existing lesson
-    const { data: lesson, error: lessonFetchError } = await supabase
-        .from('lessons')
-        .select('student_id, date, time')
-        .eq('id', lessonId)
-        .single()
-
-    if (lessonFetchError || !lesson) {
-        return { error: 'Lesson not found' }
-    }
-
-    // Fetch existing meeting ID
-    const { data: lessonWithZoom } = await supabase
-        .from('lessons')
-        .select('zoom_meeting_id')
-        .eq('id', lessonId)
-        .single()
-
-    // CONFLICT CHECK: Master Calendar
-    const isAvailable = await checkAvailability(newDate, newTime, newDuration, lessonId)
-    if (!isAvailable) {
-        return { error: 'This time slot is already booked by another student.' }
-    }
-
-    // Update the lesson
-    const { error: updateError } = await supabase
-        .from('lessons')
-        .update({
-            date: newDate,
-            time: newTime,
-            duration: newDuration,
-            // Status remains 'scheduled'
-        })
-        .eq('id', lessonId)
-
-    if (updateError) {
-        return { error: updateError.message }
-    }
-
-    // Update Zoom Meeting
-    if (lessonWithZoom?.zoom_meeting_id) {
-        try {
-            const { updateZoomMeeting } = await import('@/lib/zoom')
-            // Construct ISO time
-            const startDateTime = `${newDate}T${newTime}:00`
-            // Fetch student name for the topic if we haven't already (we need it for the email anyway)
-            const { data: studentForZoom } = await supabase
-                .from('profiles')
-                .select('name')
-                .eq('id', lesson.student_id)
-                .single()
-
-            const topic = studentForZoom?.name
-                ? `${studentForZoom.name} - Piano Lesson`
-                : 'Piano Lesson'
-
-            await updateZoomMeeting(
-                lessonWithZoom.zoom_meeting_id,
-                topic,
-                startDateTime,
-                newDuration
-            )
-            console.log(`Zoom meeting ${lessonWithZoom.zoom_meeting_id} updated.`)
-        } catch (e) {
-            console.error('Failed to update Zoom meeting:', e)
-        }
-    }
-
-    // Send Reschedule Email
-    if (resend) {
-        try {
-            const { data: student } = await supabase
-                .from('profiles')
-                .select('name, email')
-                .eq('id', lesson.student_id)
-                .single()
-
-            if (student?.email) {
-                const { data: adminProfile } = await supabase
-                    .from('profiles')
-                    .select('name, studio_name')
-                    .eq('id', user.id)
-                    .single()
-
-                const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-
-                // Helper for formatting
-                const formatDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-                const formatTime = (t: string) => {
-                    const [h, m] = t.split(':')
-                    const hn = parseInt(h, 10)
-                    const ap = hn >= 12 ? 'pm' : 'am'
-                    const h12 = hn % 12 || 12
-                    return `${h12}:${m}${ap} PST`
-                }
-
-                const oldDateStr = formatDate(lesson.date)
-                const oldTimeStr = formatTime(lesson.time)
-                const newDateStr = formatDate(newDate)
-                const newTimeStr = formatTime(newTime)
-
-                await resend.emails.send({
-                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to: student.email,
-                    subject: `Lesson Rescheduled: ${newDateStr} at ${newTimeStr}`,
-                    react: LessonRescheduledEmail({
-                        studentName: student.name || 'Student',
-                        oldDate: oldDateStr,
-                        oldTime: oldTimeStr,
-                        newDate: newDateStr,
-                        newTime: newTimeStr,
-                        newDuration: newDuration,
-                        recipientName: student.name || 'Student',
-                        studioName
-                    })
-                })
-                console.log('Reschedule email sent to:', student.email)
-            }
-        } catch (emailError) {
-            console.error('Failed to send reschedule email:', emailError)
-        }
-    }
-
-    revalidatePath('/admin')
-    revalidatePath('/student')
-
-    return { success: true, message: 'Lesson rescheduled successfully' }
+    return rescheduleLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        lessonId,
+        newDate,
+        newTime,
+        newDuration,
+    })
 }
 
 /**
@@ -1022,12 +666,8 @@ export async function scheduleLesson(
     duration: number = 60
 ) {
     const supabase = await createClient()
-
-    // Verify user is admin
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
+    if (!user) return { error: 'Unauthorized' }
 
     const { data: adminProfile } = await supabase
         .from('profiles')
@@ -1039,240 +679,14 @@ export async function scheduleLesson(
         return { error: 'Only admins can schedule lessons' }
     }
 
-    // Verify student exists
-    const { data: student, error: studentError } = await supabase
-        .from('profiles')
-        .select('id, name, email, parent_email')
-        .eq('id', studentId)
-        .eq('role', 'student')
-        .single()
-
-    if (studentError || !student) {
-        return { error: 'Student not found' }
-    }
-
-    // CONFLICT CHECK: Master Calendar
-    const isAvailable = await checkAvailability(date, time, duration)
-    if (!isAvailable) {
-        return { error: 'This time slot is already booked by another student.' }
-    }
-
-    // Create Zoom meeting (Best Effort with Fallback)
-    let zoomLink = null
-    let zoomMeetingId = null
-
-    try {
-        const { createZoomMeeting } = await import('@/lib/zoom')
-        // Format start time for Zoom: "YYYY-MM-DDTHH:MM:SS"
-        const startDateTime = `${date}T${time}:00`
-        const inviteeEmails = [student.email, student.parent_email].filter(Boolean) as string[]
-        const zoomData = await createZoomMeeting(
-            `${student.name} - Piano Lesson`,
-            startDateTime,
-            duration,
-            inviteeEmails
-        )
-        if (zoomData) {
-            zoomLink = zoomData.join_url
-            zoomMeetingId = zoomData.id
-            console.log('Zoom meeting created successfully:', zoomLink, zoomMeetingId)
-        }
-    } catch (zoomError) {
-        console.error('Dynamic Zoom creation failed:', zoomError)
-    }
-
-    // Fallback: If dynamic generation failed (or returned null), try to use the Admin's static link
-    if (!zoomLink) {
-        console.log('Falling back to static Zoom link logic...')
-        // Fetch Admin Profile to get static zoom_link
-        const { data: adminProfile } = await supabase
-            .from('profiles')
-            .select('zoom_link')
-            .eq('id', user.id)
-            .single()
-
-        if (adminProfile?.zoom_link) {
-            zoomLink = adminProfile.zoom_link
-            console.log('Using fallback static Zoom link:', zoomLink)
-        } else {
-            console.warn('No fallback Zoom link found in admin profile.')
-        }
-    }
-
-    // --- NEW: Google Calendar Integration ---
-    let googleEventId = null
-    try {
-        // Use the student name we fetched earlier
-        const studentName = student.name || 'Student'
-
-        console.log("📅 Creating Google Calendar Event...")
-        googleEventId = await createGoogleCalendarEvent(
-            studentName,
-            date,
-            time,
-            duration
-        )
-    } catch (e) {
-        console.error('Failed to create Google Event (Non-blocking):', e)
-    }
-    // ----------------------------------------
-
-    // Prepare insert payload logic
-    const lessonPayload: any = {
-        student_id: studentId,
+    return scheduleLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        studentId,
         date,
         time,
-        status: 'scheduled',
-        zoom_link: zoomLink,
-        zoom_meeting_id: zoomMeetingId,
-        google_event_id: googleEventId
-    }
-
-    // Initialize result variables
-    let lesson = null
-    let lessonError = null
-
-    // We try to insert duration if the column exists (it's in Schema but check robustly)
-    // The previous code had a retry block for duration, I will adapt it.
-
-    const { data: lessonData, error: insertError } = await supabase
-        .from('lessons')
-        .insert({
-            ...lessonPayload,
-            duration,
-            google_event_id: googleEventId
-        })
-        .select()
-        .single()
-
-    if (insertError) {
-        // Fallback retry logic (e.g. if duration column is missing, though we think it is there)
-        console.log('Insert with duration failed, trying without:', insertError.message)
-        const { data: retryData, error: retryError } = await supabase
-            .from('lessons')
-            .insert(lessonPayload) // Still try saving zoom_link
-            .select()
-            .single()
-
-        lesson = retryData
-        lessonError = retryError
-    } else {
-        lesson = lessonData
-    }
-
-    if (lessonError) {
-        // If it failed again, maybe zoom_link column is missing? 
-        // Realistically we shoudln't blindly retry everything but preserving existing retry logic structure.
-        console.error('Schedule lesson error:', lessonError)
-        return { error: lessonError.message }
-    }
-
-    // CREDIT DEDUCTION REMOVED per requirements.
-    // Credits are now only deducted when a lesson is logged (completed) or marked no-show.
-
-    // Send Email Notifications
-    console.log('Attempting to send email notifications...')
-    console.log('Resend initialized:', !!resend)
-    console.log('Student Email:', student.email)
-
-    if (resend && student.email) {
-        try {
-            // Get Admin Profile for studio name (or use default)
-            const { data: adminProfile } = await supabase
-                .from('profiles')
-                .select('name, studio_name')
-                .eq('id', user.id)
-                .single()
-
-            const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
-            const rawName = adminProfile?.name || 'Teacher'
-            const adminName = rawName === 'Professor Lionel' ? 'Professor Lionel Yu' : rawName
-
-            // Format Date and Time for Email
-            // Input date: YYYY-MM-DD
-            // Input time: HH:MM (24h)
-            const dateObj = new Date(`${date}T00:00:00`)
-            const formattedDate = dateObj.toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            }) // e.g., "Saturday, December 14, 2025" or we can construct manually to match user exact request "December 14, 2025"
-
-            // Should strictly follow "December 14, 2025" as requested?
-            // User said: "date should be December 14, 2025"
-            const formattedDateStrict = dateObj.toLocaleDateString('en-US', {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric'
-            })
-
-            // Format Time: 20:00 -> 8:00pm
-            const [hours, minutes] = time.split(':')
-            const hourNum = parseInt(hours, 10)
-            const ampm = hourNum >= 12 ? 'pm' : 'am'
-            const hour12 = hourNum % 12 || 12
-            const formattedTime = `${hour12}:${minutes}${ampm} PST` // Adding PST as requested. Ideally dynamic but hardcoded for now is safer for exact request.
-
-            const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDateStrict} at ${formattedTime}`
-
-            // Email to Student
-            console.log('Sending email to student:', student.email)
-            const studentEmailResult = await resend.emails.send({
-                from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                to: student.email,
-                subject: emailSubject,
-                react: LessonScheduledEmail({
-                    studentName: student.name || 'Student',
-                    date: formattedDateStrict,
-                    time: formattedTime,
-                    duration,
-                    zoomLink,
-                    recipientName: student.name || 'Student',
-                    studioName
-                })
-            })
-            console.log('Student email result:', studentEmailResult)
-
-            // Email to Teacher (Confirmation)
-            // We use user.email which is the admin's email since they are the one scheduling
-            console.log('User (Teacher) Email:', user.email)
-            if (user.email) {
-                const teacherEmailResult = await resend.emails.send({
-                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to: user.email,
-                    subject: emailSubject,
-                    react: LessonScheduledEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDateStrict,
-                        time: formattedTime,
-                        duration,
-                        zoomLink,
-                        recipientName: adminName,
-                        studioName
-                    })
-                })
-                console.log('Teacher email result:', teacherEmailResult)
-            } else {
-                console.warn('Teacher email not found (user.email is null)')
-            }
-
-            console.log(`Emails sent for lesson: ${date} ${time}`)
-
-        } catch (emailError) {
-            console.error('Failed to send email notifications:', emailError)
-            // Don't block success return
-        }
-    }
-
-    revalidatePath('/admin')
-    revalidatePath('/student')
-
-    return {
-        success: true,
-        lesson,
-        message: `Lesson scheduled for ${student.name} on ${date} at ${time} (${duration} min)${zoomLink ? '. Zoom link created.' : '.'}`
-    }
+        duration,
+    })
 }
 
 /**
@@ -1535,7 +949,7 @@ export async function bulkScheduleLessons(studentId: string, count: number) {
             student.lesson_duration || 60
         )
 
-        if (result.success) {
+        if ('success' in result) {
             successes++
         } else {
             failures++
