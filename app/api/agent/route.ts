@@ -18,14 +18,15 @@ Base: this URL's parent path (\`/api/agent\`)
 Core endpoints:
 - GET /students
 - GET /students/:id
-- PATCH /students/:id        body: { status: "active" | "inactive" }
+- PATCH /students/:id           body: { status: "active" | "inactive" }
+- POST /students/:id/credits    body: { delta: integer } or { set: integer >= 0 }
 - GET /threads
 - GET /messages?student_id=<uuid>
-- POST /messages              body: { student_id, content, attachments? }
-- POST /messages/mark-read    body: { student_id }
+- POST /messages                body: { student_id, content, attachments? }
+- POST /messages/mark-read      body: { student_id }
 - GET /lessons?from=&to=&student_id=
-- POST /lessons               body: { student_id, date, time, duration? }
-- PATCH /lessons/:id          body: { date, time, duration? }
+- POST /lessons                 body: { student_id, date, time, duration? }
+- PATCH /lessons/:id            body: { date, time, duration? }
 - DELETE /lessons/:id
 `
 

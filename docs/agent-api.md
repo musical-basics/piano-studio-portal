@@ -118,6 +118,48 @@ curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid> \
 Response: `{ "student": { "id": "uuid", "status": "inactive", /* ... */ } }`
 400 if `status` is missing/invalid. 404 if the id isn't a student.
 
+### `POST /students/:id/credits`
+
+Adjust a student's credit balance. Provide **exactly one** of `delta` (relative) or `set` (absolute):
+
+```json
+{ "delta": 2 }          // add 2 credits to current balance
+```
+```json
+{ "delta": -1 }         // remove 1 credit
+```
+```json
+{ "set": 5 }            // set balance to exactly 5 (idempotent; use on retry)
+```
+
+Optional: `"reason": "…"` — accepted but currently not stored. Reserved for a future audit log.
+
+Rules:
+- `delta` and `set` must be integers.
+- `delta` must be non-zero.
+- `set` must be ≥ 0.
+- Rejects adjustments that would take credits below 0.
+- Only touches `credits` — `credits_total` (lifetime purchased) is unchanged.
+- **Idempotency:** `set` is idempotent on retry. `delta` is **not** — a retried `delta: +2` adds 2 credits twice. If you're retrying over an unreliable network, prefer `set`.
+
+```bash
+curl -X POST https://lessons.musicalbasics.com/api/agent/students/<uuid>/credits \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"delta":2,"reason":"comp for weather cancellation"}'
+```
+
+Response:
+```json
+{
+  "student": { "id": "uuid", "credits": 6, /* ... */ },
+  "previous_credits": 4,
+  "new_credits": 6
+}
+```
+
+400 on invalid body, would-go-negative, or bad numbers. 404 if the id isn't a student.
+
 ### `GET /threads`
 
 Admin-perspective summary of every student thread, one row per student. Use this to find who has unread messages, when the last exchange happened, and the preview text — without having to load each conversation.
@@ -350,6 +392,7 @@ That doc is authoritative; if it ever conflicts with these instructions, the doc
 Capabilities (summary; see discovery doc for details):
 - List students: GET /students
 - Update a student's status (active/inactive): PATCH /students/<id> {status}
+- Adjust a student's credits: POST /students/<id>/credits {delta} or {set}
 - Thread inbox summary (admin perspective): GET /threads
 - Read messages with a student: GET /messages?student_id=…
 - Send a message: POST /messages {student_id, content}
@@ -366,6 +409,7 @@ Rules:
 - The admin is the sender of every message you send. Write in a warm, concise voice that matches the studio's existing style.
 - Cancellation is immediate and emails the student — confirm with the user before calling DELETE unless they have already authorized it.
 - Changing a student's status is a low-risk but visible action; confirm intent before calling PATCH /students/<id>.
+- Credit changes affect real money. Always confirm intent with the user before POST /students/<id>/credits. Prefer "set" over "delta" if you're retrying a request. Never adjust credits silently as a side-effect of another action.
 - Never expose the bearer token or internal error traces to end users.
 ```
 
