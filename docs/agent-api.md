@@ -7,9 +7,19 @@ REST API for an AI agent to act on behalf of the studio admin: list students, me
 - Production: `https://lessons.musicalbasics.com/api/agent`
 - Local dev: `http://localhost:3000/api/agent`
 
+## Discovery: `GET /api/agent`
+
+Hitting the base URL with no auth returns **this document** as `text/markdown`. The agent should call this first (or whenever it's unsure of the current API surface) — the response is always the latest reference, so there is no separate doc to keep in sync.
+
+```bash
+curl https://lessons.musicalbasics.com/api/agent
+```
+
+No bearer token required for this endpoint. Every other endpoint does require auth.
+
 ## Authentication
 
-Every request requires a Bearer token:
+Every request (except `GET /api/agent` above) requires a Bearer token:
 
 ```
 Authorization: Bearer <AGENT_API_SECRET>
@@ -333,7 +343,11 @@ API base: https://<your-domain>/api/agent
 Auth: Authorization: Bearer <AGENT_API_SECRET>   (never echo the secret to the user)
 All dates are YYYY-MM-DD, times are HH:MM 24h, times/dates are studio-local (Pacific).
 
-Capabilities:
+Discovery: at the start of each session (or whenever you are unsure of the API surface),
+GET <API base>  — with no auth header — to fetch the current reference doc as markdown.
+That doc is authoritative; if it ever conflicts with these instructions, the doc wins.
+
+Capabilities (summary; see discovery doc for details):
 - List students: GET /students
 - Update a student's status (active/inactive): PATCH /students/<id> {status}
 - Thread inbox summary (admin perspective): GET /threads
