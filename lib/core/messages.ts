@@ -126,6 +126,65 @@ export async function markMessagesReadCore(
     return { success: true }
 }
 
+export type ThreadSummary = {
+    student_id: string
+    student_name: string | null
+    student_email: string | null
+    has_unread_from_student: boolean
+    unread_count: number
+    last_message_at: string | null
+    last_message_preview: string | null
+    last_message_from: 'student' | 'admin' | null
+}
+
+const PREVIEW_LEN = 140
+
+/**
+ * Admin-perspective thread summary, one row per student.
+ *
+ * Unread semantics: `is_read` is a per-recipient flag. Here we count only
+ * messages where `sender_id = student AND recipient_id = admin AND is_read = false`.
+ * Outbound admin messages are ignored — an admin-sent message having
+ * `is_read: false` just means the student hasn't opened it yet.
+ */
+export async function listThreadsCore(
+    client: DbClient,
+    adminId: string,
+): Promise<{ threads: ThreadSummary[] }> {
+    const { students } = await listStudentsWithMessagesCore(client, adminId)
+
+    const threads: ThreadSummary[] = students.map((s: any) => {
+        const last = s.lastMessage as
+            | { content: string | null; created_at: string; sender_id: string }
+            | null
+
+        const lastFrom: 'student' | 'admin' | null = last
+            ? last.sender_id === s.id
+                ? 'student'
+                : 'admin'
+            : null
+
+        const preview = last?.content
+            ? last.content.length > PREVIEW_LEN
+                ? last.content.slice(0, PREVIEW_LEN) + '…'
+                : last.content
+            : null
+
+        return {
+            student_id: s.id,
+            student_name: s.name ?? null,
+            student_email: s.email ?? null,
+            has_unread_from_student: (s.unreadCount ?? 0) > 0,
+            unread_count: s.unreadCount ?? 0,
+            last_message_at: last?.created_at ?? null,
+            last_message_preview: preview,
+            last_message_from: lastFrom,
+        }
+    })
+
+    return { threads }
+}
+
 export async function listStudentsWithMessagesCore(client: DbClient, adminId: string) {
     const { data: students, error } = await client
         .from('profiles')

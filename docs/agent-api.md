@@ -27,6 +27,15 @@ The agent always acts as the single admin profile (`role='admin'`) — there is 
 - `duration`: integer minutes — typically `30`, `45`, or `60`. Defaults to `60` if omitted.
 - All responses are JSON. Errors have shape `{ "error": "<message>" }`.
 
+## Read/unread semantics
+
+The `is_read` column on `messages` is a **per-recipient** flag: it tracks whether the row's `recipient_id` has read that row. Implications for the agent:
+
+- An outbound admin message may appear with `is_read: false` — that only means the student hasn't opened it yet, not that the admin has anything unread. Ignore this for admin-side inbox logic.
+- The admin's unread count is always scoped to inbound rows: `sender_id = student AND recipient_id = admin AND is_read = false`.
+- `POST /messages/mark-read` only updates inbound rows (same filter). Calling it never touches outbound admin messages.
+- For a clean admin-perspective view, use `GET /threads` instead of interpreting per-message `is_read` flags yourself.
+
 ## Endpoints
 
 ### `GET /students`
@@ -78,6 +87,55 @@ Response:
 ```
 
 404 if the id isn't a student.
+
+### `PATCH /students/:id`
+
+Update a student's `status`. Body:
+
+```json
+{ "status": "active" }
+```
+
+Allowed values: `"active"` or `"inactive"`.
+
+```bash
+curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid> \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"inactive"}'
+```
+
+Response: `{ "student": { "id": "uuid", "status": "inactive", /* ... */ } }`
+400 if `status` is missing/invalid. 404 if the id isn't a student.
+
+### `GET /threads`
+
+Admin-perspective summary of every student thread, one row per student. Use this to find who has unread messages, when the last exchange happened, and the preview text — without having to load each conversation.
+
+```bash
+curl -H "Authorization: Bearer $AGENT_API_SECRET" \
+  https://lessons.musicalbasics.com/api/agent/threads
+```
+
+Response:
+```json
+{
+  "threads": [
+    {
+      "student_id": "uuid",
+      "student_name": "Jane Doe",
+      "student_email": "jane@example.com",
+      "has_unread_from_student": true,
+      "unread_count": 2,
+      "last_message_at": "2026-04-22T18:03:22Z",
+      "last_message_preview": "Can we move Friday's lesson?",
+      "last_message_from": "student"
+    }
+  ]
+}
+```
+
+`unread_count` counts only inbound (student → admin) messages with `is_read = false`. `last_message_from` is `"student"`, `"admin"`, or `null` if the thread has no messages. Students with no messages yet are still included (with nulls).
 
 ### `GET /messages?student_id=<uuid>`
 
@@ -277,6 +335,8 @@ All dates are YYYY-MM-DD, times are HH:MM 24h, times/dates are studio-local (Pac
 
 Capabilities:
 - List students: GET /students
+- Update a student's status (active/inactive): PATCH /students/<id> {status}
+- Thread inbox summary (admin perspective): GET /threads
 - Read messages with a student: GET /messages?student_id=…
 - Send a message: POST /messages {student_id, content}
 - Mark a student's messages read: POST /messages/mark-read {student_id}
@@ -287,9 +347,11 @@ Capabilities:
 
 Rules:
 - Always confirm the student_id before sending or scheduling. Prefer exact match by name+email from GET /students.
+- For inbox-style questions ("who has unread messages?", "who have I not replied to?"), prefer GET /threads over inspecting per-message is_read flags. The is_read column is per-recipient, so outbound admin messages with is_read: false do NOT indicate admin-side unread.
 - Before scheduling or rescheduling, fetch the relevant date range with GET /lessons to avoid conflicts. The server will reject slot conflicts with HTTP 400.
 - The admin is the sender of every message you send. Write in a warm, concise voice that matches the studio's existing style.
 - Cancellation is immediate and emails the student — confirm with the user before calling DELETE unless they have already authorized it.
+- Changing a student's status is a low-risk but visible action; confirm intent before calling PATCH /students/<id>.
 - Never expose the bearer token or internal error traces to end users.
 ```
 

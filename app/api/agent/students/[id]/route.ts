@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyAgentRequest, agentOk, agentError } from '@/lib/agent/auth'
+import {
+    ALLOWED_STUDENT_STATUSES,
+    updateStudentStatusCore,
+    type StudentStatus,
+} from '@/lib/core/students'
 
 export async function GET(
     request: NextRequest,
@@ -34,4 +39,38 @@ export async function GET(
         .limit(50)
 
     return agentOk({ student, upcomingLessons: upcoming ?? [] })
+}
+
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> },
+) {
+    const ctx = await verifyAgentRequest(request)
+    if (ctx instanceof NextResponse) return ctx
+
+    const { id } = await params
+    if (!id) return agentError('Missing student id', 400)
+
+    let body: any
+    try {
+        body = await request.json()
+    } catch {
+        return agentError('Invalid JSON body', 400)
+    }
+
+    const { status } = body ?? {}
+    if (!ALLOWED_STUDENT_STATUSES.includes(status)) {
+        return agentError(
+            `status must be one of: ${ALLOWED_STUDENT_STATUSES.join(', ')}`,
+            400,
+        )
+    }
+
+    const result = await updateStudentStatusCore(ctx.client, id, status as StudentStatus)
+    if ('error' in result) {
+        const isNotFound = result.error === 'Student not found'
+        return agentError(result.error, isNotFound ? 404 : 400)
+    }
+
+    return agentOk({ student: result.student })
 }
