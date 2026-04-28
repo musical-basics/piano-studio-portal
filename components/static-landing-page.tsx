@@ -11,6 +11,16 @@ const renderStars = (rating: number) => {
     return "★".repeat(filled) + "☆".repeat(5 - filled)
 }
 
+const buildTenureLabel = (
+    studentSince: number | null | undefined,
+    studentUntil: number | null | undefined,
+): string | null => {
+    if (!studentSince) return null
+    if (!studentUntil) return `Student since ${studentSince}`
+    if (studentUntil === studentSince) return `Student ${studentSince}`
+    return `Student ${studentSince}–${studentUntil}`
+}
+
 export async function StaticLandingPage() {
     const allReviews = await getApprovedReviews()
     const featuredReviews = (allReviews ?? []).slice(0, 3)
@@ -221,6 +231,7 @@ export async function StaticLandingPage() {
                                     const studentSince =
                                         review.student_since ??
                                         (profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null)
+                                    const tenureLabel = buildTenureLabel(studentSince, review.student_until)
 
                                     return (
                                         <div
@@ -239,9 +250,7 @@ export async function StaticLandingPage() {
                                                 <div className="pt-4 border-t border-gray-100">
                                                     <p className="font-semibold">{review.name}</p>
                                                     <p className="text-sm text-gray-500">
-                                                        {studentSince
-                                                            ? `Student since ${studentSince}`
-                                                            : formatReviewDate(review.created_at)}
+                                                        {tenureLabel ?? formatReviewDate(review.created_at)}
                                                     </p>
                                                 </div>
                                             </div>

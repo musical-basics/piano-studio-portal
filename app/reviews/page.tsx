@@ -21,6 +21,16 @@ const getStudentSinceYear = (profileCreatedAt?: string) => {
     return new Date(profileCreatedAt).getFullYear()
 }
 
+const buildTenureLabel = (
+    studentSince: number | null | undefined,
+    studentUntil: number | null | undefined,
+): string | null => {
+    if (!studentSince) return null
+    if (!studentUntil) return `Student since ${studentSince}`
+    if (studentUntil === studentSince) return `Student ${studentSince}`
+    return `Student ${studentSince}–${studentUntil}`
+}
+
 export default async function ReviewsPage() {
     const reviews = await getApprovedReviews()
 
@@ -61,6 +71,7 @@ export default async function ReviewsPage() {
                             const studentSince =
                                 review.student_since ??
                                 (profile?.created_at ? getStudentSinceYear(profile.created_at) : null)
+                            const tenureLabel = buildTenureLabel(studentSince, review.student_until)
 
                             return (
                                 <Card
@@ -77,9 +88,9 @@ export default async function ReviewsPage() {
                                         {/* Footer */}
                                         <div className="pt-4 border-t flex items-center justify-between">
                                             <span className="font-serif font-semibold text-foreground">{review.name}</span>
-                                            {studentSince ? (
+                                            {tenureLabel ? (
                                                 <Badge variant="secondary" className="text-xs font-normal">
-                                                    Student since {studentSince}
+                                                    {tenureLabel}
                                                 </Badge>
                                             ) : (
                                                 <span className="text-xs text-muted-foreground">{formatDate(review.created_at)}</span>
