@@ -23,7 +23,7 @@ export function TrialInquiryAutoResponse({
     return (
         <Html>
             <Head />
-            <Preview>Got it — I&apos;ll be in touch within 48 hours</Preview>
+            <Preview>Got it. I&apos;ll be in touch within 48 hours.</Preview>
             <Body style={main}>
                 <Container style={container}>
                     <Heading style={heading}>{studioName}</Heading>
@@ -41,7 +41,7 @@ export function TrialInquiryAutoResponse({
                         </Text>
 
                         <Text style={text}>
-                            If you don&apos;t hear from me within 48 hours, please reply to this email — sometimes things get lost in spam, and I&apos;d rather you nudge me than assume I forgot.
+                            If you don&apos;t hear from me within 48 hours, please reply to this email. Sometimes things get lost in spam, and I&apos;d rather you nudge me than assume I forgot.
                         </Text>
 
                         <Hr style={divider} />

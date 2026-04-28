@@ -30,11 +30,11 @@ const HOMEPAGE_FAQS = [
     },
     {
         q: "How does the credit system work?",
-        a: "You get 12 credits per quarter, and each lesson uses one. Credits are valid for 4 months total — your 3-month quarter plus a 1-month buffer — so unused credits roll forward automatically.",
+        a: "You get 12 credits per quarter, and each lesson uses one. Credits are valid for 4 months total (your 3-month quarter plus a 1-month buffer), so unused credits roll forward automatically.",
     },
     {
         q: "What if I need to miss a lesson?",
-        a: "The credit system handles it. The credit isn't used — just book a different time during the quarter or buffer month. No 24-hour-notice rule, no missed-lesson penalty.",
+        a: "The credit system handles it. The credit isn't used. Just book a different time during the quarter or buffer month. No 24-hour-notice rule, no missed-lesson penalty.",
     },
     {
         q: "What does my quarterly tuition cover?",
@@ -92,7 +92,7 @@ export async function StaticLandingPage() {
                                     Structured quarters. Personalized instruction. A proven system for serious students.
                                 </h1>
                                 <p className="text-xl text-gray-500 leading-relaxed">
-                                    Transform your musical journey with quarterly piano instruction designed around your goals — backed by 30+ years of experience and training from Juilliard, Peabody, and NYU.
+                                    Transform your musical journey with quarterly piano instruction designed around your goals, backed by 30+ years of experience and training from Juilliard, Peabody, and NYU.
                                 </p>
                             </div>
 
@@ -205,7 +205,7 @@ export async function StaticLandingPage() {
                                     </div>
                                     <h3 className="font-serif text-xl font-bold">Quarterly Enrollment</h3>
                                     <p className="text-gray-500 leading-relaxed">
-                                        12 lesson credits per quarter. Use them across 3 months of structured instruction, with a built-in buffer month so missed lessons never go to waste. Reschedule freely — your credits roll forward automatically.
+                                        12 lesson credits per quarter. Use them across 3 months of structured instruction, with a built-in buffer month so missed lessons never go to waste. Reschedule freely. Your credits roll forward automatically.
                                     </p>
                                 </div>
                             </div>
@@ -300,9 +300,10 @@ export async function StaticLandingPage() {
                             <div className="grid md:grid-cols-3 gap-6">
                                 {featuredReviews.map((review: any) => {
                                     const profileCreatedAt = review.profiles?.created_at
-                                    const studentSince =
-                                        review.student_since ??
-                                        (profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null)
+                                    const fallbackLabel = profileCreatedAt
+                                        ? `Student since ${new Date(profileCreatedAt).getFullYear()}`
+                                        : null
+                                    const tenureLabel = review.tenure_label ?? fallbackLabel
 
                                     return (
                                         <div
@@ -321,9 +322,7 @@ export async function StaticLandingPage() {
                                                 <div className="pt-4 border-t border-gray-100">
                                                     <p className="font-semibold">{review.name}</p>
                                                     <p className="text-sm text-gray-500">
-                                                        {studentSince
-                                                            ? `Student since ${studentSince}`
-                                                            : formatReviewDate(review.created_at)}
+                                                        {tenureLabel ?? formatReviewDate(review.created_at)}
                                                     </p>
                                                 </div>
                                             </div>

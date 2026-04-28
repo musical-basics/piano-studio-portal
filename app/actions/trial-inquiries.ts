@@ -119,7 +119,7 @@ export async function submitTrialInquiry(input: TrialInquiryInput) {
             from: `Lionel Yu <system@updates.musicalbasics.com>`,
             to: email,
             replyTo: adminEmail,
-            subject: "Got it — I'll be in touch within 48 hours",
+            subject: "Got it. I'll be in touch within 48 hours.",
             react: TrialInquiryAutoResponse({ firstName, studioName }),
         })
 

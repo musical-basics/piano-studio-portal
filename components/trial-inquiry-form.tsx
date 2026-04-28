@@ -128,7 +128,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
                 <div className="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
                     <CheckCircle2 className="h-8 w-8" />
                 </div>
-                <h3 className="font-serif text-2xl font-bold">Got it — talk soon</h3>
+                <h3 className="font-serif text-2xl font-bold">Got it. Talk soon.</h3>
                 <p className="text-gray-600 max-w-sm">
                     Your trial request just landed. I&apos;ll personally reply within 48 hours with a few proposed times. Check your inbox for a confirmation.
                 </p>
@@ -192,7 +192,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
 
             <div className="space-y-3">
                 <Label>General availability *</Label>
-                <p className="text-sm text-gray-500">Pick any windows that usually work — multiple OK.</p>
+                <p className="text-sm text-gray-500">Pick any windows that usually work. Multiple OK.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {AVAILABILITY_OPTIONS.map((option) => {
                         const id = `trial-avail-${option.replace(/\s+/g, "-").toLowerCase()}`
@@ -236,7 +236,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
                 <Textarea
                     id="trial-goals"
                     required
-                    placeholder="Briefly — what are your goals?"
+                    placeholder="Briefly: what are your goals?"
                     className="min-h-[100px]"
                     value={goals}
                     onChange={(e) => setGoals(e.target.value)}

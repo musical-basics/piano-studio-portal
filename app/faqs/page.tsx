@@ -27,10 +27,10 @@ const FAQ_GROUPS: FaqGroup[] = [
                     <>
                         <p>Each quarter is <strong>3 months</strong>, with <strong>12 lesson credits</strong> included. There are four quarters per year:</p>
                         <ul>
-                            <li><strong>Spring</strong> — March, April, May</li>
-                            <li><strong>Summer</strong> — June, July, August</li>
-                            <li><strong>Fall</strong> — September, October, November</li>
-                            <li><strong>Winter</strong> — December, January, February</li>
+                            <li><strong>Spring</strong>: March, April, May</li>
+                            <li><strong>Summer</strong>: June, July, August</li>
+                            <li><strong>Fall</strong>: September, October, November</li>
+                            <li><strong>Winter</strong>: December, January, February</li>
                         </ul>
                     </>
                 ),
@@ -39,7 +39,7 @@ const FAQ_GROUPS: FaqGroup[] = [
                 question: "How does the credit system work?",
                 answer: (
                     <>
-                        <p>When you enroll, you receive 12 credits. Each lesson uses one credit. Credits are valid for <strong>4 months total</strong> — your 3-month quarter plus a 1-month buffer. So if you don&apos;t use all 12 during the quarter, you can carry the unused credits into the following month.</p>
+                        <p>When you enroll, you receive 12 credits. Each lesson uses one credit. Credits are valid for <strong>4 months total</strong> (your 3-month quarter plus a 1-month buffer). So if you don&apos;t use all 12 during the quarter, you can carry the unused credits into the following month.</p>
                         <p>There&apos;s no cap on rollover. If life gets busy and you only use 8 credits during your quarter, the remaining 4 can be used in the buffer month.</p>
                     </>
                 ),
@@ -47,13 +47,13 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "Why a buffer month?",
                 answer: (
-                    <p>Real life happens — illness, travel, work crunches. The buffer month means a missed lesson is never a wasted lesson. You don&apos;t need to fight the calendar to get your money&apos;s worth.</p>
+                    <p>Real life happens: illness, travel, work crunches. The buffer month means a missed lesson is never a wasted lesson. You don&apos;t need to fight the calendar to get your money&apos;s worth.</p>
                 ),
             },
             {
                 question: "When do quarters start?",
                 answer: (
-                    <p>Spring starts in March, Summer in June, Fall in September, Winter in December. Enrollment is open continuously — the next quarter is always around the corner.</p>
+                    <p>Spring starts in March, Summer in June, Fall in September, Winter in December. Enrollment is open continuously, so the next quarter is always around the corner.</p>
                 ),
             },
             {
@@ -65,7 +65,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "Do you teach beginners?",
                 answer: (
-                    <p>Yes — students at every level from absolute beginners to working professionals. The trial lesson is the best way to figure out where you fit.</p>
+                    <p>Yes, students at every level from absolute beginners to working professionals. The trial lesson is the best way to figure out where you fit.</p>
                 ),
             },
             {
@@ -113,7 +113,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "What if I need to miss a lesson?",
                 answer: (
-                    <p>The credit system handles it. If you can&apos;t make a scheduled lesson, the credit isn&apos;t used — you just book a different time during the quarter or buffer month. No &ldquo;24-hour notice&rdquo; rule, no missed-lesson penalty.</p>
+                    <p>The credit system handles it. If you can&apos;t make a scheduled lesson, the credit isn&apos;t used. You just book a different time during the quarter or buffer month. No &ldquo;24-hour notice&rdquo; rule, no missed-lesson penalty.</p>
                 ),
             },
             {
@@ -125,13 +125,13 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "Can I save credits for later?",
                 answer: (
-                    <p>Within the 4-month validity window, yes — book lessons at whatever pace works for you. After 4 months, credits expire.</p>
+                    <p>Within the 4-month validity window, yes. Book lessons at whatever pace works for you. After 4 months, credits expire.</p>
                 ),
             },
             {
                 question: "What if you have to cancel a lesson?",
                 answer: (
-                    <p>If I cancel for any reason, your credit is refunded immediately. You can rebook in the same quarter, the buffer month, or — in rare cases where neither works — I&apos;ll credit it to your next quarter.</p>
+                    <p>If I cancel for any reason, your credit is refunded immediately. You can rebook in the same quarter, the buffer month, or, in rare cases where neither works, I&apos;ll credit it to your next quarter.</p>
                 ),
             },
         ],
@@ -149,14 +149,14 @@ const FAQ_GROUPS: FaqGroup[] = [
                     <ul>
                         <li><strong>Before the quarter starts:</strong> Full refund, no questions asked.</li>
                         <li><strong>After your first lesson:</strong> No cash refunds. However, unused credits can be transferred to the following quarter at your request.</li>
-                        <li><strong>Genuine emergencies</strong> (medical, relocation, etc.) are handled case-by-case — reach out and we&apos;ll figure it out.</li>
+                        <li><strong>Genuine emergencies</strong> (medical, relocation, etc.) are handled case-by-case. Reach out and we&apos;ll figure it out.</li>
                     </ul>
                 ),
             },
             {
                 question: "Can I take a quarter off?",
                 answer: (
-                    <p>Yes — there&apos;s no obligation to enroll consecutively. Note that masterclass library access pauses when you&apos;re not actively enrolled (or holding active credits in the buffer month).</p>
+                    <p>Yes. There&apos;s no obligation to enroll consecutively. Note that masterclass library access pauses when you&apos;re not actively enrolled (or holding active credits in the buffer month).</p>
                 ),
             },
         ],
@@ -167,7 +167,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "What is the masterclass library?",
                 answer: (
-                    <p>A library of 100+ premium lessons covering technique, repertoire, theory, performance, and practice strategy. It&apos;s normally a separate paid product — included with quarterly enrollment.</p>
+                    <p>A library of 100+ premium lessons covering technique, repertoire, theory, performance, and practice strategy. It&apos;s normally a separate paid product, included with quarterly enrollment.</p>
                 ),
             },
             {
@@ -190,7 +190,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "What are the online recitals?",
                 answer: (
-                    <p>Twice a year, students submit a recorded performance of a piece they&apos;ve prepared. Performances are compiled into a recital event — you get to share your progress, hear what fellow students are working on, and gain real performance experience with a real deadline.</p>
+                    <p>Twice a year, students submit a recorded performance of a piece they&apos;ve prepared. Performances are compiled into a recital event. You get to share your progress, hear what fellow students are working on, and gain real performance experience with a real deadline.</p>
                 ),
             },
             {
@@ -202,13 +202,13 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "Is participation required?",
                 answer: (
-                    <p>Strongly encouraged, but not required. Performance is one of the most powerful learning accelerators we have, and the recital deadline is what turns half-finished pieces into finished ones. That said, if performance pressure isn&apos;t where you want to be right now, that&apos;s fine — your enrollment doesn&apos;t depend on it.</p>
+                    <p>Strongly encouraged, but not required. Performance is one of the most powerful learning accelerators we have, and the recital deadline is what turns half-finished pieces into finished ones. That said, if performance pressure isn&apos;t where you want to be right now, that&apos;s fine. Your enrollment doesn&apos;t depend on it.</p>
                 ),
             },
             {
                 question: "What about in-person performance?",
                 answer: (
-                    <p>Recitals are currently online-only. Many students also pursue in-person performance opportunities through outside organizations (local festivals, MTNA events, community recitals) — happy to advise on what&apos;s worth your time.</p>
+                    <p>Recitals are currently online-only. Many students also pursue in-person performance opportunities through outside organizations (local festivals, MTNA events, community recitals). Happy to advise on what&apos;s worth your time.</p>
                 ),
             },
         ],
@@ -252,7 +252,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "Do you give homework?",
                 answer: (
-                    <p>Yes — practice assignments and custom exercises tailored to what we worked on. The work between lessons is where the actual progress happens.</p>
+                    <p>Yes. Practice assignments and custom exercises tailored to what we worked on. The work between lessons is where the actual progress happens.</p>
                 ),
             },
             {
@@ -290,7 +290,7 @@ const FAQ_GROUPS: FaqGroup[] = [
                             <li>Camera positioned so I can see your hands and the keyboard</li>
                             <li>A pair of decent headphones to avoid feedback</li>
                         </ul>
-                        <p>For students serious about audio quality, an external USB mic is a worthwhile upgrade — I can recommend specific models on request.</p>
+                        <p>For students serious about audio quality, an external USB mic is a worthwhile upgrade. I can recommend specific models on request.</p>
                     </>
                 ),
             },
@@ -337,7 +337,7 @@ export default function FaqPage() {
                     <div className="space-y-4 mb-12">
                         <h1 className="font-serif text-4xl lg:text-5xl font-bold">Frequently Asked Questions</h1>
                         <p className="text-lg text-gray-500">
-                            Everything about how the studio works — quarterly enrollment, scheduling, recitals, and what to expect from the trial lesson.
+                            Everything about how the studio works: quarterly enrollment, scheduling, recitals, and what to expect from the trial lesson.
                         </p>
                         <div className="h-1 w-20 bg-black" />
                     </div>
