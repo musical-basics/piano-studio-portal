@@ -218,7 +218,9 @@ export async function StaticLandingPage() {
                             <div className="grid md:grid-cols-3 gap-6">
                                 {featuredReviews.map((review: any) => {
                                     const profileCreatedAt = review.profiles?.created_at
-                                    const studentSince = profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null
+                                    const studentSince =
+                                        review.student_since ??
+                                        (profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null)
 
                                     return (
                                         <div

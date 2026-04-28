@@ -58,7 +58,9 @@ export default async function ReviewsPage() {
                     <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                         {reviews.map((review: any) => {
                             const profile = review.profiles
-                            const studentSince = profile?.created_at ? getStudentSinceYear(profile.created_at) : null
+                            const studentSince =
+                                review.student_since ??
+                                (profile?.created_at ? getStudentSinceYear(profile.created_at) : null)
 
                             return (
                                 <Card
