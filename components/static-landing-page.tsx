@@ -1,6 +1,12 @@
 import Link from "next/link"
-import { Music, Clock, Calendar, Award, Facebook, Instagram, Mail } from "lucide-react"
-import { InquiryForm } from "@/components/inquiry-form"
+import { Music, Repeat, Sparkles, Users, Facebook, Instagram, Mail } from "lucide-react"
+import { TrialInquiryForm } from "@/components/trial-inquiry-form"
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion"
 import { getApprovedReviews } from "@/app/actions/reviews"
 
 const formatReviewDate = (dateString: string) =>
@@ -11,15 +17,34 @@ const renderStars = (rating: number) => {
     return "★".repeat(filled) + "☆".repeat(5 - filled)
 }
 
-const buildTenureLabel = (
-    studentSince: number | null | undefined,
-    studentUntil: number | null | undefined,
-): string | null => {
-    if (!studentSince) return null
-    if (!studentUntil) return `Student since ${studentSince}`
-    if (studentUntil === studentSince) return `Student ${studentSince}`
-    return `Student ${studentSince}–${studentUntil}`
-}
+const PRICING_TIERS = [
+    { duration: "30 minutes", price: "$635", note: "per quarter" },
+    { duration: "45 minutes", price: "$935", note: "per quarter", featured: true },
+    { duration: "60 minutes", price: "$1,135", note: "per quarter" },
+]
+
+const HOMEPAGE_FAQS = [
+    {
+        q: "How long is a quarter?",
+        a: "Each quarter is 3 months with 12 lesson credits included. Spring (Mar–May), Summer (Jun–Aug), Fall (Sep–Nov), Winter (Dec–Feb).",
+    },
+    {
+        q: "How does the credit system work?",
+        a: "You get 12 credits per quarter, and each lesson uses one. Credits are valid for 4 months total — your 3-month quarter plus a 1-month buffer — so unused credits roll forward automatically.",
+    },
+    {
+        q: "What if I need to miss a lesson?",
+        a: "The credit system handles it. The credit isn't used — just book a different time during the quarter or buffer month. No 24-hour-notice rule, no missed-lesson penalty.",
+    },
+    {
+        q: "What does my quarterly tuition cover?",
+        a: "12 private lessons, recordings of every session, custom sheet music tailored to your goals, personalized practice exercises, twice-yearly online recitals, and full access to my premium masterclass library (100+ lessons) while enrolled.",
+    },
+    {
+        q: "What ages do you teach?",
+        a: "Students 12 and over. Currently focused on teen and adult learners.",
+    },
+]
 
 export async function StaticLandingPage() {
     const allReviews = await getApprovedReviews()
@@ -64,27 +89,26 @@ export async function StaticLandingPage() {
                         <div className="space-y-8">
                             <div className="space-y-4">
                                 <h1 className="font-serif text-5xl lg:text-6xl font-bold leading-tight">
-                                    Master Piano with Excellence
+                                    Structured quarters. Personalized instruction. A proven system for serious students.
                                 </h1>
                                 <p className="text-xl text-gray-500 leading-relaxed">
-                                    Transform your musical journey with personalized instruction, flexible scheduling, and a
-                                    proven system designed for serious students.
+                                    Transform your musical journey with quarterly piano instruction designed around your goals — backed by 30+ years of experience and training from Juilliard, Peabody, and NYU.
                                 </p>
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-4">
+                                <a
+                                    href="#trial"
+                                    className="inline-flex h-12 items-center justify-center rounded-md bg-black px-8 text-base font-medium text-white shadow hover:bg-gray-800 transition-colors"
+                                >
+                                    Request a Free Trial
+                                </a>
                                 <Link
                                     href="/login"
-                                    className="inline-flex h-12 items-center justify-center rounded-md bg-black px-8 text-base font-medium text-white shadow hover:bg-gray-800 transition-colors"
+                                    className="inline-flex h-12 items-center justify-center rounded-md border border-gray-200 bg-transparent px-8 text-base font-medium shadow-sm hover:bg-gray-50 transition-colors"
                                 >
                                     Student Portal
                                 </Link>
-                                <a
-                                    href="#contact"
-                                    className="inline-flex h-12 items-center justify-center rounded-md border border-gray-200 bg-transparent px-8 text-base font-medium shadow-sm hover:bg-gray-50 transition-colors"
-                                >
-                                    Inquire for Lessons
-                                </a>
                             </div>
 
                             <div className="grid grid-cols-3 gap-6 pt-8 border-t border-gray-100">
@@ -118,6 +142,16 @@ export async function StaticLandingPage() {
                 </div>
             </section>
 
+            {/* Enrollment Banner */}
+            <section className="bg-black text-white">
+                <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-center">
+                    <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-wider">
+                        Now Enrolling
+                    </span>
+                    <span className="font-serif text-lg sm:text-xl font-semibold">Summer 2026 Quarter</span>
+                </div>
+            </section>
+
             {/* About */}
             <section className="py-20 bg-gray-50/50">
                 <div className="max-w-7xl mx-auto px-4">
@@ -129,14 +163,14 @@ export async function StaticLandingPage() {
 
                         <div className="space-y-6 text-lg leading-relaxed text-gray-700">
                             <p>
-                                With over 30 years of piano experience and having played in some of the world's biggest concert
+                                With over 30 years of piano experience and having played in some of the world&apos;s biggest concert
                                 halls, I teach students of all ages and skill levels, bringing a unique mixture of classical
                                 technique and modern musicality to each student. My approach is rooted in building strong
-                                technical foundations while nurturing each student's individual musical voice.
+                                technical foundations while nurturing each student&apos;s individual musical voice.
                             </p>
 
                             <p>
-                                I have studied at Juilliard, Peabody and NYU Music Schools and with some of the world's best
+                                I have studied at Juilliard, Peabody and NYU Music Schools and with some of the world&apos;s best
                                 pianists, such as Stanislav Khristenko, Assaff Weisman, Peter Dugan, and others. But my greatest
                                 joy comes from witnessing the moment when a student discovers their own musical potential.
                             </p>
@@ -156,10 +190,10 @@ export async function StaticLandingPage() {
             {/* Studio System */}
             <section className="py-20">
                 <div className="max-w-7xl mx-auto px-4">
-                    <div className="max-w-4xl mx-auto">
+                    <div className="max-w-5xl mx-auto">
                         <div className="text-center space-y-4 mb-12">
                             <h2 className="font-serif text-4xl font-bold">The Studio System</h2>
-                            <p className="text-xl text-gray-500">Flexible consistency for serious students</p>
+                            <p className="text-xl text-gray-500">Quarterly enrollment built around real life</p>
                             <div className="h-1 w-20 bg-black mx-auto" />
                         </div>
 
@@ -167,12 +201,11 @@ export async function StaticLandingPage() {
                             <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
                                 <div className="space-y-4">
                                     <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
-                                        <Calendar className="h-6 w-6" />
+                                        <Repeat className="h-6 w-6" />
                                     </div>
-                                    <h3 className="font-serif text-xl font-bold">Credit-Based Packages</h3>
+                                    <h3 className="font-serif text-xl font-bold">Quarterly Enrollment</h3>
                                     <p className="text-gray-500 leading-relaxed">
-                                        Purchase 4-lesson packages that work with your schedule. No rigid monthly
-                                        commitments&mdash;just consistent progress at your pace.
+                                        12 lesson credits per quarter. Use them across 3 months of structured instruction, with a built-in buffer month so missed lessons never go to waste. Reschedule freely — your credits roll forward automatically.
                                     </p>
                                 </div>
                             </div>
@@ -180,12 +213,11 @@ export async function StaticLandingPage() {
                             <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
                                 <div className="space-y-4">
                                     <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
-                                        <Clock className="h-6 w-6" />
+                                        <Sparkles className="h-6 w-6" />
                                     </div>
-                                    <h3 className="font-serif text-xl font-bold">Fair Cancellation Policy</h3>
+                                    <h3 className="font-serif text-xl font-bold">What&apos;s Included</h3>
                                     <p className="text-gray-500 leading-relaxed">
-                                        Life happens. Reschedule with 24+ hours notice at no charge. We'll find you a makeup
-                                        slot that works for your week.
+                                        Every quarter comes with lesson recordings, custom sheet music tailored to your goals, personalized practice exercises, participation in twice-yearly online recitals, and full access to my premium masterclass library (100+ lessons) while you&apos;re enrolled.
                                     </p>
                                 </div>
                             </div>
@@ -193,31 +225,71 @@ export async function StaticLandingPage() {
                             <div className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
                                 <div className="space-y-4">
                                     <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
-                                        <Award className="h-6 w-6" />
+                                        <Users className="h-6 w-6" />
                                     </div>
-                                    <h3 className="font-serif text-xl font-bold">Professional Standards</h3>
+                                    <h3 className="font-serif text-xl font-bold">Performance &amp; Community</h3>
                                     <p className="text-gray-500 leading-relaxed">
-                                        Clear expectations, detailed lesson notes, and recorded sessions ensure you get maximum
-                                        value from every minute of instruction.
+                                        Twice-yearly online recitals give you real performance experience and a deadline to play toward. Open to anyone who has taken lessons in the past year. You&apos;ll be part of a community of students from teen beginners to working professionals.
                                     </p>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
 
-                        <div className="mt-8 rounded-lg bg-gray-50 border border-gray-200 p-6">
-                            <p className="text-center text-lg text-gray-700">
-                                <strong className="font-serif">The Result?</strong> Students make faster progress because they
-                                can maintain weekly momentum without the stress of rigid scheduling. It's the perfect balance
-                                of structure and flexibility.
-                            </p>
+            {/* Pricing */}
+            <section className="py-20 bg-gray-50/50">
+                <div className="max-w-7xl mx-auto px-4">
+                    <div className="max-w-5xl mx-auto">
+                        <div className="text-center space-y-4 mb-12">
+                            <h2 className="font-serif text-4xl font-bold">Quarterly Tuition</h2>
+                            <p className="text-xl text-gray-500">12 credits per quarter. Credits valid for 4 months.</p>
+                            <div className="h-1 w-20 bg-black mx-auto" />
                         </div>
+
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {PRICING_TIERS.map((tier) => (
+                                <div
+                                    key={tier.duration}
+                                    className={`rounded-xl border-2 bg-white p-8 shadow-sm transition-colors flex flex-col ${tier.featured
+                                        ? "border-black shadow-md relative"
+                                        : "border-gray-100 hover:border-black"
+                                        }`}
+                                >
+                                    {tier.featured && (
+                                        <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-black text-white text-xs font-medium uppercase tracking-wider px-3 py-1 rounded-full">
+                                            Most Popular
+                                        </span>
+                                    )}
+                                    <div className="space-y-2 text-center flex-1">
+                                        <div className="font-serif text-xl font-bold">{tier.duration}</div>
+                                        <div className="font-serif text-5xl font-bold">{tier.price}</div>
+                                        <div className="text-sm text-gray-500">{tier.note}</div>
+                                    </div>
+                                    <a
+                                        href="#trial"
+                                        className={`mt-6 inline-flex h-11 items-center justify-center rounded-md px-6 text-sm font-medium transition-colors ${tier.featured
+                                            ? "bg-black text-white hover:bg-gray-800"
+                                            : "border border-gray-200 bg-white hover:bg-gray-50"
+                                            }`}
+                                    >
+                                        Request a Free Trial
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+
+                        <p className="mt-8 text-center text-gray-600 max-w-2xl mx-auto">
+                            Every quarter includes lesson recordings, custom sheet music &amp; exercises, online recital participation, and masterclass library access while enrolled.
+                        </p>
                     </div>
                 </div>
             </section>
 
             {/* Testimonials */}
             {featuredReviews.length > 0 && (
-                <section className="py-20 bg-gray-50/50">
+                <section className="py-20">
                     <div className="max-w-7xl mx-auto px-4">
                         <div className="max-w-5xl mx-auto">
                             <div className="text-center space-y-4 mb-12">
@@ -231,7 +303,6 @@ export async function StaticLandingPage() {
                                     const studentSince =
                                         review.student_since ??
                                         (profileCreatedAt ? new Date(profileCreatedAt).getFullYear() : null)
-                                    const tenureLabel = buildTenureLabel(studentSince, review.student_until)
 
                                     return (
                                         <div
@@ -250,7 +321,9 @@ export async function StaticLandingPage() {
                                                 <div className="pt-4 border-t border-gray-100">
                                                     <p className="font-semibold">{review.name}</p>
                                                     <p className="text-sm text-gray-500">
-                                                        {tenureLabel ?? formatReviewDate(review.created_at)}
+                                                        {studentSince
+                                                            ? `Student since ${studentSince}`
+                                                            : formatReviewDate(review.created_at)}
                                                     </p>
                                                 </div>
                                             </div>
@@ -272,18 +345,54 @@ export async function StaticLandingPage() {
                 </section>
             )}
 
-            {/* Contact / Inquiry */}
-            <section className="py-24 bg-gray-50 border-t border-gray-100" id="contact">
+            {/* FAQ (condensed) */}
+            <section className="py-20 bg-gray-50/50">
+                <div className="max-w-7xl mx-auto px-4">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="text-center space-y-4 mb-10">
+                            <h2 className="font-serif text-4xl font-bold">Frequently Asked Questions</h2>
+                            <div className="h-1 w-20 bg-black mx-auto" />
+                        </div>
+
+                        <div className="rounded-xl bg-white border border-gray-100 shadow-sm px-6">
+                            <Accordion type="single" collapsible className="w-full">
+                                {HOMEPAGE_FAQS.map((faq, idx) => (
+                                    <AccordionItem key={faq.q} value={`faq-${idx}`}>
+                                        <AccordionTrigger className="text-base font-semibold">
+                                            {faq.q}
+                                        </AccordionTrigger>
+                                        <AccordionContent className="text-gray-600 leading-relaxed">
+                                            {faq.a}
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                ))}
+                            </Accordion>
+                        </div>
+
+                        <div className="mt-8 text-center">
+                            <Link
+                                href="/faqs"
+                                className="inline-flex items-center text-sm font-medium text-black hover:underline"
+                            >
+                                See all FAQs →
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Trial CTA + form */}
+            <section className="py-24 bg-white border-t border-gray-100" id="trial">
                 <div className="max-w-3xl mx-auto px-6">
-                    <div className="text-center mb-12">
-                        <h2 className="font-serif text-4xl font-bold mb-4">Ready to Begin Your Musical Journey?</h2>
-                        <p className="text-gray-500 text-lg">
-                            Send me a message to discuss your goals and schedule a consultation.
+                    <div className="text-center mb-12 space-y-4">
+                        <h2 className="font-serif text-4xl font-bold">Free 15-Minute Trial Lesson</h2>
+                        <p className="text-gray-600 text-lg leading-relaxed">
+                            Before enrolling, let&apos;s meet. We&apos;ll talk through your goals, assess where you are, and make sure we&apos;re the right fit. Send a quick note using the form below and I&apos;ll personally reply within 48 hours to schedule.
                         </p>
                     </div>
 
                     <div className="rounded-xl bg-white p-6 sm:p-8 shadow-sm border border-gray-100">
-                        <InquiryForm />
+                        <TrialInquiryForm />
                     </div>
                 </div>
             </section>
@@ -325,7 +434,7 @@ export async function StaticLandingPage() {
                             </a>
                         </div>
 
-                        <p className="text-sm text-gray-500">© 2025 Lionel Yu Piano Studio. All rights reserved.</p>
+                        <p className="text-sm text-gray-500">© {new Date().getFullYear()} Lionel Yu Piano Studio. All rights reserved.</p>
                     </div>
                 </div>
             </footer>
