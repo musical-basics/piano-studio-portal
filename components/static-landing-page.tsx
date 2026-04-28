@@ -34,7 +34,7 @@ const HOMEPAGE_FAQS = [
     },
     {
         q: "What if I need to miss a lesson?",
-        a: "The credit system handles it. The credit isn't used. Just book a different time during the quarter or buffer month. No 24-hour-notice rule, no missed-lesson penalty.",
+        a: "Reschedule with 24+ hours notice and your credit isn't used. Less than 24 hours, half a credit is consumed. Less than 30 minutes notice or a no-show, the full credit is used.",
     },
     {
         q: "What does my quarterly tuition cover?",
@@ -205,7 +205,7 @@ export async function StaticLandingPage() {
                                     </div>
                                     <h3 className="font-serif text-xl font-bold">Quarterly Enrollment</h3>
                                     <p className="text-gray-500 leading-relaxed">
-                                        12 lesson credits per quarter. Use them across 3 months of structured instruction, with a built-in buffer month so missed lessons never go to waste. Reschedule freely. Your credits roll forward automatically.
+                                        12 lesson credits per quarter. Use them across 3 months of structured instruction with a built-in buffer month for makeups. Give 24+ hours notice when you reschedule and the credit rolls forward automatically.
                                     </p>
                                 </div>
                             </div>
