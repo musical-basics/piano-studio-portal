@@ -48,7 +48,7 @@ const HOMEPAGE_FAQS = [
 
 export async function StaticLandingPage() {
     const allReviews = await getApprovedReviews()
-    const featuredReviews = (allReviews ?? []).slice(0, 3)
+    const featuredReviews = (allReviews ?? []).filter((r: any) => r.featured).slice(0, 4)
 
     return (
         <div className="scroll-smooth bg-white text-gray-950 font-sans antialiased selection:bg-black selection:text-white">

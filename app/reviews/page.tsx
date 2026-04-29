@@ -16,19 +16,9 @@ const formatDate = (dateString: string) => {
     })
 }
 
-const getStudentSinceYear = (profileCreatedAt?: string) => {
+const profileFallbackLabel = (profileCreatedAt?: string) => {
     if (!profileCreatedAt) return null
-    return new Date(profileCreatedAt).getFullYear()
-}
-
-const buildTenureLabel = (
-    studentSince: number | null | undefined,
-    studentUntil: number | null | undefined,
-): string | null => {
-    if (!studentSince) return null
-    if (!studentUntil) return `Student since ${studentSince}`
-    if (studentUntil === studentSince) return `Student ${studentSince}`
-    return `Student ${studentSince}–${studentUntil}`
+    return `Student since ${new Date(profileCreatedAt).getFullYear()}`
 }
 
 export default async function ReviewsPage() {
@@ -68,10 +58,7 @@ export default async function ReviewsPage() {
                     <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
                         {reviews.map((review: any) => {
                             const profile = review.profiles
-                            const studentSince =
-                                review.student_since ??
-                                (profile?.created_at ? getStudentSinceYear(profile.created_at) : null)
-                            const tenureLabel = buildTenureLabel(studentSince, review.student_until)
+                            const tenureLabel = review.tenure_label ?? profileFallbackLabel(profile?.created_at)
 
                             return (
                                 <Card
