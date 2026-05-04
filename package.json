@@ -8,7 +8,8 @@
     "lint": "eslint .",
     "start": "next start",
     "seed": "npx tsx scripts/seed.ts",
-    "inspect-dropbox": "npx tsx scripts/inspect_dropbox.ts"
+    "inspect-dropbox": "npx tsx scripts/inspect_dropbox.ts",
+    "propose-dropbox-mapping": "npx tsx scripts/propose_dropbox_mapping.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

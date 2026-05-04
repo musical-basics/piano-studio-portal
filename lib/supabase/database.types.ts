@@ -38,6 +38,7 @@ export interface Database {
                     parent_email: string | null
                     public_id: string | null
                     status: 'active' | 'inactive' | null
+                    dropbox_recording_folder: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -57,6 +58,7 @@ export interface Database {
                     studio_name?: string | null
                     public_id?: string | null
                     status?: 'active' | 'inactive' | null
+                    dropbox_recording_folder?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -76,6 +78,7 @@ export interface Database {
                     studio_name?: string | null
                     public_id?: string | null
                     status?: 'active' | 'inactive' | null
+                    dropbox_recording_folder?: string | null
                     created_at?: string
                     updated_at?: string
                 }
