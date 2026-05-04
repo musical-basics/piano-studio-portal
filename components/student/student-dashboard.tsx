@@ -439,32 +439,18 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                                 <div className="flex flex-wrap gap-3">
 
-                                    {/* 1. PRIMARY ACTION: Join Classroom */}
-                                    <Button
-                                        size="lg"
-                                        className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md shadow-indigo-900/10"
-                                        onClick={() => {
-                                            notifyStudentJoined('classroom') // fire-and-forget
-                                            window.open(`${process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"}/${profile.public_id}`, '_blank')
-                                        }}
-                                    >
-                                        <MonitorPlay className="h-5 w-5 mr-2" />
-                                        Join Classroom
-                                    </Button>
-
-                                    {/* 2. FALLBACK: Join Zoom Lesson */}
+                                    {/* 1. PRIMARY ACTION: Join Zoom Lesson */}
                                     {zoomLink ? (
                                         <Button
                                             size="lg"
-                                            variant="outline"
-                                            className="flex-1 min-w-[200px] text-zinc-600 dark:text-zinc-400"
+                                            className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md shadow-indigo-900/10"
                                             onClick={() => {
                                                 notifyStudentJoined('zoom') // fire-and-forget
                                                 window.open(zoomLink, '_blank')
                                             }}
                                         >
                                             <Video className="h-5 w-5 mr-2" />
-                                            Zoom (Backup)
+                                            Join Zoom Lesson
                                         </Button>
                                     ) : (
                                         <Button size="lg" variant="ghost" className="flex-1 min-w-[200px] text-muted-foreground" disabled>
@@ -472,6 +458,20 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                             No Zoom Link
                                         </Button>
                                     )}
+
+                                    {/* 2. FALLBACK: Join Classroom */}
+                                    <Button
+                                        size="lg"
+                                        variant="outline"
+                                        className="flex-1 min-w-[200px] text-zinc-600 dark:text-zinc-400"
+                                        onClick={() => {
+                                            notifyStudentJoined('classroom') // fire-and-forget
+                                            window.open(`${process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"}/${profile.public_id}`, '_blank')
+                                        }}
+                                    >
+                                        <MonitorPlay className="h-5 w-5 mr-2" />
+                                        Classroom (Backup)
+                                    </Button>
 
                                     {/* 3. Existing Actions */}
                                     {/* <Button size="lg" variant="outline" onClick={handleReschedule}>
