@@ -36,17 +36,27 @@ export function pickPrimaryRecordingFile(files: ZoomRecordingFile[]): ZoomRecord
 }
 
 export async function downloadFromZoom(downloadUrl: string, downloadToken: string): Promise<Buffer> {
+    // Auth via query parameter, NOT Authorization header. Zoom's download URLs
+    // redirect from zoom.us to a regional CDN (us04web.zoom.us, etc.), and
+    // Node's fetch strips Authorization on cross-origin redirects for security.
+    // Query-string auth survives the redirect.
     const url = new URL(downloadUrl)
-    const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${downloadToken}` },
-        redirect: 'follow',
-    })
+    url.searchParams.set('access_token', downloadToken)
+
+    const res = await fetch(url, { redirect: 'follow' })
     if (!res.ok) {
         const body = await res.text().catch(() => '')
         throw new Error(`Zoom download failed: ${res.status} ${res.statusText} ${body.slice(0, 200)}`)
     }
+    const contentType = res.headers.get('content-type') || ''
     const ab = await res.arrayBuffer()
-    return Buffer.from(ab)
+    const buf = Buffer.from(ab)
+    if (buf.length < 1024) {
+        // Sanity guard: Zoom returning a short HTML error page would slip past
+        // res.ok. Real recordings are megabytes.
+        throw new Error(`Zoom download returned suspiciously small body (${buf.length} bytes, content-type "${contentType}", first bytes: ${buf.toString('utf8', 0, 200)})`)
+    }
+    return buf
 }
 
 const DROPBOX_CHUNK = 150 * 1024 * 1024 // Dropbox single-call limit

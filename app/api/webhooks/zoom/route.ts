@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     log(`Selected file: type=${file.file_type} kind=${file.recording_type} size=${file.file_size}`)
 
     try {
-        log(`Downloading from Zoom...`)
+        log(`Downloading from Zoom: url=${file.download_url}`)
         const buffer = await downloadFromZoom(file.download_url, downloadToken)
         log(`Downloaded ${buffer.length} bytes`)
 
@@ -169,8 +169,12 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, logs })
     } catch (err: any) {
-        log(`Processing error: ${err?.message || err}`)
+        const detail = err?.error?.error_summary
+            || (err?.error ? JSON.stringify(err.error).slice(0, 400) : null)
+            || err?.message
+            || String(err)
+        log(`Processing error: ${detail}`)
         // Return 500 so Zoom retries (it retries up to 3 times with backoff).
-        return NextResponse.json({ error: err?.message || 'unknown error', logs }, { status: 500 })
+        return NextResponse.json({ error: detail, logs }, { status: 500 })
     }
 }
