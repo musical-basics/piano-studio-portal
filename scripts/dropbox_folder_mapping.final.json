@@ -1,0 +1,188 @@
+{
+  "final": [
+    {
+      "profile_id": "9c8ff8f1-02a8-4800-9b0f-c88c2834d2ef",
+      "profile_name": "Angela Lin",
+      "profile_email": "angela.lin@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "356415aa-1051-4ed2-a29d-7d1c329f7e0f",
+      "profile_name": "Best student",
+      "profile_email": "djsputty@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "bedceebb-fada-4354-9542-b9377ff9a4d3",
+      "profile_name": "Caedmon Crosby",
+      "profile_email": "ubermichellita@hotmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "081a6031-4acd-466e-aff5-2da056ece567",
+      "profile_name": "Christian Flores",
+      "profile_email": "buildingbondsandbrilliance@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "10128b61-f8e6-44cf-86af-7c7f4669705a",
+      "profile_name": "Edwin Guo",
+      "profile_email": "zouwu80@gmail.com",
+      "profile_status": "active",
+      "folder": "Edwin Guo Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "2bfb3fc3-6d33-437f-9d56-6d5fbbdfe750",
+      "profile_name": "Hersheyth Aggarwal",
+      "profile_email": "hersheyth@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "ea536caa-89cf-4997-a649-577f6c64f990",
+      "profile_name": "Ila and Cordelia Daigle",
+      "profile_email": "aldaigle@gmail.com",
+      "profile_status": "active",
+      "folder": "Ila and Cordelia Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "ebc039fd-8043-419f-97e0-77c2b902da75",
+      "profile_name": "Jose Piano Teacher",
+      "profile_email": "josedvdrocha@gmail.com",
+      "profile_status": "active",
+      "folder": "My Own Piano Lessons",
+      "reason": "Lionel's own lessons (mapped to shared bucket)"
+    },
+    {
+      "profile_id": "f1293d03-e985-474a-90d4-1819c4716cbd",
+      "profile_name": "Julian Ziernicki",
+      "profile_email": "mziernicki@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "458267a3-ffa8-4c1c-9969-e18ccc710695",
+      "profile_name": "Kai Steinberg",
+      "profile_email": "eran.steinberg@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "a5b7cba7-4c8e-4e29-8120-2994c8df7a55",
+      "profile_name": "Marco",
+      "profile_email": "bravestoneking@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "ac966367-dc7b-4934-b668-847a84e4ee85",
+      "profile_name": "Micah Finn",
+      "profile_email": "micahfinn1@gmail.com",
+      "profile_status": "active",
+      "folder": "Micah Finn Lesson Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "d784a0d5-cdc2-4c8c-9376-7dc39780fcab",
+      "profile_name": "Mohammed Habbab",
+      "profile_email": "Mhabbab@live.com",
+      "profile_status": "active",
+      "folder": "Mohammed Habbab",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "b8edc751-854a-4716-b520-7112d13f7b69",
+      "profile_name": "Nate Mahon",
+      "profile_email": "sassafras918@gmail.com",
+      "profile_status": "active",
+      "folder": "Nate Mahon Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "8999a0e4-94ab-4efc-9b05-bd8aedc504a9",
+      "profile_name": "Oceanna Chan",
+      "profile_email": "oceanna.chan@outlook.com",
+      "profile_status": "active",
+      "folder": "Oceanna Chan Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "615b4a9c-f8fc-42ca-bf23-b863a18d1788",
+      "profile_name": "Olga Piano Teacher",
+      "profile_email": "hello@dreamplaypianos.com",
+      "profile_status": "active",
+      "folder": "My Own Piano Lessons",
+      "reason": "Lionel's own lessons (mapped to shared bucket)"
+    },
+    {
+      "profile_id": "b1814878-5d12-4cb4-8a68-5d89213c698c",
+      "profile_name": "Padhma Berk",
+      "profile_email": "jayde.ireland@gmail.com",
+      "profile_status": "active",
+      "folder": "Padhma Berk Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "3a7b64a1-67bd-4d16-a921-9215046da9c5",
+      "profile_name": "Piano Student",
+      "profile_email": "yulionel829@gmail.com",
+      "profile_status": "active",
+      "folder": "My Own Piano Lessons",
+      "reason": "Lionel's own lessons (mapped to shared bucket)"
+    },
+    {
+      "profile_id": "5d9ce59d-87c2-4e34-bc95-cff3f5ca08bf",
+      "profile_name": "Robert Alconcel",
+      "profile_email": "alconcelrobert@gmail.com",
+      "profile_status": "active",
+      "folder": "Robert Alconcel Recordings",
+      "reason": "manual override (folder exists)"
+    },
+    {
+      "profile_id": "e8a5996d-484f-40f8-bd17-eb6cf8323baf",
+      "profile_name": "Roy Yin",
+      "profile_email": "kylie718@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    },
+    {
+      "profile_id": "0d15924c-5764-431d-ac1f-34a967c9285d",
+      "profile_name": "Waris Matharu",
+      "profile_email": "sarabjitmatharu@gmail.com",
+      "profile_status": "active",
+      "folder": "Waris Matharu Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "a7be1876-00ae-4f6d-8818-be02c2a4bf45",
+      "profile_name": "Yakir Shimon",
+      "profile_email": "yakir30g@gmail.com",
+      "profile_status": "active",
+      "folder": "Yakir Shimon Lesson Recordings",
+      "reason": "fuzzy-matched existing folder"
+    },
+    {
+      "profile_id": "7664c5ce-4f36-4514-9a4f-2353c4e769fa",
+      "profile_name": "Yuelin and Yizhong",
+      "profile_email": "ddmxuyang@gmail.com",
+      "profile_status": "inactive",
+      "folder": "Old Students Recordings",
+      "reason": "inactive student"
+    }
+  ]
+}
