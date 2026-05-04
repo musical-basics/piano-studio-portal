@@ -27,6 +27,7 @@ Core endpoints:
 - GET /lessons?from=&to=&student_id=
 - POST /lessons                 body: { student_id, date, time, duration? }
 - PATCH /lessons/:id            body: { date, time, duration? }
+- POST /lessons/:id/log         body: { notes?, video_url?, sheet_music_url? }
 - DELETE /lessons/:id
 `
 

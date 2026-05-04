@@ -1,6 +1,6 @@
 # Agent API
 
-REST API for an AI agent to act on behalf of the studio admin: list students, message them, read replies, and schedule / reschedule / cancel lessons. Every mutating endpoint fires the same side-effects as the admin UI (Zoom meeting create/update/delete, Google Calendar event, Resend emails to student and admin).
+REST API for an AI agent to act on behalf of the studio admin: list students, message them, read replies, and schedule / reschedule / cancel / log lessons. Mutating endpoints fire the same relevant side-effects as the admin UI (Zoom meeting create/update/delete, Google Calendar event, Resend emails, credit spending, and next-lesson creation).
 
 ## Base URL
 
@@ -330,6 +330,43 @@ curl -X PATCH https://<your-domain>/api/agent/lessons/<lesson_id> \
   -d '{"date":"2026-05-03","time":"17:00","duration":60}'
 ```
 
+### `POST /lessons/:id/log`
+
+Log an existing lesson as completed. This is the agent version of the admin "log lesson" action. It updates lesson notes/material links, marks the lesson `completed`, deducts one credit from the student on first completion, stores the before/after credit snapshots on the lesson, auto-creates next week's lesson when there isn't already a non-cancelled lesson for that date, and emails the lesson notes to the student.
+
+Body:
+```json
+{
+  "notes": "Worked on Bach invention LH voicing and slow metronome practice.",
+  "video_url": "https://...",
+  "sheet_music_url": "https://..."
+}
+```
+
+`notes` defaults to an empty string if omitted. `video_url` and `sheet_music_url` are optional.
+
+```bash
+curl -X POST https://<your-domain>/api/agent/lessons/<lesson_id>/log \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"Great work on scales today.","sheet_music_url":"https://..."}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "lesson": { "id": "uuid", "status": "completed", "notes": "..." },
+  "next_lesson": { "id": "uuid", "status": "scheduled", "date": "2026-05-09" },
+  "credit_deducted": true,
+  "previous_credits": 4,
+  "new_credits": 3,
+  "message": "Lesson logged. Credit deducted (4 -> 3)."
+}
+```
+
+If the lesson was already completed, notes/material links are updated but no second credit is deducted; `credit_deducted` is `false` and both credit values are `null`. 404 if the lesson id does not exist.
+
 ### `DELETE /lessons/:id`
 
 Cancel a lesson. Deletes the row, deletes the Zoom meeting, sends cancellation email. Admin cancellation overrides the 24-hour window, so the agent can cancel any scheduled lesson without penalty.
@@ -355,7 +392,7 @@ All errors return JSON with an `error` string and an appropriate HTTP status:
 |---|---|
 | 400 | Invalid body, missing required field, slot conflict, student not found |
 | 401 | Missing or wrong `Authorization: Bearer …` header |
-| 404 | Student id not found on `GET /students/:id` |
+| 404 | Student id not found on `GET /students/:id`, or lesson id not found on `POST /lessons/:id/log` |
 | 500 | Server misconfig (missing env) or unexpected DB error |
 
 ## Typical agent flows
@@ -375,6 +412,10 @@ All errors return JSON with an `error` string and an appropriate HTTP status:
 **Schedule an ad-hoc lesson**
 1. `GET /lessons?from=…&to=…` → check what's free.
 2. `POST /lessons` → create it.
+
+**Log a completed lesson**
+1. `GET /lessons?student_id=…&from=…&to=…` → find the lesson that happened.
+2. `POST /lessons/:id/log` with notes/material links → mark it completed and spend one student credit.
 
 ## Suggested system prompt for the agent
 
@@ -400,6 +441,7 @@ Capabilities (summary; see discovery doc for details):
 - View lessons: GET /lessons?from&to&student_id
 - Schedule a lesson: POST /lessons {student_id, date, time, duration}
 - Reschedule: PATCH /lessons/<id> {date, time, duration}
+- Log completed lesson: POST /lessons/<id>/log {notes, video_url?, sheet_music_url?}
 - Cancel: DELETE /lessons/<id>
 
 Rules:
@@ -410,6 +452,7 @@ Rules:
 - Cancellation is immediate and emails the student — confirm with the user before calling DELETE unless they have already authorized it.
 - Changing a student's status is a low-risk but visible action; confirm intent before calling PATCH /students/<id>.
 - Credit changes affect real money. Always confirm intent with the user before POST /students/<id>/credits. Prefer "set" over "delta" if you're retrying a request. Never adjust credits silently as a side-effect of another action.
+- Logging a lesson intentionally spends one student credit. Always confirm the exact lesson before POST /lessons/<id>/log. Retrying is safe for credits after the first success because already-completed lessons do not deduct again.
 - Never expose the bearer token or internal error traces to end users.
 ```
 

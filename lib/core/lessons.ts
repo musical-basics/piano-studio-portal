@@ -1,8 +1,10 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
+import { addDays, format } from 'date-fns'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
+import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
 import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 
@@ -22,6 +24,153 @@ function formatTimePst(time: string) {
     const ap = hn >= 12 ? 'pm' : 'am'
     const h12 = hn % 12 || 12
     return `${h12}:${m}${ap} PST`
+}
+
+function formatDateWithWeekday(date: string) {
+    return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+    })
+}
+
+function sheetMusicFileName(sheetMusicUrl?: string | null) {
+    if (!sheetMusicUrl) return undefined
+
+    try {
+        const url = new URL(sheetMusicUrl)
+        const pathname = decodeURIComponent(url.pathname)
+        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+        return filename.replace(/^\d{10,}_/, '')
+    } catch {
+        return 'Sheet Music.pdf'
+    }
+}
+
+async function sendAutoScheduledLessonEmail({
+    client,
+    adminId,
+    studentId,
+    date,
+    time,
+    duration,
+    zoomLink,
+}: {
+    client: DbClient
+    adminId: string
+    studentId: string
+    date: string
+    time: string
+    duration: number
+    zoomLink?: string | null
+}) {
+    if (!resend) return
+
+    try {
+        const { data: student } = await client
+            .from('profiles')
+            .select('name, email')
+            .eq('id', studentId)
+            .single()
+
+        if (!student?.email) return
+
+        const { data: adminData } = await client
+            .from('profiles')
+            .select('name, email, studio_name')
+            .eq('id', adminId)
+            .single()
+
+        const studioName = adminData?.studio_name || 'Lionel Yu Piano Studio'
+        const adminName = adminData?.name === 'Professor Lionel'
+            ? 'Professor Lionel Yu'
+            : (adminData?.name || 'Teacher')
+
+        const formattedDate = formatDateLong(date)
+        const formattedTime = formatTimePst(time)
+        const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
+
+        await resend.emails.send({
+            from: `${studioName} <notifications@updates.musicalbasics.com>`,
+            to: student.email,
+            subject: emailSubject,
+            react: LessonScheduledEmail({
+                studentName: student.name || 'Student',
+                date: formattedDate,
+                time: formattedTime,
+                duration,
+                zoomLink: zoomLink || null,
+                recipientName: student.name || 'Student',
+                studioName,
+            }),
+        })
+
+        if (adminData?.email) {
+            await resend.emails.send({
+                from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                to: adminData.email,
+                subject: emailSubject,
+                react: LessonScheduledEmail({
+                    studentName: student.name || 'Student',
+                    date: formattedDate,
+                    time: formattedTime,
+                    duration,
+                    zoomLink: zoomLink || null,
+                    recipientName: adminName,
+                    studioName,
+                }),
+            })
+        }
+    } catch (emailErr) {
+        console.error('sendAutoScheduledLessonEmail failed (non-blocking):', emailErr)
+    }
+}
+
+async function sendLessonLoggedEmail({
+    client,
+    studentId,
+    date,
+    notes,
+    sheetMusicUrl,
+}: {
+    client: DbClient
+    studentId: string
+    date: string
+    notes: string
+    sheetMusicUrl?: string | null
+}) {
+    if (!resend) return
+
+    try {
+        const { data: student } = await client
+            .from('profiles')
+            .select('name, email')
+            .eq('id', studentId)
+            .single()
+
+        if (!student?.email) {
+            console.log('sendLessonLoggedEmail: No student email, skipping notification')
+            return
+        }
+
+        const formattedDate = formatDateWithWeekday(date)
+
+        await resend.emails.send({
+            from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+            to: student.email,
+            subject: `Lesson Notes: ${formattedDate}`,
+            react: LessonLoggedEmail({
+                studentName: student.name || 'Student',
+                date: formattedDate,
+                notes,
+                sheetMusicUrl: sheetMusicUrl || undefined,
+                sheetMusicFileName: sheetMusicFileName(sheetMusicUrl),
+            }),
+        })
+    } catch (emailError) {
+        console.error('sendLessonLoggedEmail failed (non-blocking):', emailError)
+    }
 }
 
 export async function checkAvailabilityCore(
@@ -108,6 +257,185 @@ export async function listLessonsCore(
     return {
         lessons: lessons || [],
         events: events || [],
+    }
+}
+
+export type LogLessonArgs = {
+    client: DbClient
+    adminId: string
+    lessonId: string
+    notes: string
+    videoUrl?: string
+    sheetMusicUrl?: string
+    awaitNotifications?: boolean
+}
+
+export async function logLessonCore({
+    client,
+    adminId,
+    lessonId,
+    notes,
+    videoUrl,
+    sheetMusicUrl,
+    awaitNotifications = false,
+}: LogLessonArgs) {
+    const { data: lesson, error: lessonFetchError } = await client
+        .from('lessons')
+        .select('student_id, status, date, time, duration, zoom_link')
+        .eq('id', lessonId)
+        .single()
+
+    if (lessonFetchError || !lesson) {
+        return { error: 'Lesson not found' }
+    }
+
+    const isAlreadyCompleted = lesson.status === 'completed'
+
+    const { data: loggedLesson, error: lessonError } = await client
+        .from('lessons')
+        .update({
+            status: 'completed',
+            notes,
+            video_url: videoUrl || null,
+            sheet_music_url: sheetMusicUrl || null,
+        })
+        .eq('id', lessonId)
+        .select()
+        .single()
+
+    if (lessonError) {
+        console.error('logLessonCore: update failed', lessonError)
+        return { error: lessonError.message }
+    }
+
+    let previousCredits: number | null = null
+    let newCredits: number | null = null
+    let creditDeducted = false
+
+    if (!isAlreadyCompleted) {
+        const { data: studentCredits, error: studentCreditsError } = await client
+            .from('profiles')
+            .select('credits')
+            .eq('id', lesson.student_id)
+            .single()
+
+        if (studentCreditsError || !studentCredits) {
+            console.error('logLessonCore: failed to fetch credits:', studentCreditsError)
+            return { error: 'Failed to fetch student credits' }
+        }
+
+        const startingCredits = Number(studentCredits.credits ?? 0)
+        previousCredits = startingCredits
+        newCredits = startingCredits - 1
+
+        const { error: creditError } = await client
+            .from('profiles')
+            .update({ credits: newCredits })
+            .eq('id', lesson.student_id)
+
+        if (creditError) {
+            console.error('logLessonCore: failed to deduct credit:', creditError)
+            return { error: 'Failed to deduct student credit: ' + creditError.message }
+        }
+
+        creditDeducted = true
+
+        const { error: snapshotError } = await client
+            .from('lessons')
+            .update({
+                credit_snapshot_before: previousCredits,
+                credit_snapshot: newCredits,
+            })
+            .eq('id', lessonId)
+
+        if (snapshotError) {
+            console.error('logLessonCore: failed to save credit snapshot:', snapshotError)
+        }
+
+        if (loggedLesson) {
+            loggedLesson.credit_snapshot_before = previousCredits
+            loggedLesson.credit_snapshot = newCredits
+        }
+    }
+
+    let nextLesson: any = null
+    const notificationTasks: Promise<void>[] = []
+
+    if (!isAlreadyCompleted && lesson.date && lesson.time) {
+        try {
+            const currentLessonDate = new Date(`${lesson.date}T00:00:00`)
+            const nextWeekDate = addDays(currentLessonDate, 7)
+            const nextWeekDateStr = format(nextWeekDate, 'yyyy-MM-dd')
+
+            const { data: existingLesson } = await client
+                .from('lessons')
+                .select('id')
+                .eq('student_id', lesson.student_id)
+                .eq('date', nextWeekDateStr)
+                .neq('status', 'cancelled')
+                .maybeSingle()
+
+            if (!existingLesson) {
+                const { data: createdLesson, error: createError } = await client
+                    .from('lessons')
+                    .insert({
+                        student_id: lesson.student_id,
+                        date: nextWeekDateStr,
+                        time: lesson.time,
+                        duration: lesson.duration || 60,
+                        status: 'scheduled',
+                        zoom_link: lesson.zoom_link || null,
+                    })
+                    .select()
+                    .single()
+
+                if (createError) {
+                    console.error('logLessonCore: Auto-create next lesson failed:', createError)
+                } else {
+                    nextLesson = createdLesson
+                    notificationTasks.push(sendAutoScheduledLessonEmail({
+                        client,
+                        adminId,
+                        studentId: lesson.student_id,
+                        date: nextWeekDateStr,
+                        time: lesson.time,
+                        duration: lesson.duration || 60,
+                        zoomLink: lesson.zoom_link || null,
+                    }))
+                }
+            }
+        } catch (autoCreateError) {
+            console.error('logLessonCore: Auto-create next lesson error:', autoCreateError)
+        }
+    }
+
+    notificationTasks.push(sendLessonLoggedEmail({
+        client,
+        studentId: lesson.student_id,
+        date: lesson.date,
+        notes,
+        sheetMusicUrl: sheetMusicUrl || null,
+    }))
+
+    if (awaitNotifications) {
+        await Promise.all(notificationTasks)
+    } else {
+        notificationTasks.forEach((task) => void task)
+    }
+
+    revalidatePath('/admin')
+    revalidatePath('/student')
+
+    return {
+        success: true as const,
+        lesson: loggedLesson,
+        next_lesson: nextLesson,
+        credit_deducted: creditDeducted,
+        previous_credits: previousCredits,
+        new_credits: newCredits,
+        message: creditDeducted
+            ? `Lesson logged. Credit deducted (${previousCredits} -> ${newCredits}).`
+            : 'Lesson logged. No credit deducted because it was already completed.',
     }
 }
 

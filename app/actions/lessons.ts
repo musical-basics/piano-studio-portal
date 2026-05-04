@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
-import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { addDays, format } from 'date-fns'
 import {
     checkAvailabilityCore,
     listLessonsCore,
+    logLessonCore,
     scheduleLessonCore,
     rescheduleLessonCore,
     cancelLessonCore,
@@ -37,8 +37,6 @@ export async function logLesson(
     sheetMusicUrl?: string
 ) {
     const supabase = await createClient()
-
-    // Verify user is admin
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
         return { error: 'Unauthorized' }
@@ -54,254 +52,14 @@ export async function logLesson(
         return { error: 'Only admins can log lessons' }
     }
 
-    // Get the lesson to find the student_id and date
-    const { data: lesson, error: lessonFetchError } = await supabase
-        .from('lessons')
-        .select('student_id, status, date, time, duration, zoom_link')
-        .eq('id', lessonId)
-        .single()
-
-    if (lessonFetchError || !lesson) {
-        return { error: 'Lesson not found' }
-    }
-
-    const isAlreadyCompleted = lesson.status === 'completed'
-    console.log('logLesson: Starting update', { lessonId, notes: notes?.substring(0, 50), isAlreadyCompleted })
-
-    // STEP 1: Update the lesson in database FIRST (critical path)
-    const { error: lessonError } = await supabase
-        .from('lessons')
-        .update({
-            status: 'completed',
-            notes,
-            video_url: videoUrl || null,
-            sheet_music_url: sheetMusicUrl || null
-        })
-        .eq('id', lessonId)
-
-    if (lessonError) {
-        console.error('logLesson: Update failed', lessonError)
-        return { error: lessonError.message }
-    }
-
-    console.log('logLesson: Database update successful')
-
-    // STEP 2: Deduct 1 credit ONLY if it wasn't already completed
-    // Also save the new balance as credit_snapshot for receipt display
-    if (!isAlreadyCompleted) {
-        const { data: studentCredits } = await supabase
-            .from('profiles')
-            .select('credits')
-            .eq('id', lesson.student_id)
-            .single()
-
-        if (studentCredits) {
-            const startingBalance = studentCredits.credits
-            const newBalance = startingBalance - 1
-
-            // Update student's credit balance
-            await supabase
-                .from('profiles')
-                .update({ credits: newBalance })
-                .eq('id', lesson.student_id)
-
-            // Save both snapshots: before and after
-            await supabase
-                .from('lessons')
-                .update({
-                    credit_snapshot_before: startingBalance,
-                    credit_snapshot: newBalance
-                })
-                .eq('id', lessonId)
-
-            console.log('logLesson: Credit deducted, snapshot saved:', startingBalance, '->', newBalance)
-        }
-    }
-
-    // STEP 3: Auto-create next week's lesson (only on first completion)
-    if (!isAlreadyCompleted && lesson.date && lesson.time) {
-        try {
-            const currentLessonDate = new Date(`${lesson.date}T00:00:00`)
-            const nextWeekDate = addDays(currentLessonDate, 7)
-            const nextWeekDateStr = format(nextWeekDate, 'yyyy-MM-dd')
-
-            // Check if a lesson already exists for this student on that date
-            const { data: existingLesson } = await supabase
-                .from('lessons')
-                .select('id')
-                .eq('student_id', lesson.student_id)
-                .eq('date', nextWeekDateStr)
-                .neq('status', 'cancelled')
-                .maybeSingle()
-
-            if (!existingLesson) {
-                const { error: createError } = await supabase
-                    .from('lessons')
-                    .insert({
-                        student_id: lesson.student_id,
-                        date: nextWeekDateStr,
-                        time: lesson.time,
-                        duration: lesson.duration || 60,
-                        status: 'scheduled',
-                        zoom_link: lesson.zoom_link || null,
-                    })
-
-                if (createError) {
-                    console.error('logLesson: Auto-create next lesson failed:', createError)
-                } else {
-                    console.log(`logLesson: Auto-created next lesson for ${nextWeekDateStr} at ${lesson.time}`)
-
-                    // Send scheduling notification email (fire-and-forget)
-                    if (resend) {
-                        (async () => {
-                            try {
-                                const { data: student } = await supabase
-                                    .from('profiles')
-                                    .select('name, email')
-                                    .eq('id', lesson.student_id)
-                                    .single()
-
-                                if (!student?.email) return
-
-                                const { data: adminData } = await supabase
-                                    .from('profiles')
-                                    .select('name, email, studio_name')
-                                    .eq('id', user!.id)
-                                    .single()
-
-                                const studioName = adminData?.studio_name || 'Lionel Yu Piano Studio'
-                                const adminName = adminData?.name === 'Professor Lionel' ? 'Professor Lionel Yu' : (adminData?.name || 'Teacher')
-
-                                const dateObj = new Date(`${nextWeekDateStr}T00:00:00`)
-                                const formattedDate = dateObj.toLocaleDateString('en-US', {
-                                    month: 'long', day: 'numeric', year: 'numeric'
-                                })
-
-                                const [h, m] = (lesson.time || '12:00').split(':')
-                                const hn = parseInt(h, 10)
-                                const ap = hn >= 12 ? 'pm' : 'am'
-                                const h12 = hn % 12 || 12
-                                const formattedTime = `${h12}:${m}${ap} PST`
-                                const dur = lesson.duration || 60
-
-                                const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
-
-                                // Email to student
-                                await resend.emails.send({
-                                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                                    to: student.email,
-                                    subject: emailSubject,
-                                    react: LessonScheduledEmail({
-                                        studentName: student.name || 'Student',
-                                        date: formattedDate,
-                                        time: formattedTime,
-                                        duration: dur,
-                                        zoomLink: lesson.zoom_link || null,
-                                        recipientName: student.name || 'Student',
-                                        studioName
-                                    })
-                                })
-                                console.log('logLesson: Auto-schedule email sent to', student.email)
-
-                                // Email to teacher
-                                if (adminData?.email) {
-                                    await resend.emails.send({
-                                        from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                                        to: adminData.email,
-                                        subject: emailSubject,
-                                        react: LessonScheduledEmail({
-                                            studentName: student.name || 'Student',
-                                            date: formattedDate,
-                                            time: formattedTime,
-                                            duration: dur,
-                                            zoomLink: lesson.zoom_link || null,
-                                            recipientName: adminName,
-                                            studioName
-                                        })
-                                    })
-                                }
-                            } catch (emailErr) {
-                                console.error('logLesson: Auto-schedule email failed (non-blocking):', emailErr)
-                            }
-                        })()
-                    }
-                }
-            } else {
-                console.log(`logLesson: Lesson already exists for ${nextWeekDateStr}, skipping auto-create`)
-            }
-        } catch (autoCreateError) {
-            console.error('logLesson: Auto-create next lesson error:', autoCreateError)
-        }
-    }
-
-    // STEP 4: Revalidate paths immediately so UI updates
-    revalidatePath('/admin')
-    revalidatePath('/student')
-
-    // STEP 4: Fire-and-forget email (async IIFE, not awaited)
-    // This ensures the function returns success immediately
-    if (resend) {
-        (async () => {
-            try {
-                // Fetch student details for email
-                const { data: student } = await supabase
-                    .from('profiles')
-                    .select('name, email')
-                    .eq('id', lesson.student_id)
-                    .single()
-
-                if (!student?.email) {
-                    console.log('logLesson: No student email, skipping notification')
-                    return
-                }
-
-                // Dynamic import to avoid client bundler issues
-                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
-
-                // Format date nicely
-                const dateObj = new Date(`${lesson.date}T00:00:00`)
-                const formattedDate = dateObj.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
-                })
-
-                // Extract sheet music filename from URL
-                let sheetMusicFileName: string | undefined
-                if (sheetMusicUrl) {
-                    try {
-                        const url = new URL(sheetMusicUrl)
-                        const pathname = decodeURIComponent(url.pathname)
-                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
-                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
-                    } catch {
-                        sheetMusicFileName = 'Sheet Music.pdf'
-                    }
-                }
-
-                await resend.emails.send({
-                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: student.email,
-                    subject: `Lesson Notes: ${formattedDate}`,
-                    react: LessonLoggedEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDate,
-                        notes: notes,
-                        sheetMusicUrl: sheetMusicUrl || undefined,
-                        sheetMusicFileName
-                    })
-                })
-                console.log('logLesson: Email sent to', student.email)
-            } catch (emailError) {
-                console.error('logLesson: Email failed (non-blocking):', emailError)
-                // Don't throw - this is fire-and-forget
-            }
-        })()
-    }
-
-    console.log('logLesson: Returning success')
-    return { success: true }
+    return logLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        lessonId,
+        notes,
+        videoUrl,
+        sheetMusicUrl,
+    })
 }
 
 
