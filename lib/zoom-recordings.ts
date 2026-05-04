@@ -20,7 +20,16 @@ export function getDropboxClient(): Dropbox {
     if (!refreshToken || !clientId || !clientSecret) {
         throw new Error('Missing Dropbox credentials (DROPBOX_REFRESH_TOKEN / DROPBOX_CLIENT_ID / DROPBOX_CLIENT_SECRET)')
     }
-    return new Dropbox({ clientId, clientSecret, refreshToken })
+    // Pass fetch explicitly: in Next.js's serverless bundle the Dropbox SDK
+    // can't auto-detect the global fetch and dies with "this.fetch is not a
+    // function" inside filesUpload. Works locally without this because tsx
+    // exposes globals differently.
+    return new Dropbox({
+        clientId,
+        clientSecret,
+        refreshToken,
+        fetch: fetch.bind(globalThis),
+    })
 }
 
 export function pickPrimaryRecordingFile(files: ZoomRecordingFile[]): ZoomRecordingFile | null {
