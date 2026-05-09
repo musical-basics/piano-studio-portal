@@ -18,7 +18,7 @@ export async function GET(
 
     const { data: student, error } = await ctx.client
         .from('profiles')
-        .select('id, name, email, phone, credits, credits_total, balance_due, status, timezone, parent_email, created_at')
+        .select('id, name, email, phone, credits, credits_total, balance_due, status, timezone, parent_email, lesson_day, lesson_time, lesson_duration, created_at')
         .eq('id', id)
         .eq('role', 'student')
         .single()

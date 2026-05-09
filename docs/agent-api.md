@@ -79,7 +79,7 @@ Response:
 
 ### `GET /students/:id`
 
-Fetch one student plus their upcoming (non-cancelled, today-or-later) lessons.
+Fetch one student plus their upcoming (non-cancelled, today-or-later) lessons. The `student` object includes the regular weekly lesson defaults (`lesson_day`, `lesson_time`, `lesson_duration`, `timezone`) — these are the source-of-truth fields edited via `PATCH /students/:id/settings`.
 
 ```bash
 curl -H "Authorization: Bearer $AGENT_API_SECRET" \
@@ -89,7 +89,17 @@ curl -H "Authorization: Bearer $AGENT_API_SECRET" \
 Response:
 ```json
 {
-  "student": { "id": "uuid", "name": "...", "email": "...", "parent_email": "..." /* ... */ },
+  "student": {
+    "id": "uuid",
+    "name": "...",
+    "email": "...",
+    "parent_email": "...",
+    "lesson_day": "Thursday",
+    "lesson_time": "18:00",
+    "lesson_duration": 30,
+    "timezone": "America/Los_Angeles",
+    "status": "active"
+  },
   "upcomingLessons": [
     { "id": "uuid", "date": "2026-04-28", "time": "16:00", "duration": 60, "status": "scheduled", "zoom_link": "https://…", "notes": null }
   ]
@@ -117,6 +127,66 @@ curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid> \
 
 Response: `{ "student": { "id": "uuid", "status": "inactive", /* ... */ } }`
 400 if `status` is missing/invalid. 404 if the id isn't a student.
+
+> Use `PATCH /students/:id/settings` (below) to change the student's regular weekly lesson day/time/duration/timezone. The bare `/students/:id` PATCH only accepts `status`.
+
+### `PATCH /students/:id/settings`
+
+Update a student's **regular weekly lesson defaults** — the source-of-truth fields edited from the admin "Edit Student" UI. All fields are optional; only the fields you send are updated.
+
+This is the right endpoint for changing things like "Nate's regular lesson is now Thursdays at 6 PM, 30 minutes." It does **not** reschedule existing lessons — it only changes the default template used when generating future weekly lessons.
+
+Body:
+```json
+{
+  "lesson_day": "Thursday",
+  "lesson_time": "18:00",
+  "lesson_duration": 30,
+  "timezone": "America/Los_Angeles",
+  "status": "active"
+}
+```
+
+Validation:
+- `lesson_day`: a day name, one of `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`, `Sunday` (case-insensitive on input; stored capitalized).
+- `lesson_time`: 24-hour `HH:MM` (e.g. `"18:00"`, `"09:30"`).
+- `lesson_duration`: positive integer minutes (typically `30`, `45`, or `60`).
+- `timezone`: a valid IANA timezone string (e.g. `"America/Los_Angeles"`, `"America/New_York"`).
+- `status`: `"active"` or `"inactive"`.
+
+Send `null` for any field to clear it. Sending an empty body, or a body where every field is `undefined`, returns 400.
+
+```bash
+curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid>/settings \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lesson_day": "Thursday",
+    "lesson_time": "18:00",
+    "lesson_duration": 30,
+    "timezone": "America/Los_Angeles",
+    "status": "active"
+  }'
+```
+
+Response:
+```json
+{
+  "student": {
+    "id": "b8edc751-854a-4716-b520-7112d13f7b69",
+    "name": "Nate Mahon",
+    "email": "...",
+    "lesson_day": "Thursday",
+    "lesson_time": "18:00",
+    "lesson_duration": 30,
+    "timezone": "America/Los_Angeles",
+    "status": "active",
+    "updated_at": "2026-05-08T..."
+  }
+}
+```
+
+400 on invalid field values. 404 if the id isn't a student.
 
 ### `POST /students/:id/credits`
 
@@ -433,6 +503,7 @@ That doc is authoritative; if it ever conflicts with these instructions, the doc
 Capabilities (summary; see discovery doc for details):
 - List students: GET /students
 - Update a student's status (active/inactive): PATCH /students/<id> {status}
+- Update a student's weekly lesson defaults (day/time/duration/timezone/status): PATCH /students/<id>/settings
 - Adjust a student's credits: POST /students/<id>/credits {delta} or {set}
 - Thread inbox summary (admin perspective): GET /threads
 - Read messages with a student: GET /messages?student_id=…
