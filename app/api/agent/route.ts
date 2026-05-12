@@ -20,6 +20,7 @@ Core endpoints:
 - GET /students/:id
 - PATCH /students/:id           body: { status: "active" | "inactive" }
 - PATCH /students/:id/settings  body: { lesson_day?, lesson_time?, lesson_duration?, timezone?, status? }
+- PATCH /students/:id/profile   body: { name?, phone?, parent_email? }
 - POST /students/:id/credits    body: { delta: integer } or { set: integer >= 0 }
 - GET /threads
 - GET /messages?student_id=<uuid>

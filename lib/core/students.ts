@@ -182,6 +182,132 @@ export async function updateStudentSettingsCore(
     return { student: data }
 }
 
+export type UpdateStudentProfileResult =
+    | { student: Record<string, any> }
+    | { error: string }
+
+const ALLOWED_PROFILE_FIELDS = ['name', 'phone', 'parent_email'] as const
+type AllowedProfileField = (typeof ALLOWED_PROFILE_FIELDS)[number]
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Update a student's basic profile fields (display name and contact info).
+ *
+ * Strict whitelist — any unknown field returns 400 rather than being silently
+ * ignored. Preserves credits, lessons, messages, stripe ids, public_id, and
+ * all weekly-schedule settings; this endpoint never touches them.
+ *
+ * Fields outside the whitelist live on their own dedicated endpoints:
+ *   - status                    -> PATCH /students/:id           {status}
+ *   - lesson_day/time/duration  -> PATCH /students/:id/settings
+ *   - timezone                  -> PATCH /students/:id/settings
+ *   - credits                   -> POST  /students/:id/credits
+ *
+ * `email` is intentionally NOT included here because it requires syncing the
+ * matching Supabase `auth.users` row; add a separate endpoint for that.
+ */
+export async function updateStudentProfileCore(
+    client: DbClient,
+    studentId: string,
+    input: Record<string, unknown>,
+): Promise<UpdateStudentProfileResult> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { error: 'Body must be a JSON object' }
+    }
+
+    const unknownKeys = Object.keys(input).filter(
+        (k) => !(ALLOWED_PROFILE_FIELDS as readonly string[]).includes(k),
+    )
+    if (unknownKeys.length > 0) {
+        return {
+            error:
+                `Unsupported field(s): ${unknownKeys.join(', ')}. ` +
+                `Allowed: ${ALLOWED_PROFILE_FIELDS.join(', ')}. ` +
+                `Use PATCH /students/:id/settings for lesson_day/lesson_time/lesson_duration/timezone, ` +
+                `PATCH /students/:id for status, and POST /students/:id/credits for credit changes.`,
+        }
+    }
+
+    const update: Record<string, any> = {}
+
+    if ('name' in input) {
+        const raw = input.name
+        if (raw === null) {
+            return { error: 'name cannot be null' }
+        }
+        if (typeof raw !== 'string') {
+            return { error: 'name must be a string' }
+        }
+        const trimmed = raw.trim()
+        if (trimmed.length === 0) {
+            return { error: 'name cannot be empty' }
+        }
+        if (trimmed.length > 200) {
+            return { error: 'name is too long (max 200 chars)' }
+        }
+        update.name = trimmed
+    }
+
+    if ('phone' in input) {
+        const raw = input.phone
+        if (raw === null || raw === '') {
+            update.phone = null
+        } else if (typeof raw !== 'string') {
+            return { error: 'phone must be a string or null' }
+        } else {
+            const trimmed = raw.trim()
+            if (trimmed.length > 50) {
+                return { error: 'phone is too long (max 50 chars)' }
+            }
+            update.phone = trimmed
+        }
+    }
+
+    if ('parent_email' in input) {
+        const raw = input.parent_email
+        if (raw === null || raw === '') {
+            update.parent_email = null
+        } else if (typeof raw !== 'string') {
+            return { error: 'parent_email must be a string or null' }
+        } else {
+            const trimmed = raw.trim()
+            if (!EMAIL_REGEX.test(trimmed)) {
+                return { error: 'parent_email must be a valid email address' }
+            }
+            update.parent_email = trimmed
+        }
+    }
+
+    if (Object.keys(update).length === 0) {
+        return {
+            error: `No updatable fields provided. Allowed: ${ALLOWED_PROFILE_FIELDS.join(', ')}`,
+        }
+    }
+
+    update.updated_at = new Date().toISOString()
+
+    const { data, error } = await client
+        .from('profiles')
+        .update(update)
+        .eq('id', studentId)
+        .eq('role', 'student')
+        .select()
+        .single()
+
+    if (error) {
+        if (error.code === 'PGRST116') {
+            return { error: 'Student not found' }
+        }
+        console.error('updateStudentProfileCore error:', error)
+        return { error: error.message }
+    }
+    if (!data) return { error: 'Student not found' }
+
+    revalidatePath('/admin')
+    return { student: data }
+}
+
 export type AdjustCreditsArgs =
     | { mode: 'delta'; amount: number }
     | { mode: 'set'; amount: number }

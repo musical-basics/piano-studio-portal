@@ -188,6 +188,54 @@ Response:
 
 400 on invalid field values. 404 if the id isn't a student.
 
+### `PATCH /students/:id/profile`
+
+Update a student's **basic profile fields** (display name and contact info). Use this to rename a student or fix a typo in their phone / parent email without disturbing any other state.
+
+Preserves: lesson history, credits, balance, messages, weekly schedule settings, status, timezone, Stripe/customer ids, `public_id`, and the underlying `auth.users` row. Only the whitelisted fields below are mutated.
+
+Allowed fields (whitelist — anything else returns 400):
+
+| Field          | Type              | Notes |
+|----------------|-------------------|-------|
+| `name`         | non-empty string  | The student's display name. Trimmed; max 200 chars. |
+| `phone`        | string or null    | Trimmed; max 50 chars. Send `null` or `""` to clear. |
+| `parent_email` | string or null    | Must look like an email. Send `null` or `""` to clear. |
+
+For other mutations:
+- `status` — `PATCH /students/:id`
+- `lesson_day` / `lesson_time` / `lesson_duration` / `timezone` — `PATCH /students/:id/settings`
+- `credits` — `POST /students/:id/credits`
+- `email` (the login email synced to `auth.users`) is intentionally **not** supported here.
+
+```bash
+curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid>/profile \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Ila Daigle" }'
+```
+
+Response:
+```json
+{
+  "student": {
+    "id": "ea536caa-89cf-4997-a649-577f6c64f990",
+    "name": "Ila Daigle",
+    "email": "...",
+    "phone": "...",
+    "parent_email": "...",
+    "status": "active",
+    "timezone": "America/Los_Angeles",
+    "lesson_day": "Thursday",
+    "lesson_time": "16:00",
+    "lesson_duration": 30,
+    "updated_at": "2026-05-11T..."
+  }
+}
+```
+
+400 on unknown fields, empty `name`, or invalid `parent_email`. 404 if the id isn't a student.
+
 ### `POST /students/:id/credits`
 
 Adjust a student's credit balance. Provide **exactly one** of `delta` (relative) or `set` (absolute):
@@ -504,6 +552,7 @@ Capabilities (summary; see discovery doc for details):
 - List students: GET /students
 - Update a student's status (active/inactive): PATCH /students/<id> {status}
 - Update a student's weekly lesson defaults (day/time/duration/timezone/status): PATCH /students/<id>/settings
+- Update a student's basic profile (name / phone / parent_email): PATCH /students/<id>/profile
 - Adjust a student's credits: POST /students/<id>/credits {delta} or {set}
 - Thread inbox summary (admin perspective): GET /threads
 - Read messages with a student: GET /messages?student_id=…
