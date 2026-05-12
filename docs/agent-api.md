@@ -71,11 +71,18 @@ Response:
       "balance_due": 0,
       "status": "active",
       "timezone": "America/Los_Angeles",
+      "preferred_name": "Rob",
+      "parent_contact_name": null,
+      "contact_salutation": null,
+      "primary_contact_role": "student",
+      "salutation": "Rob",
       "created_at": "2025-09-01T…"
     }
   ]
 }
 ```
+
+The `salutation` field is **server-derived**: it's the value to address the recipient as in messages. Precedence order: explicit `contact_salutation` → first word of `parent_contact_name` (if `primary_contact_role = "parent"`) → `preferred_name` → first word of `name`. Treat it as read-only — write to the underlying fields via `PATCH /students/:id/profile`.
 
 ### `GET /students/:id`
 
@@ -196,11 +203,15 @@ Preserves: lesson history, credits, balance, messages, weekly schedule settings,
 
 Allowed fields (whitelist — anything else returns 400):
 
-| Field          | Type              | Notes |
-|----------------|-------------------|-------|
-| `name`         | non-empty string  | The student's display name. Trimmed; max 200 chars. |
-| `phone`        | string or null    | Trimmed; max 50 chars. Send `null` or `""` to clear. |
-| `parent_email` | string or null    | Must look like an email. Send `null` or `""` to clear. |
+| Field                  | Type                                     | Notes |
+|------------------------|------------------------------------------|-------|
+| `name`                 | non-empty string                         | The student's display name (legal/full name). Trimmed; max 200 chars. |
+| `phone`                | string or null                           | Trimmed; max 50 chars. Send `null` or `""` to clear. |
+| `parent_email`         | string or null                           | Must look like an email. Send `null` or `""` to clear. |
+| `preferred_name`       | string or null                           | Display nickname for the student (e.g. `"Rob"` for Robert). Max 100 chars. |
+| `parent_contact_name`  | string or null                           | Name of the primary parent/guardian Lionel talks to (e.g. `"Amanda Daigle"`). Max 200 chars. |
+| `contact_salutation`   | string or null                           | Explicit override for how to address the recipient in messages (e.g. `"Rob"`, `"Amanda"`). Max 100 chars. When set, takes precedence over auto-derived salutation. |
+| `primary_contact_role` | `"student"`, `"parent"`, or null         | Who Lionel actually communicates with. NULL is treated as `"student"`. Drives salutation routing when `contact_salutation` is not set. |
 
 For other mutations:
 - `status` — `PATCH /students/:id`
@@ -209,10 +220,27 @@ For other mutations:
 - `email` (the login email synced to `auth.users`) is intentionally **not** supported here.
 
 ```bash
+# Rename a student
 curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid>/profile \
   -H "Authorization: Bearer $AGENT_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{ "name": "Ila Daigle" }'
+
+# Set contact routing (Ila's parent Amanda is the actual recipient)
+curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid>/profile \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_contact_name": "Amanda Daigle",
+    "primary_contact_role": "parent",
+    "contact_salutation": "Amanda"
+  }'
+
+# Give a student a nickname for display + salutation
+curl -X PATCH https://lessons.musicalbasics.com/api/agent/students/<uuid>/profile \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{ "preferred_name": "Rob", "primary_contact_role": "student" }'
 ```
 
 Response:
@@ -229,12 +257,19 @@ Response:
     "lesson_day": "Thursday",
     "lesson_time": "16:00",
     "lesson_duration": 30,
+    "preferred_name": null,
+    "parent_contact_name": "Amanda Daigle",
+    "contact_salutation": "Amanda",
+    "primary_contact_role": "parent",
+    "salutation": "Amanda",
     "updated_at": "2026-05-11T..."
   }
 }
 ```
 
-400 on unknown fields, empty `name`, or invalid `parent_email`. 404 if the id isn't a student.
+`salutation` in the response is server-derived (read-only). It's what the agent should use as "Hi {salutation}," when composing outbound messages.
+
+400 on unknown fields, empty `name`, invalid `parent_email`, invalid `primary_contact_role`, or a field exceeding its max length. 404 if the id isn't a student.
 
 ### `POST /students/:id/credits`
 
@@ -293,8 +328,13 @@ Response:
   "threads": [
     {
       "student_id": "uuid",
-      "student_name": "Jane Doe",
-      "student_email": "jane@example.com",
+      "student_name": "Edwin Guo",
+      "student_email": "edwin@example.com",
+      "student_preferred_name": null,
+      "parent_contact_name": "Zou Guo",
+      "contact_salutation": "Zou",
+      "primary_contact_role": "parent",
+      "salutation": "Zou",
       "has_unread_from_student": true,
       "unread_count": 2,
       "last_message_at": "2026-04-22T18:03:22Z",
@@ -305,7 +345,7 @@ Response:
 }
 ```
 
-`unread_count` counts only inbound (student → admin) messages with `is_read = false`. `last_message_from` is `"student"`, `"admin"`, or `null` if the thread has no messages. Students with no messages yet are still included (with nulls).
+`unread_count` counts only inbound (student → admin) messages with `is_read = false`. `last_message_from` is `"student"`, `"admin"`, or `null` if the thread has no messages. Students with no messages yet are still included (with nulls). `salutation` is server-derived from the contact fields — use it as the greeting when composing replies.
 
 ### `GET /messages?student_id=<uuid>`
 
@@ -552,7 +592,7 @@ Capabilities (summary; see discovery doc for details):
 - List students: GET /students
 - Update a student's status (active/inactive): PATCH /students/<id> {status}
 - Update a student's weekly lesson defaults (day/time/duration/timezone/status): PATCH /students/<id>/settings
-- Update a student's basic profile (name / phone / parent_email): PATCH /students/<id>/profile
+- Update a student's basic profile (name / phone / parent_email, plus preferred_name, parent_contact_name, contact_salutation, primary_contact_role): PATCH /students/<id>/profile
 - Adjust a student's credits: POST /students/<id>/credits {delta} or {set}
 - Thread inbox summary (admin perspective): GET /threads
 - Read messages with a student: GET /messages?student_id=…
@@ -569,6 +609,7 @@ Rules:
 - For inbox-style questions ("who has unread messages?", "who have I not replied to?"), prefer GET /threads over inspecting per-message is_read flags. The is_read column is per-recipient, so outbound admin messages with is_read: false do NOT indicate admin-side unread.
 - Before scheduling or rescheduling, fetch the relevant date range with GET /lessons to avoid conflicts. The server will reject slot conflicts with HTTP 400.
 - The admin is the sender of every message you send. Write in a warm, concise voice that matches the studio's existing style.
+- When addressing a student in a message, use the `salutation` field from `GET /students/:id` or `GET /threads` as the greeting (e.g. "Hi Rob,", "Hi Amanda,"). Do not invent or shorten names yourself — that field already encodes Lionel's preferences (preferred nickname, parent contact, explicit overrides).
 - Cancellation is immediate and emails the student — confirm with the user before calling DELETE unless they have already authorized it.
 - Changing a student's status is a low-risk but visible action; confirm intent before calling PATCH /students/<id>.
 - Credit changes affect real money. Always confirm intent with the user before POST /students/<id>/credits. Prefer "set" over "delta" if you're retrying a request. Never adjust credits silently as a side-effect of another action.

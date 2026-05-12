@@ -186,10 +186,59 @@ export type UpdateStudentProfileResult =
     | { student: Record<string, any> }
     | { error: string }
 
-const ALLOWED_PROFILE_FIELDS = ['name', 'phone', 'parent_email'] as const
+const ALLOWED_PROFILE_FIELDS = [
+    'name',
+    'phone',
+    'parent_email',
+    'preferred_name',
+    'parent_contact_name',
+    'contact_salutation',
+    'primary_contact_role',
+] as const
 type AllowedProfileField = (typeof ALLOWED_PROFILE_FIELDS)[number]
 
+const ALLOWED_CONTACT_ROLES = ['student', 'parent'] as const
+export type PrimaryContactRole = (typeof ALLOWED_CONTACT_ROLES)[number]
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Resolve the "address as" salutation for outbound messages.
+ *
+ * Order of precedence:
+ *   1. Explicit contact_salutation (whatever the admin typed)
+ *   2. If primary_contact_role = 'parent' and parent_contact_name set → its first word
+ *   3. preferred_name (the student's nickname)
+ *   4. First word of name
+ *   5. null
+ *
+ * Pure helper, kept in core so UI, agent API, and email templates share the rule.
+ */
+export function resolveSalutation(profile: {
+    name?: string | null
+    preferred_name?: string | null
+    parent_contact_name?: string | null
+    contact_salutation?: string | null
+    primary_contact_role?: string | null
+}): string | null {
+    if (profile.contact_salutation && profile.contact_salutation.trim()) {
+        return profile.contact_salutation.trim()
+    }
+    if (
+        profile.primary_contact_role === 'parent' &&
+        profile.parent_contact_name &&
+        profile.parent_contact_name.trim()
+    ) {
+        return profile.parent_contact_name.trim().split(/\s+/)[0]
+    }
+    if (profile.preferred_name && profile.preferred_name.trim()) {
+        return profile.preferred_name.trim()
+    }
+    if (profile.name && profile.name.trim()) {
+        return profile.name.trim().split(/\s+/)[0]
+    }
+    return null
+}
 
 /**
  * Update a student's basic profile fields (display name and contact info).
@@ -276,6 +325,50 @@ export async function updateStudentProfileCore(
                 return { error: 'parent_email must be a valid email address' }
             }
             update.parent_email = trimmed
+        }
+    }
+
+    const nameLikeField = (key: 'preferred_name' | 'parent_contact_name' | 'contact_salutation', maxLen: number) => {
+        if (!(key in input)) return null
+        const raw = (input as any)[key]
+        if (raw === null || raw === '') {
+            update[key] = null
+            return null
+        }
+        if (typeof raw !== 'string') {
+            return `${key} must be a string or null`
+        }
+        const trimmed = raw.trim()
+        if (trimmed.length === 0) {
+            update[key] = null
+            return null
+        }
+        if (trimmed.length > maxLen) {
+            return `${key} is too long (max ${maxLen} chars)`
+        }
+        update[key] = trimmed
+        return null
+    }
+
+    for (const [key, maxLen] of [
+        ['preferred_name', 100],
+        ['parent_contact_name', 200],
+        ['contact_salutation', 100],
+    ] as const) {
+        const err = nameLikeField(key, maxLen)
+        if (err) return { error: err }
+    }
+
+    if ('primary_contact_role' in input) {
+        const raw = input.primary_contact_role
+        if (raw === null || raw === '') {
+            update.primary_contact_role = null
+        } else if (typeof raw !== 'string' || !(ALLOWED_CONTACT_ROLES as readonly string[]).includes(raw)) {
+            return {
+                error: `primary_contact_role must be one of: ${ALLOWED_CONTACT_ROLES.join(', ')}, or null`,
+            }
+        } else {
+            update.primary_contact_role = raw
         }
     }
 

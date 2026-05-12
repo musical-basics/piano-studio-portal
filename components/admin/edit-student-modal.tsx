@@ -64,6 +64,9 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
     const [timezone, setTimezone] = useState(
         student.timezone || "America/Los_Angeles"
     )
+    const [primaryContactRole, setPrimaryContactRole] = useState<string>(
+        ((student as any).primary_contact_role as string) || "student"
+    )
     const { toast } = useToast()
     const router = useRouter()
 
@@ -73,6 +76,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
         formData.set('lessonTime', lessonTime)
         formData.set('timezone', timezone)
         formData.set('pricingPlanId', pricingPlanId)
+        formData.set('primaryContactRole', primaryContactRole)
 
         try {
             const result = await updateStudent(formData)
@@ -154,6 +158,20 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="preferredName">Preferred Name / Nickname</Label>
+                        <Input
+                            id="preferredName"
+                            name="preferredName"
+                            type="text"
+                            defaultValue={(student as any).preferred_name || ''}
+                            placeholder='e.g. "Rob" for Robert'
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Used in the admin UI and as the default message salutation when you address the student directly.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
                         <Label htmlFor="parentEmail">Parent Email (Optional - for CC)</Label>
                         <Input
                             id="parentEmail"
@@ -162,6 +180,53 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             defaultValue={student.parent_email || ''}
                             placeholder="parent@example.com"
                         />
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="parentContactName">Parent / Contact Name</Label>
+                        <Input
+                            id="parentContactName"
+                            name="parentContactName"
+                            type="text"
+                            defaultValue={(student as any).parent_contact_name || ''}
+                            placeholder='e.g. "Amanda Daigle", "Zou Guo"'
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            The parent or guardian Lionel actually communicates with about this student.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Primary Contact</Label>
+                        <Select
+                            value={primaryContactRole}
+                            onValueChange={setPrimaryContactRole}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Who do you address in messages?" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="student">The student</SelectItem>
+                                <SelectItem value="parent">The parent / contact</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                            Drives default routing for outbound message addressing.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="contactSalutation">Address As (Override)</Label>
+                        <Input
+                            id="contactSalutation"
+                            name="contactSalutation"
+                            type="text"
+                            defaultValue={(student as any).contact_salutation || ''}
+                            placeholder='e.g. "Rob", "Amanda"'
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Optional. If set, this is the exact name Lionel will use when greeting the recipient. Falls back to preferred name or first name of the parent contact.
+                        </p>
                     </div>
 
                     <div className="space-y-2">

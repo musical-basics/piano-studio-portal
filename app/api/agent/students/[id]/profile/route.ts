@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyAgentRequest, agentOk, agentError } from '@/lib/agent/auth'
-import { updateStudentProfileCore } from '@/lib/core/students'
+import { updateStudentProfileCore, resolveSalutation } from '@/lib/core/students'
 
 export async function PATCH(
     request: NextRequest,
@@ -39,6 +39,11 @@ export async function PATCH(
             lesson_day: s.lesson_day,
             lesson_time: s.lesson_time,
             lesson_duration: s.lesson_duration,
+            preferred_name: s.preferred_name ?? null,
+            parent_contact_name: s.parent_contact_name ?? null,
+            contact_salutation: s.contact_salutation ?? null,
+            primary_contact_role: s.primary_contact_role ?? null,
+            salutation: resolveSalutation(s),
             updated_at: s.updated_at,
         },
     })

@@ -179,6 +179,15 @@ export async function updateStudent(formData: FormData) {
             }
         }
 
+        const preferredNameRaw = (formData.get('preferredName') as string | null)?.trim() || null
+        const parentContactNameRaw = (formData.get('parentContactName') as string | null)?.trim() || null
+        const contactSalutationRaw = (formData.get('contactSalutation') as string | null)?.trim() || null
+        const primaryContactRoleRaw = formData.get('primaryContactRole') as string | null
+        const primaryContactRole =
+            primaryContactRoleRaw === 'student' || primaryContactRoleRaw === 'parent'
+                ? primaryContactRoleRaw
+                : null
+
         // Step 2: Update profile in public.profiles
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
@@ -193,6 +202,10 @@ export async function updateStudent(formData: FormData) {
                 timezone: formData.get('timezone') as string || null,
                 status: (formData.get('status') as 'active' | 'inactive') || null,
                 pricing_plan_id: formData.get('pricingPlanId') as string || null,
+                preferred_name: preferredNameRaw,
+                parent_contact_name: parentContactNameRaw,
+                contact_salutation: contactSalutationRaw,
+                primary_contact_role: primaryContactRole,
                 ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })

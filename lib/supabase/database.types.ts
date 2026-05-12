@@ -39,6 +39,10 @@ export interface Database {
                     public_id: string | null
                     status: 'active' | 'inactive' | null
                     dropbox_recording_folder: string | null
+                    preferred_name: string | null
+                    parent_contact_name: string | null
+                    contact_salutation: string | null
+                    primary_contact_role: 'student' | 'parent' | null
                     created_at: string
                     updated_at: string
                 }

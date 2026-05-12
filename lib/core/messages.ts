@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { MessageNotification } from '@/components/emails/message-notification'
 import type { DbClient } from '@/lib/supabase/admin'
 import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
+import { resolveSalutation } from '@/lib/core/students'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -130,6 +131,11 @@ export type ThreadSummary = {
     student_id: string
     student_name: string | null
     student_email: string | null
+    student_preferred_name: string | null
+    parent_contact_name: string | null
+    contact_salutation: string | null
+    primary_contact_role: 'student' | 'parent' | null
+    salutation: string | null
     has_unread_from_student: boolean
     unread_count: number
     last_message_at: string | null
@@ -174,6 +180,11 @@ export async function listThreadsCore(
             student_id: s.id,
             student_name: s.name ?? null,
             student_email: s.email ?? null,
+            student_preferred_name: s.preferred_name ?? null,
+            parent_contact_name: s.parent_contact_name ?? null,
+            contact_salutation: s.contact_salutation ?? null,
+            primary_contact_role: (s.primary_contact_role ?? null) as 'student' | 'parent' | null,
+            salutation: resolveSalutation(s),
             has_unread_from_student: (s.unreadCount ?? 0) > 0,
             unread_count: s.unreadCount ?? 0,
             last_message_at: last?.created_at ?? null,
