@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
+import { studioNow } from '@/lib/studio-timezone'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
@@ -268,6 +269,7 @@ export type LogLessonArgs = {
     videoUrl?: string
     sheetMusicUrl?: string
     awaitNotifications?: boolean
+    completedSource?: 'agent_log' | 'zoom_webhook' | 'admin_ui' | 'system'
 }
 
 export async function logLessonCore({
@@ -278,6 +280,7 @@ export async function logLessonCore({
     videoUrl,
     sheetMusicUrl,
     awaitNotifications = false,
+    completedSource = 'agent_log',
 }: LogLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
@@ -307,6 +310,7 @@ export async function logLessonCore({
             notes,
             video_url: videoUrl || null,
             sheet_music_url: sheetMusicUrl || null,
+            completed_source: completedSource,
         })
         .eq('id', lessonId)
         .select()

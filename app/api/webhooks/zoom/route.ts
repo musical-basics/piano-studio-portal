@@ -176,6 +176,7 @@ export async function POST(req: Request) {
             adminId: lesson.student_id, // best available actor for auto-completions
             lessonId: lesson.id,
             notes: '',
+            completedSource: 'zoom_webhook',
             awaitNotifications: false,
         })
 

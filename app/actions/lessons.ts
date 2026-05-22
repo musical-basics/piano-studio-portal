@@ -59,6 +59,7 @@ export async function logLesson(
         notes,
         videoUrl,
         sheetMusicUrl,
+        completedSource: 'admin_ui',
     })
 }
 

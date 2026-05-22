@@ -1,11 +1,14 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyAgentRequest, agentOk, agentError } from '@/lib/agent/auth'
 import { listLessonsCore, scheduleLessonCore } from '@/lib/core/lessons'
+import { studioToday } from '@/lib/studio-timezone'
 
 function defaultRange() {
-    const today = new Date()
-    const start = today.toISOString().slice(0, 10)
-    const end = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const start = studioToday()
+    // Default: today + 60 days in studio time
+    const startDate = new Date(start + 'T00:00:00')
+    const endDate = new Date(startDate.getTime() + 60 * 24 * 60 * 60 * 1000)
+    const end = endDate.toISOString().slice(0, 10)
     return { start, end }
 }
 

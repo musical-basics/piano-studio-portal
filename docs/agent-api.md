@@ -437,12 +437,25 @@ Response:
     {
       "id": "uuid", "student_id": "uuid", "date": "2026-04-25", "time": "16:00",
       "duration": 60, "status": "scheduled", "zoom_link": "https://…",
+      "credit_snapshot_before": 4, "credit_snapshot": 3,
+      "completed_source": "agent_log",
       "student": { "id": "uuid", "name": "Jane Doe", "email": "..." }
     }
   ],
   "events": [ /* studio-wide events with RSVPs */ ]
 }
 ```
+
+**`completed_source`** tracks how the lesson was completed:
+| Value | Meaning |
+|---|---|
+| `agent_log` | Logged via `POST /lessons/:id/log` by this agent API |
+| `zoom_webhook` | Auto-completed when Zoom recording finished processing |
+| `admin_ui` | Logged through the admin web UI |
+| `system` | Explicit repair via `POST /lessons/:id/repair-credit` |
+| `null` | Completed before this field was added (legacy rows) |
+
+If a lesson has `status: 'completed'` but `credit_snapshot_before` and `credit_snapshot` are **both null**, that means it was completed without a credit deduction (usually `zoom_webhook` path before the fix). Use `POST /lessons/:id/repair-credit` to retroactively deduct and record the snapshot.
 
 ### `POST /lessons`
 
@@ -514,16 +527,59 @@ Response:
 ```json
 {
   "success": true,
-  "lesson": { "id": "uuid", "status": "completed", "notes": "..." },
+  "lesson": { "id": "uuid", "status": "completed", "notes": "...", "completed_source": "agent_log" },
   "next_lesson": { "id": "uuid", "status": "scheduled", "date": "2026-05-09" },
   "credit_deducted": true,
+  "credit_repaired": false,
   "previous_credits": 4,
   "new_credits": 3,
   "message": "Lesson logged. Credit deducted (4 -> 3)."
 }
 ```
 
-If the lesson was already completed, notes/material links are updated but no second credit is deducted; `credit_deducted` is `false` and both credit values are `null`. 404 if the lesson id does not exist.
+**Credit behaviour:**
+- `status = scheduled` → normal: deduct 1 credit, write snapshots, set `completed_source = 'agent_log'`
+- `status = completed` + snapshots present → true no-op: update notes/links, `credit_deducted: false`, `credit_repaired: false`
+- `status = completed` + snapshots **null** → repair path: deduct credit, write snapshots, return `credit_repaired: true` (this handles Zoom-autocompleted lessons)
+
+If `credit_repaired` is `true` in the response, tell the user explicitly — it means a missing credit deduction was retroactively applied.
+
+404 if the lesson id does not exist.
+
+### `POST /lessons/:id/repair-credit`
+
+Explicitly repairs a lesson that was completed without a credit deduction. Safe to call multiple times — if the lesson already has credit snapshots it returns `already_charged: true` and makes no changes.
+
+Typical use case: Zoom webhook completed a lesson before the credit-deduction fix was deployed, leaving `credit_snapshot_before: null` and `credit_snapshot: null`.
+
+```bash
+curl -X POST https://<your-domain>/api/agent/lessons/<lesson_id>/repair-credit \
+  -H "Authorization: Bearer $AGENT_API_SECRET"
+```
+
+No body required.
+
+Response (credit was deducted):
+```json
+{
+  "repaired": true,
+  "previous_credits": 4,
+  "new_credits": 3,
+  "message": "Credit repaired: 4 -> 3. Snapshots written."
+}
+```
+
+Response (already charged — safe no-op):
+```json
+{
+  "already_charged": true,
+  "credit_snapshot_before": 4,
+  "credit_snapshot": 3,
+  "message": "Lesson already has credit snapshots. No action taken."
+}
+```
+
+400 if the lesson is not `completed`. 404 if the lesson id does not exist.
 
 ### `DELETE /lessons/:id`
 
@@ -602,6 +658,7 @@ Capabilities (summary; see discovery doc for details):
 - Schedule a lesson: POST /lessons {student_id, date, time, duration}
 - Reschedule: PATCH /lessons/<id> {date, time, duration}
 - Log completed lesson: POST /lessons/<id>/log {notes, video_url?, sheet_music_url?}
+- Repair missing credit deduction on a completed lesson: POST /lessons/<id>/repair-credit
 - Cancel: DELETE /lessons/<id>
 
 Rules:
@@ -613,7 +670,8 @@ Rules:
 - Cancellation is immediate and emails the student — confirm with the user before calling DELETE unless they have already authorized it.
 - Changing a student's status is a low-risk but visible action; confirm intent before calling PATCH /students/<id>.
 - Credit changes affect real money. Always confirm intent with the user before POST /students/<id>/credits. Prefer "set" over "delta" if you're retrying a request. Never adjust credits silently as a side-effect of another action.
-- Logging a lesson intentionally spends one student credit. Always confirm the exact lesson before POST /lessons/<id>/log. Retrying is safe for credits after the first success because already-completed lessons do not deduct again.
+- Logging a lesson intentionally spends one student credit. Always confirm the exact lesson before POST /lessons/<id>/log. If the response includes `credit_repaired: true`, report this to the user — it means the lesson was previously completed without a deduction (e.g. by Zoom webhook) and the credit was retroactively applied. Retrying is safe for credits because already-completed lessons with snapshots do not deduct again.
+- If you see a completed lesson with `credit_snapshot_before: null` and `credit_snapshot: null`, use `POST /lessons/<id>/repair-credit` to fix the missing deduction before reporting credits to the user.
 - Never expose the bearer token or internal error traces to end users.
 ```
 
