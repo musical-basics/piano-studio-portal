@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logLessonCore } from '@/lib/core/lessons'
 import {
     downloadFromZoom,
     getDropboxClient,
@@ -157,17 +158,35 @@ export async function POST(req: Request) {
         const sharedUrl = await getOrCreateSharedLink(dbx, uploaded.path)
         log(`Share link: ${sharedUrl}`)
 
-        const { error: updateErr } = await supabase
+        // First write the video_url so it's persisted regardless of log outcome
+        const { error: videoUpdateErr } = await supabase
             .from('lessons')
-            .update({ video_url: sharedUrl, status: 'completed' })
+            .update({ video_url: sharedUrl })
             .eq('id', lesson.id)
-        if (updateErr) {
-            log(`DB update failed: ${updateErr.message}`)
-            return NextResponse.json({ error: 'db update failed', logs }, { status: 500 })
+        if (videoUpdateErr) {
+            log(`DB video_url update failed: ${videoUpdateErr.message}`)
+            return NextResponse.json({ error: 'db video_url update failed', logs }, { status: 500 })
         }
-        log(`Lesson ${lesson.id} updated.`)
+        log(`video_url saved for lesson ${lesson.id}`)
 
-        return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, logs })
+        // Route through logLessonCore so credit deduction + snapshots always happen
+        // (notes left empty — the teacher will fill them in later via the agent)
+        const logResult = await logLessonCore({
+            client: supabase as any,
+            adminId: lesson.student_id, // best available actor for auto-completions
+            lessonId: lesson.id,
+            notes: '',
+            awaitNotifications: false,
+        })
+
+        if ('error' in logResult) {
+            log(`logLessonCore error after Zoom webhook: ${logResult.error}`)
+            // Don't return 500 — video_url is already saved, credit repair can happen on note-log
+            return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, credit_warning: logResult.error, logs })
+        }
+
+        log(`logLessonCore result: credit_deducted=${logResult.credit_deducted} credit_repaired=${logResult.credit_repaired}`)
+        return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, credit_deducted: logResult.credit_deducted, logs })
     } catch (err: any) {
         const detail = err?.error?.error_summary
             || (err?.error ? JSON.stringify(err.error).slice(0, 400) : null)

@@ -55,6 +55,7 @@ export async function POST(
         lesson: result.lesson,
         next_lesson: result.next_lesson,
         credit_deducted: result.credit_deducted,
+        credit_repaired: result.credit_repaired,
         previous_credits: result.previous_credits,
         new_credits: result.new_credits,
         message: result.message,

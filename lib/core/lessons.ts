@@ -281,7 +281,7 @@ export async function logLessonCore({
 }: LogLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, status, date, time, duration, zoom_link')
+        .select('student_id, status, date, time, duration, zoom_link, credit_snapshot_before, credit_snapshot')
         .eq('id', lessonId)
         .single()
 
@@ -289,7 +289,16 @@ export async function logLessonCore({
         return { error: 'Lesson not found' }
     }
 
+    // Three possible states:
+    //   1. status = 'scheduled'                              → normal flow, deduct + snapshot
+    //   2. status = 'completed' AND snapshots are present    → true no-op, already charged
+    //   3. status = 'completed' AND snapshots are null       → Zoom webhook completed it
+    //      without going through the credit path; repair needed
     const isAlreadyCompleted = lesson.status === 'completed'
+    const hasSnapshots =
+        lesson.credit_snapshot_before !== null ||
+        lesson.credit_snapshot !== null
+    const needsCredit = !isAlreadyCompleted || (isAlreadyCompleted && !hasSnapshots)
 
     const { data: loggedLesson, error: lessonError } = await client
         .from('lessons')
@@ -312,7 +321,9 @@ export async function logLessonCore({
     let newCredits: number | null = null
     let creditDeducted = false
 
-    if (!isAlreadyCompleted) {
+    const creditRepaired = isAlreadyCompleted && !hasSnapshots
+
+    if (needsCredit) {
         const { data: studentCredits, error: studentCreditsError } = await client
             .from('profiles')
             .select('credits')
@@ -361,7 +372,7 @@ export async function logLessonCore({
     let nextLesson: any = null
     const notificationTasks: Promise<void>[] = []
 
-    if (!isAlreadyCompleted && lesson.date && lesson.time) {
+    if (!isAlreadyCompleted && !creditRepaired && lesson.date && lesson.time) {
         try {
             const currentLessonDate = new Date(`${lesson.date}T00:00:00`)
             const nextWeekDate = addDays(currentLessonDate, 7)
@@ -431,11 +442,14 @@ export async function logLessonCore({
         lesson: loggedLesson,
         next_lesson: nextLesson,
         credit_deducted: creditDeducted,
+        credit_repaired: creditRepaired,
         previous_credits: previousCredits,
         new_credits: newCredits,
-        message: creditDeducted
+        message: creditRepaired
+            ? `Lesson was already completed (via Zoom) but had no credit snapshot. Credit repaired (${previousCredits} -> ${newCredits}).`
+            : creditDeducted
             ? `Lesson logged. Credit deducted (${previousCredits} -> ${newCredits}).`
-            : 'Lesson logged. No credit deducted because it was already completed.',
+            : 'Lesson logged. No credit deducted (already completed and charged).',
     }
 }
 
