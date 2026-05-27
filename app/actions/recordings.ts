@@ -12,7 +12,9 @@ export interface DropboxRecording {
 
 
 /**
- * Fetch all video recordings inside the student's Dropbox recordings folder
+ * Fetch all video recordings inside the student's Dropbox recordings folder.
+ * Respects admin impersonation — if the cookie is set, uses the impersonated
+ * student's profile instead of the logged-in user's.
  */
 export async function getDropboxRecordings(): Promise<{ recordings: DropboxRecording[]; error?: string }> {
     try {
@@ -24,11 +26,38 @@ export async function getDropboxRecordings(): Promise<{ recordings: DropboxRecor
             return { recordings: [], error: 'Unauthorized' }
         }
 
+        // Resolve effective user ID — admin may be impersonating a student
+        const { cookies } = await import('next/headers')
+        const cookieStore = await cookies()
+        const impersonatingId = cookieStore.get('studio_impersonate')?.value ?? null
+
+        let effectiveUserId = user.id
+
+        if (impersonatingId) {
+            // Verify the caller is actually an admin before honouring the cookie
+            const { data: callerProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+
+            if (callerProfile?.role === 'admin') {
+                effectiveUserId = impersonatingId
+            }
+        }
+
         // Fetch student's profile to get their dropbox_recording_folder
-        const { data: profile, error: profileError } = await supabase
+        const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+        const serviceSupabase = createServiceClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_KEY!,
+            { auth: { autoRefreshToken: false, persistSession: false } }
+        )
+
+        const { data: profile, error: profileError } = await serviceSupabase
             .from('profiles')
             .select('dropbox_recording_folder')
-            .eq('id', user.id)
+            .eq('id', effectiveUserId)
             .single()
 
         if (profileError || !profile) {
@@ -46,7 +75,7 @@ export async function getDropboxRecordings(): Promise<{ recordings: DropboxRecor
         // List files in the folder
         const response = await dbx.filesListFolder({ path })
 
-        // Filter and map entries
+        // Filter and map entries — only immediate video files (not subfolders)
         const videoExtensions = ['.mp4', '.mov', '.m4v', '.avi', '.mkv']
         const recordings: DropboxRecording[] = response.result.entries
             .filter((entry): entry is any => entry['.tag'] === 'file')
