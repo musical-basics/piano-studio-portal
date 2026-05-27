@@ -10,6 +10,7 @@ export interface DropboxRecording {
     clientModified: string
 }
 
+
 /**
  * Fetch all video recordings inside the student's Dropbox recordings folder
  */

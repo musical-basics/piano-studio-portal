@@ -70,6 +70,7 @@ import {
 import { VideoPlayer } from "@/components/video-player"
 import { getDropboxRecordings, getDropboxTemporaryLink } from "@/app/actions/recordings"
 import type { DropboxRecording } from "@/app/actions/recordings"
+import { formatRecordingName } from "@/lib/format-recording-name"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -826,7 +827,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                                     </div>
                                                                     <div className="min-w-0">
                                                                         <h3 className="font-semibold truncate text-zinc-900 dark:text-zinc-100 pr-4">
-                                                                            {recording.name}
+                                                                            {formatRecordingName(recording.name)}
                                                                         </h3>
                                                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
                                                                             <span>{formatBytes(recording.size)}</span>
@@ -1117,7 +1118,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
                 <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-serif">{previewingName || 'Recording Preview'}</DialogTitle>
+                        <DialogTitle className="text-2xl font-serif">{previewingName ? formatRecordingName(previewingName) : 'Recording Preview'}</DialogTitle>
                     </DialogHeader>
                     <div className="py-4">
                         {previewUrl && (
