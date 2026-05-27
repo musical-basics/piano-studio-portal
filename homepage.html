@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lionel Yu Piano Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scroll behavior */
+        html {
+            scroll-behavior: smooth;
+        }
+    </style>
+</head>
+
+<body class="bg-white text-gray-950 font-sans antialiased selection:bg-black selection:text-white">
+
+    <nav class="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 z-50">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                    class="h-6 w-6">
+                    <path d="M9 18V5l12-2v13" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="18" cy="16" r="3" />
+                </svg>
+                <span class="font-serif text-xl font-bold">Lionel Yu Piano Studio</span>
+            </div>
+            <a href="/login"
+                class="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors">
+                Student Login
+            </a>
+        </div>
+    </nav>
+
+    <section class="relative py-20 lg:py-32 overflow-hidden">
+        <div class="absolute inset-0 opacity-[0.03] pointer-events-none">
+            <div class="w-full h-full"
+                style="background-image: repeating-linear-gradient(90deg, #000 0px, #000 60px, #fff 60px, #fff 70px, #000 70px, #000 100px, #fff 100px, #fff 110px); background-size: 100% 200px;">
+            </div>
+        </div>
+
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                <div class="space-y-8">
+                    <div class="space-y-4">
+                        <h1 class="font-serif text-5xl lg:text-6xl font-bold leading-tight">
+                            Master Piano with Excellence
+                        </h1>
+                        <p class="text-xl text-gray-500 leading-relaxed">
+                            Transform your musical journey with personalized instruction, flexible scheduling, and a
+                            proven system designed for serious students.
+                        </p>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <a href="/login"
+                            class="inline-flex h-12 items-center justify-center rounded-md bg-black px-8 text-base font-medium text-white shadow hover:bg-gray-800 transition-colors">
+                            Student Portal
+                        </a>
+                        <a href="/contact"
+                            class="inline-flex h-12 items-center justify-center rounded-md border border-gray-200 bg-transparent px-8 text-base font-medium shadow-sm hover:bg-gray-50 transition-colors">
+                            Inquire for Lessons
+                        </a>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-6 pt-8 border-t border-gray-100">
+                        <div>
+                            <div class="font-serif text-3xl font-bold">1.27m</div>
+                            <div class="text-sm text-gray-500">YouTube Subscribers</div>
+                        </div>
+                        <div>
+                            <div class="font-serif text-3xl font-bold">50+</div>
+                            <div class="text-sm text-gray-500">Students Taught</div>
+                        </div>
+                        <div>
+                            <div class="font-serif text-3xl font-bold">100%</div>
+                            <div class="text-sm text-gray-500">Satisfaction Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <div class="aspect-[4/5] rounded-lg overflow-hidden border-2 border-gray-100 shadow-2xl">
+                        <img src="{{hero_image_url}}" alt="Professional Piano Instruction"
+                            class="w-full h-full object-cover" />
+                    </div>
+                    <div class="absolute -bottom-6 -left-6 w-32 h-32 bg-gray-900/10 rounded-full -z-10"></div>
+                    <div class="absolute -top-6 -right-6 w-24 h-24 bg-gray-900/5 rounded-full -z-10"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-20 bg-gray-50/50">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="max-w-3xl mx-auto">
+                <div class="text-center space-y-4 mb-12">
+                    <h2 class="font-serif text-4xl font-bold">About Your Teacher</h2>
+                    <div class="h-1 w-20 bg-black mx-auto"></div>
+                </div>
+
+                <div class="space-y-6 text-lg leading-relaxed text-gray-700">
+                    <p>
+                        With over 30 years of piano experience and having played in some of the world's biggest concert
+                        halls, I teach students of all ages and skill levels, bringing a unique mixture of classical
+                        technique and modern musicality to each student. My approach is rooted in building strong
+                        technical foundations while nurturing each student's individual musical voice.
+                    </p>
+
+                    <p>
+                        I have studied at Juilliard, Peabody and NYU Music Schools and with some of the world's best
+                        pianists, such as Stanislav Khristenko, Assaff Weisman, Peter Dugan, and others. But my greatest
+                        joy comes from witnessing the moment when a student discovers their own musical potential.
+                    </p>
+
+                    <div class="rounded-lg border-l-4 border-l-black bg-white p-6 shadow-sm">
+                        <p class="font-serif text-xl italic text-gray-800">
+                            "My teaching philosophy centers on three pillars: discipline, creativity, and joy. I believe
+                            that mastery comes from consistent practice, but the journey should always be filled with
+                            the excitement of musical discovery."
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-20" id="contact">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="max-w-4xl mx-auto">
+                <div class="text-center space-y-4 mb-12">
+                    <h2 class="font-serif text-4xl font-bold">The Studio System</h2>
+                    <p class="text-xl text-gray-500">Flexible consistency for serious students</p>
+                    <div class="h-1 w-20 bg-black mx-auto"></div>
+                </div>
+
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div
+                        class="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                        <div class="space-y-4">
+                            <div class="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+                                    <line x1="16" x2="16" y1="2" y2="6" />
+                                    <line x1="8" x2="8" y1="2" y2="6" />
+                                    <line x1="3" x2="21" y1="10" y2="10" />
+                                </svg>
+                            </div>
+                            <h3 class="font-serif text-xl font-bold">Credit-Based Packages</h3>
+                            <p class="text-gray-500 leading-relaxed">
+                                Purchase 4-lesson packages that work with your schedule. No rigid monthly
+                                commitments—just consistent progress at your pace.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                        <div class="space-y-4">
+                            <div class="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                            </div>
+                            <h3 class="font-serif text-xl font-bold">Fair Cancellation Policy</h3>
+                            <p class="text-gray-500 leading-relaxed">
+                                Life happens. Reschedule with 24+ hours notice at no charge. We'll find you a makeup
+                                slot that works for your week.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors">
+                        <div class="space-y-4">
+                            <div class="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <circle cx="12" cy="8" r="7" />
+                                    <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+                                </svg>
+                            </div>
+                            <h3 class="font-serif text-xl font-bold">Professional Standards</h3>
+                            <p class="text-gray-500 leading-relaxed">
+                                Clear expectations, detailed lesson notes, and recorded sessions ensure you get maximum
+                                value from every minute of instruction.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 rounded-lg bg-gray-50 border border-gray-200 p-6">
+                    <p class="text-center text-lg text-gray-700">
+                        <strong class="font-serif">The Result?</strong> Students make faster progress because they can
+                        maintain weekly momentum without the stress of rigid scheduling. It's the perfect balance of
+                        structure and flexibility.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-20 bg-gray-50/50">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="max-w-5xl mx-auto">
+                <div class="text-center space-y-4 mb-12">
+                    <h2 class="font-serif text-4xl font-bold">What Students Say</h2>
+                    <div class="h-1 w-20 bg-black mx-auto"></div>
+                </div>
+
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
+                        <div class="space-y-4">
+                            <div class="flex gap-1">
+                                <span class="text-black">★★★★★</span>
+                            </div>
+                            <p class="text-gray-600 italic leading-relaxed">
+                                "I have experience as a self-guided piano student, and finally decided to search for the
+                                right teacher to help me improve. I'm happy to have found Lionel, because not only did
+                                he teach me skills that I never saw in any other tutorials online, but he was also able
+                                to correct my posture and other issues that I would not have otherwise figured out
+                                without an actual teacher. I am lucky that he's my teacher and guiding me on my piano
+                                journey, and I highly recommended him as a talented and patient teacher for all levels!
+                                (also-If you are a self guided learner like I was, don't wait- he can correct things
+                                that will stall your progress later!)"
+                            </p>
+                            <div class="pt-4 border-t border-gray-100">
+                                <p class="font-semibold">Padhma B.</p>
+                                <p class="text-sm text-gray-500">Adult Student, 6 months</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
+                        <div class="space-y-4">
+                            <div class="flex gap-1">
+                                <span class="text-black">★★★★★</span>
+                            </div>
+                            <p class="text-gray-600 italic leading-relaxed">
+                                "My son has been taking Lionel's piano lessons a little over one year now. My son's
+                                piano skills has been moved to the next level; such as playing solid rhythm, playing
+                                with dynamics and playing with clear finger articulation, etc. Lionel is the best piano
+                                teacher that my son never had before... Lionel made my son a bright star at his school
+                                performances.
+                                I highly recommend Lionel as your piano teacher with his affordable piano lesson prices.
+                                Lionel’s piano lessons will worth every dollar you pay."
+                            </p>
+                            <div class="pt-4 border-t border-gray-100">
+                                <p class="font-semibold">Zou W.</p>
+                                <p class="text-sm text-gray-500">Parent of Student, 1 year</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
+                        <div class="space-y-4">
+                            <div class="flex gap-1">
+                                <span class="text-black">★★★★★</span>
+                            </div>
+                            <p class="text-gray-600 italic leading-relaxed">
+                                "Lionel is an incredible piano teacher, patient, knowledgeable, and truly passionate
+                                about music. Every lesson is inspiring and well-structured, and he knows exactly how to
+                                adapt his teaching style to my level and goals. Thanks to him, I’ve made real progress
+                                and started enjoying playing in a way I never imagined. Highly recommended to anyone who
+                                wants to learn piano the right way!"
+                            </p>
+                            <div class="pt-4 border-t border-gray-100">
+                                <p class="font-semibold">Yakir S.</p>
+                                <p class="text-sm text-gray-500">Beginner Student, 3 months</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="py-24 bg-gray-50 border-t border-gray-100" id="contact">
+        <div class="max-w-3xl mx-auto px-6">
+            <div class="text-center mb-12">
+                <h2 class="font-serif text-4xl font-bold mb-4">Ready to Begin Your Musical Journey?</h2>
+                <p class="text-gray-500 text-lg">
+                    Send me a message to discuss your goals and schedule a consultation.
+                </p>
+            </div>
+
+            <form action="https://formspree.io/f/mzznqdro" method="POST" class="space-y-4">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" name="name" placeholder="Name" required
+                        class="w-full px-4 py-3 rounded-md bg-gray-100 border-none focus:ring-2 focus:ring-black focus:outline-none transition-all placeholder:text-gray-400" />
+
+                    <input type="email" name="email" placeholder="Email *" required
+                        class="w-full px-4 py-3 rounded-md bg-gray-100 border-none focus:ring-2 focus:ring-black focus:outline-none transition-all placeholder:text-gray-400" />
+                </div>
+
+                <textarea name="message" rows="5" placeholder="Tell me about yourself and your piano experience!"
+                    required
+                    class="w-full px-4 py-3 rounded-md bg-gray-100 border-none focus:ring-2 focus:ring-black focus:outline-none transition-all placeholder:text-gray-400 resize-none"></textarea>
+
+                <button type="submit"
+                    class="inline-flex h-12 items-center justify-center rounded-md bg-gray-900 px-8 text-sm font-medium text-white shadow hover:bg-black transition-colors">
+                    Send Message
+                </button>
+
+            </form>
+        </div>
+    </section>
+
+    <footer class="border-t border-gray-100 bg-gray-50/50">
+        <div class="max-w-7xl mx-auto px-4 py-12">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="h-6 w-6">
+                        <path d="M9 18V5l12-2v13" />
+                        <circle cx="6" cy="18" r="3" />
+                        <circle cx="18" cy="16" r="3" />
+                    </svg>
+                    <span class="font-serif text-lg font-bold">Lionel Yu Piano Studio</span>
+                </div>
+
+                <div class="flex gap-6">
+                    <a href="https://facebook.com" target="_blank" rel="noopener noreferrer"
+                        class="text-gray-500 hover:text-black transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            class="h-5 w-5">
+                            <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                        </svg>
+                    </a>
+                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer"
+                        class="text-gray-500 hover:text-black transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            class="h-5 w-5">
+                            <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                            <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                        </svg>
+                    </a>
+                    <a href="mailto:support@musicalbasics.com" class="text-gray-500 hover:text-black transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            class="h-5 w-5">
+                            <rect width="20" height="16" x="2" y="4" rx="2" />
+                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                        </svg>
+                    </a>
+                </div>
+
+                <p class="text-sm text-gray-500">© 2025 Lionel Yu Piano Studio. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+</body>
+
+</html>
