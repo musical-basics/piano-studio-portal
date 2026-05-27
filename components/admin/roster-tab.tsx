@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign, User } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign, User, Eye } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { bulkScheduleLessons } from "@/app/actions/lessons"
+import { impersonateStudent } from "@/app/actions/impersonate"
 import { useToast } from "@/hooks/use-toast"
 
 // We assume your Lesson App is hosted here (Change this if different!)
@@ -20,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
 import { PricingPlan } from "@/app/actions/pricing"
 import { StudentProfileSheet } from "./student-profile-sheet"
+import { useTransition } from "react"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
 type SortDirection = 'asc' | 'desc'
@@ -36,6 +38,30 @@ interface RosterTabProps {
     onMessage: (studentId: string) => void
     pricingPlans: PricingPlan[]
 }
+
+/** One-click "View as Student" button with loading state */
+function ViewAsButton({ student }: { student: StudentRoster }) {
+    const [isPending, startTransition] = useTransition()
+    return (
+        <Button
+            size="sm"
+            variant="outline"
+            disabled={isPending}
+            title={`Preview dashboard as ${student.name}`}
+            className="border-amber-400 text-amber-700 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-500 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/20"
+            onClick={() =>
+                startTransition(() => impersonateStudent(student.id))
+            }
+        >
+            {isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+                <Eye className="h-3.5 w-3.5" />
+            )}
+        </Button>
+    )
+}
+
 
 function AutoScheduleButton({ student }: { student: StudentRoster }) {
     const { toast } = useToast()
@@ -353,6 +379,9 @@ function StudentTable({
                                         <AutoScheduleButton student={student} />
                                         {/* -------------------------------- */}
                                         {/* -------------------------------- */}
+
+                                        {/* VIEW AS STUDENT */}
+                                        <ViewAsButton student={student} />
 
                                         {/* -------------------------------- */}
                                         <Button

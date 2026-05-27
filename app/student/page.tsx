@@ -4,6 +4,8 @@ import { StudentDashboard } from "@/components/student/student-dashboard"
 import { getStudentEvents } from "@/app/actions/events"
 import { getStudentResources } from "@/app/actions/resources"
 import { getLatestAnnouncement } from "@/app/actions/announcements"
+import { getImpersonationTarget } from "@/app/actions/impersonate"
+import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -15,16 +17,27 @@ export default async function StudentPage() {
     redirect("/login")
   }
 
-  // Fetch profile data
+  // Check if admin is impersonating a student
+  const { studentId: impersonatingId, adminId } = await getImpersonationTarget()
+
+  // The effective user ID: impersonated student (if admin is previewing) or the real user
+  const effectiveUserId = impersonatingId ?? user.id
+
+  // Fetch profile data (the student's profile, or the admin's own if not impersonating)
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", user.id)
+    .eq("id", effectiveUserId)
     .single()
 
   if (profileError || !profile) {
     console.error("Profile fetch error:", profileError)
     redirect("/login")
+  }
+
+  // If this is a real student (not an admin preview), block admins from seeing the student view normally
+  if (!impersonatingId && profile.role === 'admin') {
+    redirect("/admin")
   }
 
   // Fetch teacher/admin profile for default Zoom link
@@ -39,7 +52,7 @@ export default async function StudentPage() {
   const { data: lessons, error: lessonsError } = await supabase
     .from("lessons")
     .select("*")
-    .eq("student_id", user.id)
+    .eq("student_id", effectiveUserId)
     .order("date", { ascending: false })
 
   if (lessonsError) {
@@ -47,22 +60,15 @@ export default async function StudentPage() {
   }
 
   // Find next scheduled lesson
-  // 1. Get current time in UTC
   const now = new Date()
-
-  // 2. Subtract 24 hours to create a safety buffer. 
-  // This handles the case where it's Friday in UTC but still Thursday in PST.
   const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000))
   const queryDate = yesterday.toISOString().split('T')[0]
 
   const upcomingLessons = (lessons || [])
-    // Filter lessons >= "Yesterday" to be safe
     .filter(l => l.status === 'scheduled' && l.date >= queryDate)
     .sort((a, b) => {
-      // Sort by Date first
       const dateCompare = a.date.localeCompare(b.date)
       if (dateCompare !== 0) return dateCompare
-      // If same date, sort by Time
       return a.time.localeCompare(b.time)
     })
 
@@ -81,27 +87,29 @@ export default async function StudentPage() {
   // Determine Zoom link: lesson-specific > student's profile > teacher's default
   const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null
 
-  // Fetch events
+  // Fetch events & resources scoped to the effective user
   const { upcoming: upcomingEvents } = await getStudentEvents()
-
-  // Fetch resources assigned to this student
   const { resources } = await getStudentResources()
-
-  // Fetch latest announcement for this student
-  const latestAnnouncement = await getLatestAnnouncement(user.id)
+  const latestAnnouncement = await getLatestAnnouncement(effectiveUserId)
 
   return (
-    <StudentDashboard
-      profile={profile}
-      lessons={lessons || []}
-      nextLesson={nextLesson}
-      zoomLink={zoomLink}
-      studioName={teacher?.studio_name || "Piano Studio"}
-      teacherName={teacher?.name || "Professor"}
-      events={upcomingEvents}
-      resources={resources}
-      latestAnnouncement={latestAnnouncement}
-    />
+    <>
+      {/* Admin impersonation banner — only shown when previewing as a student */}
+      {impersonatingId && (
+        <ImpersonationBanner studentName={profile.name || 'Student'} />
+      )}
+      <StudentDashboard
+        profile={profile}
+        lessons={lessons || []}
+        nextLesson={nextLesson}
+        zoomLink={zoomLink}
+        studioName={teacher?.studio_name || "Piano Studio"}
+        teacherName={teacher?.name || "Professor"}
+        events={upcomingEvents}
+        resources={resources}
+        latestAnnouncement={latestAnnouncement}
+      />
+    </>
   )
 }
 
@@ -112,4 +120,3 @@ function formatTimeForDisplay(timeStr: string): string {
   const displayHours = hours % 12 || 12
   return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
 }
-
