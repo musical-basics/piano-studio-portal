@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createZoomMeeting } from '@/lib/zoom'
+import { resolveEffectiveUserId } from '@/lib/impersonate'
 
 // ==========================================
 // Types matching v0 UI expectations
@@ -285,6 +286,8 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
 
     if (!user) return { upcoming: [], past: [] }
 
+    const effectiveUserId = await resolveEffectiveUserId(supabase, user.id)
+
     // Fetch invites joined with events
     const { data: invites, error } = await supabase
         .from('event_invites')
@@ -295,7 +298,7 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
           *
         )
       `)
-        .eq('student_id', user.id)
+        .eq('student_id', effectiveUserId)
 
     if (error) {
         console.error('Error fetching student events:', error)

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { resolveEffectiveUserId } from '@/lib/impersonate'
 
 export type PricingPoint = {
     id: string
@@ -44,7 +45,8 @@ export async function getPricingPlans() {
 }
 
 /**
- * Get the specific pricing plan assigned to the current user
+ * Get the specific pricing plan assigned to the current user.
+ * Respects admin impersonation — reads studio_impersonate cookie.
  */
 export async function getStudentPricingPlan() {
     const supabase = await createClient()
@@ -52,11 +54,13 @@ export async function getStudentPricingPlan() {
 
     if (!user) return { plan: null }
 
+    const effectiveUserId = await resolveEffectiveUserId(supabase, user.id)
+
     // 1. Get student's assigned plan ID
     const { data: profile } = await supabase
         .from('profiles')
         .select('pricing_plan_id')
-        .eq('id', user.id)
+        .eq('id', effectiveUserId)
         .single()
 
     if (!profile?.pricing_plan_id) {

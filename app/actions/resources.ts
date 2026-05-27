@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
+import { resolveEffectiveUserId } from '@/lib/impersonate'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -131,8 +132,8 @@ export async function getStudentResources(studentId?: string): Promise<{ resourc
         return { resources: [], error: 'Unauthorized' }
     }
 
-    // Use current user if no studentId provided
-    const targetStudentId = studentId || user.id
+    // Use explicit studentId, or resolve effective user (respects impersonation cookie)
+    const targetStudentId = studentId || await resolveEffectiveUserId(supabase, user.id)
 
     // Fetch resources assigned to this student
     const { data: assignments, error } = await supabase

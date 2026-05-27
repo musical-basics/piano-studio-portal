@@ -1,7 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDropboxClient } from '@/lib/zoom-recordings'
+import { resolveEffectiveUserId } from '@/lib/impersonate'
 
 export interface DropboxRecording {
     name: string
@@ -27,27 +29,9 @@ export async function getDropboxRecordings(): Promise<{ recordings: DropboxRecor
         }
 
         // Resolve effective user ID — admin may be impersonating a student
-        const { cookies } = await import('next/headers')
-        const cookieStore = await cookies()
-        const impersonatingId = cookieStore.get('studio_impersonate')?.value ?? null
+        const effectiveUserId = await resolveEffectiveUserId(supabase, user.id)
 
-        let effectiveUserId = user.id
-
-        if (impersonatingId) {
-            // Verify the caller is actually an admin before honouring the cookie
-            const { data: callerProfile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single()
-
-            if (callerProfile?.role === 'admin') {
-                effectiveUserId = impersonatingId
-            }
-        }
-
-        // Fetch student's profile to get their dropbox_recording_folder
-        const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+        // Fetch student's profile using service role (bypasses RLS for impersonation)
         const serviceSupabase = createServiceClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.SUPABASE_SERVICE_KEY!,
