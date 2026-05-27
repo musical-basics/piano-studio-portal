@@ -29,6 +29,8 @@ import {
     Loader2,
     Megaphone,
     Settings,
+    RefreshCw,
+    Play,
 } from "lucide-react"
 import {
     mockEvents,
@@ -52,6 +54,22 @@ import type { StudentEvent } from "@/app/actions/events"
 import type { Resource } from "@/app/actions/resources"
 import { EventSignupModal } from "./event-signup-modal"
 import { LocalTimeDisplay } from "@/components/ui/local-time-display"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog"
+import { VideoPlayer } from "@/components/video-player"
+import { getDropboxRecordings, getDropboxTemporaryLink } from "@/app/actions/recordings"
+import type { DropboxRecording } from "@/app/actions/recordings"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -128,6 +146,79 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             setConfirmationStatus(!!nextLesson.isConfirmed)
         }
     }, [nextLesson])
+
+    // View mode toggle: 'lessons' (standard database list) vs. 'dropbox' (live folder)
+    const [viewMode, setViewMode] = useState<'lessons' | 'dropbox'>('lessons')
+    const [dropboxRecordings, setDropboxRecordings] = useState<DropboxRecording[]>([])
+    const [isLoadingRecordings, setIsLoadingRecordings] = useState(false)
+    const [recordingsError, setRecordingsError] = useState<string | null>(null)
+    
+    // Preview modal states
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+    const [previewingName, setPreviewingName] = useState<string | null>(null)
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+    const [isFetchingLink, setIsFetchingLink] = useState<string | null>(null)
+
+    // Load recordings from Dropbox
+    const loadDropboxRecordings = async () => {
+        setIsLoadingRecordings(true)
+        setRecordingsError(null)
+        const res = await getDropboxRecordings()
+        if (res.error) {
+            setRecordingsError(res.error)
+        } else {
+            setDropboxRecordings(res.recordings)
+        }
+        setIsLoadingRecordings(false)
+    }
+
+    useEffect(() => {
+        if (viewMode === 'dropbox' && dropboxRecordings.length === 0) {
+            loadDropboxRecordings()
+        }
+    }, [viewMode])
+
+    const handlePlayDropboxVideo = async (filePath: string, fileName: string) => {
+        setIsFetchingLink(filePath)
+        const res = await getDropboxTemporaryLink(filePath)
+        setIsFetchingLink(null)
+        if (res.url) {
+            setPreviewUrl(res.url)
+            setPreviewingName(fileName)
+            setIsPreviewOpen(true)
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Error playing video",
+                description: res.error || "Could not generate streaming link."
+            })
+        }
+    }
+
+    const handleDownloadDropboxVideo = async (filePath: string) => {
+        setIsFetchingLink(filePath)
+        const res = await getDropboxTemporaryLink(filePath)
+        setIsFetchingLink(null)
+        if (res.url) {
+            window.open(res.url, '_blank')
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Error downloading file",
+                description: res.error || "Could not generate download link."
+            })
+        }
+    }
+
+    // Helper to format file size
+    const formatBytes = (bytes: number, decimals = 1) => {
+        if (bytes === 0) return '0 Bytes'
+        const k = 1024
+        const dm = decimals < 0 ? 0 : decimals
+        const sizes = ['Bytes', 'KB', 'MB', 'GB']
+        const i = Math.floor(Math.log(bytes) / Math.log(k))
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
+    }
 
     // const handleReschedule = () => {
     //     setShowMakeupScheduler(true)
@@ -565,81 +656,230 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                             </TabsList>
 
                             <TabsContent value="lessons" className="space-y-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-2xl font-serif font-semibold">Past Lessons</h2>
-                                    <Badge variant="secondary">{completedLessons.length} lessons</Badge>
-                                </div>
-                                <div className="grid gap-4">
-                                    {completedLessons.map((lesson) => (
-                                        <Card
-                                            key={lesson.id}
-                                            className="cursor-pointer hover:shadow-md transition-shadow border-2"
-                                            onClick={() => {
-                                                setSelectedLesson(lesson)
-                                                setShowLessonDetail(true)
-                                            }}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                                    <div>
+                                        <h2 className="text-2xl font-serif font-semibold">Past Lessons & Recordings</h2>
+                                        <p className="text-sm text-muted-foreground mt-0.5">
+                                            {viewMode === 'lessons'
+                                                ? `Viewing database logs (${completedLessons.length} lessons)`
+                                                : `Viewing files in live Dropbox folder`
+                                            }
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Select
+                                            value={viewMode}
+                                            onValueChange={(val: 'lessons' | 'dropbox') => setViewMode(val)}
                                         >
-                                            <CardContent className="flex items-center justify-between p-6">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="h-14 w-14 bg-primary/10 rounded-lg flex items-center justify-center">
-                                                        <Music className="h-6 w-6 text-primary" />
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="font-semibold mb-1">Lesson - {formatDate(lesson.date)}</h3>
-                                                        <p className="text-sm text-muted-foreground line-clamp-1">
-                                                            {lesson.teacher_notes || "No notes available"}
-                                                        </p>
-                                                        <div className="flex gap-3 mt-2">
-                                                            {lesson.video_url && (
-                                                                <Badge variant="secondary" className="text-xs">
-                                                                    <Video className="h-3 w-3 mr-1" />
-                                                                    Video
-                                                                </Badge>
+                                            <SelectTrigger className="w-[220px] border-zinc-200 shadow-sm">
+                                                <SelectValue placeholder="Select view mode" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="lessons">Standard Lessons View</SelectItem>
+                                                <SelectItem value="dropbox">Dropbox Live Folder (Upgraded)</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        
+                                        {viewMode === 'dropbox' && (
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                onClick={() => loadDropboxRecordings()}
+                                                disabled={isLoadingRecordings}
+                                                title="Refresh folder content"
+                                                className="shrink-0"
+                                            >
+                                                <RefreshCw className={`h-4 w-4 ${isLoadingRecordings ? 'animate-spin' : ''}`} />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {viewMode === 'lessons' ? (
+                                    <div className="grid gap-4">
+                                        {completedLessons.map((lesson) => (
+                                            <Card
+                                                key={lesson.id}
+                                                className="cursor-pointer hover:shadow-md transition-shadow border-2"
+                                                onClick={() => {
+                                                    setSelectedLesson(lesson)
+                                                    setShowLessonDetail(true)
+                                                }}
+                                            >
+                                                <CardContent className="flex items-center justify-between p-6">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="h-14 w-14 bg-primary/10 rounded-lg flex items-center justify-center">
+                                                            <Music className="h-6 w-6 text-primary" />
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="font-semibold mb-1">Lesson - {formatDate(lesson.date)}</h3>
+                                                            <p className="text-sm text-muted-foreground line-clamp-1">
+                                                                {lesson.teacher_notes || "No notes available"}
+                                                            </p>
+                                                            <div className="flex gap-3 mt-2">
+                                                                {lesson.video_url && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        <Video className="h-3 w-3 mr-1" />
+                                                                        Video
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                            {lesson.sheet_music_url && (
+                                                                <div className="mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
+                                                                    <p className="text-xs text-muted-foreground mb-2">📄 Download Sheet Music:</p>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="bg-primary/5 hover:bg-primary/10 border-primary/20"
+                                                                        asChild
+                                                                    >
+                                                                        <a href={lesson.sheet_music_url} download target="_blank" rel="noopener noreferrer">
+                                                                            <Download className="h-4 w-4 mr-2" />
+                                                                            {(() => {
+                                                                                try {
+                                                                                    const url = new URL(lesson.sheet_music_url)
+                                                                                    const pathname = decodeURIComponent(url.pathname)
+                                                                                    const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                                                                                    // Remove timestamp prefix if present (e.g., "1734567890123_")
+                                                                                    const cleanName = filename.replace(/^\d{10,}_/, '')
+                                                                                    return cleanName.length > 30 ? cleanName.slice(0, 27) + '...' : cleanName
+                                                                                } catch {
+                                                                                    return 'Sheet Music.pdf'
+                                                                                }
+                                                                            })()}
+                                                                        </a>
+                                                                    </Button>
+                                                                </div>
                                                             )}
                                                         </div>
-                                                        {lesson.sheet_music_url && (
-                                                            <div className="mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
-                                                                <p className="text-xs text-muted-foreground mb-2">📄 Download Sheet Music:</p>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    className="bg-primary/5 hover:bg-primary/10 border-primary/20"
-                                                                    asChild
-                                                                >
-                                                                    <a href={lesson.sheet_music_url} download target="_blank" rel="noopener noreferrer">
-                                                                        <Download className="h-4 w-4 mr-2" />
-                                                                        {(() => {
-                                                                            try {
-                                                                                const url = new URL(lesson.sheet_music_url)
-                                                                                const pathname = decodeURIComponent(url.pathname)
-                                                                                const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
-                                                                                // Remove timestamp prefix if present (e.g., "1734567890123_")
-                                                                                const cleanName = filename.replace(/^\d{10,}_/, '')
-                                                                                return cleanName.length > 30 ? cleanName.slice(0, 27) + '...' : cleanName
-                                                                            } catch {
-                                                                                return 'Sheet Music.pdf'
-                                                                            }
-                                                                        })()}
-                                                                    </a>
-                                                                </Button>
-                                                            </div>
-                                                        )}
+                                                    </div>
+                                                    {/* Credit Receipt Footer */}
+                                                    {lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null && (
+                                                        <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                                                            Credits spent: 1 • Remaining: {lesson.credit_snapshot}
+                                                        </div>
+                                                    )}
+                                                    <Clock className="h-5 w-5 text-muted-foreground" />
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                        {completedLessons.length === 0 && (
+                                            <p className="text-center text-muted-foreground py-8">No completed lessons yet</p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* Dropbox Live Folder View */
+                                    <div className="space-y-4">
+                                        {isLoadingRecordings ? (
+                                            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+                                                <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                                                <p className="text-sm text-muted-foreground">Loading recordings from Dropbox...</p>
+                                            </div>
+                                        ) : recordingsError ? (
+                                            <Card className="border-red-200 bg-red-50 dark:bg-red-950/10 p-6">
+                                                <div className="flex items-start gap-3">
+                                                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                                                    <div>
+                                                        <h3 className="font-semibold text-red-900 dark:text-red-200 font-serif">Failed to load recordings</h3>
+                                                        <p className="text-sm text-red-700 dark:text-red-300 mt-1">{recordingsError}</p>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => loadDropboxRecordings()}
+                                                            className="mt-3 border-red-300 text-red-950 hover:bg-red-100 dark:text-red-200 dark:hover:bg-red-950/50"
+                                                        >
+                                                            Try Again
+                                                        </Button>
                                                     </div>
                                                 </div>
-                                                {/* Credit Receipt Footer */}
-                                                {lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null && (
-                                                    <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
-                                                        Credits spent: 1 • Remaining: {lesson.credit_snapshot}
-                                                    </div>
-                                                )}
-                                                <Clock className="h-5 w-5 text-muted-foreground" />
-                                            </CardContent>
-                                        </Card>
-                                    ))}
-                                    {completedLessons.length === 0 && (
-                                        <p className="text-center text-muted-foreground py-8">No completed lessons yet</p>
-                                    )}
-                                </div>
+                                            </Card>
+                                        ) : dropboxRecordings.length === 0 ? (
+                                            <Card className="border-2 border-dashed p-12 text-center bg-muted/10">
+                                                <Video className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
+                                                <h3 className="font-semibold text-lg mb-1 font-serif">No Live Recordings Found</h3>
+                                                <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-5">
+                                                    We couldn&apos;t find any video recordings inside your folder. They will appear here once uploaded by your teacher.
+                                                </p>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => loadDropboxRecordings()}
+                                                    className="shadow-sm"
+                                                >
+                                                    <RefreshCw className="h-4 w-4 mr-2" />
+                                                    Refresh Folder
+                                                </Button>
+                                            </Card>
+                                        ) : (
+                                            <div className="grid gap-4">
+                                                {dropboxRecordings.map((recording) => {
+                                                    const isProcessing = isFetchingLink === recording.path
+                                                    return (
+                                                        <Card
+                                                            key={recording.path}
+                                                            className="hover:shadow-md transition-all duration-200 border-2 group"
+                                                        >
+                                                            <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between p-5 gap-4">
+                                                                <div className="flex items-center gap-4 min-w-0">
+                                                                    <div className="h-12 w-12 rounded-lg bg-gradient-to-tr from-pink-500/10 to-violet-500/10 dark:from-pink-500/20 dark:to-violet-500/20 border border-pink-500/20 flex items-center justify-center shrink-0">
+                                                                        <PlayCircle className="h-6 w-6 text-pink-500 dark:text-pink-400 group-hover:scale-110 transition-transform" />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <h3 className="font-semibold truncate text-zinc-900 dark:text-zinc-100 pr-4">
+                                                                            {recording.name}
+                                                                        </h3>
+                                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
+                                                                            <span>{formatBytes(recording.size)}</span>
+                                                                            <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                                                                            <span>Modified: {new Date(recording.clientModified).toLocaleDateString('en-US', {
+                                                                                month: 'short',
+                                                                                day: 'numeric',
+                                                                                year: 'numeric',
+                                                                                hour: '2-digit',
+                                                                                minute: '2-digit'
+                                                                            })}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 sm:self-center shrink-0">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        disabled={isProcessing || isFetchingLink !== null}
+                                                                        onClick={() => handlePlayDropboxVideo(recording.path, recording.name)}
+                                                                        className="bg-primary/5 hover:bg-primary/10 border-primary/20 hover:border-primary/30 text-primary"
+                                                                    >
+                                                                        {isProcessing ? (
+                                                                            <>
+                                                                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                                                                Loading...
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Play className="h-3.5 w-3.5 mr-1.5 fill-current" />
+                                                                                Play
+                                                                            </>
+                                                                        )}
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        disabled={isProcessing || isFetchingLink !== null}
+                                                                        onClick={() => handleDownloadDropboxVideo(recording.path)}
+                                                                        className="text-muted-foreground hover:text-foreground"
+                                                                    >
+                                                                        <Download className="h-3.5 w-3.5 mr-1.5" />
+                                                                        Download
+                                                                    </Button>
+                                                                </div>
+                                                            </CardContent>
+                                                        </Card>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </TabsContent>
 
                             <TabsContent value="downloads" className="space-y-4">
@@ -873,6 +1113,19 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 onOpenChange={setShowEventSignup}
                 onConfirm={handleSignupConfirm}
             />
+
+            <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+                <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-serif">{previewingName || 'Recording Preview'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4">
+                        {previewUrl && (
+                            <VideoPlayer url={previewUrl} title={previewingName || 'Lesson Recording'} />
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
