@@ -47,23 +47,21 @@ export async function sendMessageCore({
         return { error: error.message }
     }
 
-    // Consolidated profile retrieval for notifications (email & webhook)
-    try {
-        const { data: senderProfile } = await client
-            .from('profiles')
-            .select('name, role')
-            .eq('id', senderId)
-            .single()
+    if (resend) {
+        try {
+            const { data: senderProfile } = await client
+                .from('profiles')
+                .select('name')
+                .eq('id', senderId)
+                .single()
 
-        const { data: recipientProfile } = await client
-            .from('profiles')
-            .select('name, email, role')
-            .eq('id', recipientId)
-            .single()
+            const { data: recipientProfile } = await client
+                .from('profiles')
+                .select('name, email')
+                .eq('id', recipientId)
+                .single()
 
-        // 1. Resend Email Notification
-        if (resend && recipientProfile?.email) {
-            try {
+            if (recipientProfile?.email) {
                 const rawSender = senderProfile?.name || 'Lionel Yu Piano Studio'
                 const finalSenderName = rawSender === 'Professor Lionel' ? 'Professor Lionel Yu' : rawSender
 
@@ -77,65 +75,14 @@ export async function sendMessageCore({
                         recipientName: recipientProfile.name || 'Student',
                     }),
                 })
-            } catch (emailError) {
-                console.error('sendMessageCore email failed (non-blocking):', emailError)
             }
+        } catch (emailError) {
+            console.error('sendMessageCore email failed (non-blocking):', emailError)
         }
-
-        // 2. Webhook Notification for inbound student messages
-        const webhookUrl = process.env.COMMANDER_MESSAGE_WEBHOOK_URL
-        const webhookSecret = process.env.COMMANDER_MESSAGE_WEBHOOK_SECRET
-
-        if (webhookUrl && webhookSecret) {
-            const isStudentToAdmin = senderProfile?.role === 'student' && recipientProfile?.role === 'admin'
-            if (isStudentToAdmin) {
-                const controller = new AbortController()
-                const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-                try {
-                    const payload = {
-                        event: 'piano_studio.message.created',
-                        message: {
-                            id: data.id,
-                            student_id: senderId,
-                            student_name: senderProfile?.name || null,
-                            content: data.content,
-                            created_at: data.created_at,
-                        },
-                    }
-
-                    const response = await fetch(webhookUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Piano-Studio-Webhook-Secret': webhookSecret,
-                        },
-                        body: JSON.stringify(payload),
-                        signal: controller.signal,
-                    })
-
-                    clearTimeout(timeoutId)
-                    if (!response.ok) {
-                        console.error(`[Webhook] Failed to deliver message webhook: ${response.status} ${response.statusText}`)
-                    } else {
-                        console.log(`[Webhook] Message webhook delivered successfully to ${webhookUrl}`)
-                    }
-                } catch (webhookError: any) {
-                    clearTimeout(timeoutId)
-                    console.error('[Webhook] Message webhook delivery failed (non-blocking):', webhookError.message || webhookError)
-                }
-            }
-        }
-    } catch (notificationError) {
-        console.error('sendMessageCore notifications failed (non-blocking):', notificationError)
     }
 
-    try {
-        revalidatePath('/student')
-        revalidatePath('/admin')
-    } catch (e) {
-        // Safe to ignore outside of Next.js server context (e.g. standalone test scripts)
-    }
+    revalidatePath('/student')
+    revalidatePath('/admin')
 
     return { success: true, message: data as Message }
 }
@@ -175,12 +122,8 @@ export async function markMessagesReadCore(
         return { error: error.message }
     }
 
-    try {
-        revalidatePath('/student')
-        revalidatePath('/admin')
-    } catch (e) {
-        // Safe to ignore outside of Next.js server context (e.g. standalone test scripts)
-    }
+    revalidatePath('/student')
+    revalidatePath('/admin')
     return { success: true }
 }
 
