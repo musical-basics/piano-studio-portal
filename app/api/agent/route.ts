@@ -27,10 +27,13 @@ Core endpoints:
 - POST /messages                body: { student_id, content, attachments? }
 - POST /messages/mark-read      body: { student_id }
 - GET /lessons?from=&to=&student_id=
-- POST /lessons                 body: { student_id, date, time, duration? }
-- PATCH /lessons/:id            body: { date, time, duration? }
+- POST /lessons                 body: { student_id, date, time, duration?, confirm_override? }
+- PATCH /lessons/:id            body: { date, time, duration?, confirm_override? }
 - POST /lessons/:id/log         body: { notes?, video_url?, sheet_music_url? }
 - DELETE /lessons/:id
+- GET /lesson-intent-flags?student_id=&from=&to=&status=
+- POST /lesson-intent-flags     body: { student_id, target_date, intent, source?, source_message_id?, lesson_id?, note? }
+- PATCH /lesson-intent-flags/:id body: { status?, note?, lesson_id? }
 `
 
 export async function GET() {
