@@ -9,6 +9,9 @@ import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessag
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
 import { LibraryFileSelector } from "@/components/admin/library-file-selector"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 
 type StudentWithMessages = Profile & {
   lastMessage: Message | null
@@ -31,6 +34,52 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   const [isLoadingStudents, setIsLoadingStudents] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
+
+  // Lesson Intent Flag Modal State
+  const [showFlagDialog, setShowFlagDialog] = useState(false)
+  const [flagMessage, setFlagMessage] = useState<Message | null>(null)
+  const [flagIntent, setFlagIntent] = useState<'skip_requested' | 'cancel_requested' | 'reschedule_requested'>('skip_requested')
+  const [flagDate, setFlagDate] = useState("")
+  const [flagNote, setFlagNote] = useState("")
+  const [isSavingFlag, setIsSavingFlag] = useState(false)
+
+  const handleOpenFlagDialog = (msg: Message, intent: 'skip_requested' | 'cancel_requested' | 'reschedule_requested') => {
+    setFlagMessage(msg)
+    setFlagIntent(intent)
+    setFlagDate("")
+    setFlagNote(`Student request: "${msg.content}"`)
+    setShowFlagDialog(true)
+  }
+
+  const handleSubmitFlag = async () => {
+    if (!selectedStudent || !flagMessage || !flagDate) return
+    setIsSavingFlag(true)
+    try {
+      const { createLessonIntentFlagAction } = await import("@/app/actions/lesson-intent-flags")
+      const res = await createLessonIntentFlagAction({
+        studentId: selectedStudent.id,
+        targetDate: flagDate,
+        intent: flagIntent,
+        sourceMessageId: flagMessage.id,
+        note: flagNote,
+      })
+
+      if (res.error) {
+        alert(`Failed to create flag: ${res.error}`)
+      } else {
+        setShowFlagDialog(false)
+        setFlagMessage(null)
+        setFlagDate("")
+        setFlagNote("")
+        alert("Lesson request marked successfully.")
+      }
+    } catch (e: any) {
+      console.error(e)
+      alert("An error occurred while creating the flag.")
+    } finally {
+      setIsSavingFlag(false)
+    }
+  }
 
   // Attachment states - Modified to support both File objects and Library resources
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
@@ -436,6 +485,33 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                           <ChatAttachmentPreview attachments={msg.attachments} compact />
                         )}
 
+                        {/* Quick actions for student messages */}
+                        {!isFromAdmin(msg) && (
+                          <div className="flex gap-2 mt-2 pt-2 border-t text-[10px] text-muted-foreground border-dashed border-muted-foreground/30 flex-wrap">
+                            <span className="font-semibold">Actions:</span>
+                            <button
+                              onClick={() => handleOpenFlagDialog(msg, 'skip_requested')}
+                              className="hover:underline text-primary font-medium cursor-pointer"
+                            >
+                              Skip
+                            </button>
+                            <span>•</span>
+                            <button
+                              onClick={() => handleOpenFlagDialog(msg, 'cancel_requested')}
+                              className="hover:underline text-primary font-medium cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <span>•</span>
+                            <button
+                              onClick={() => handleOpenFlagDialog(msg, 'reschedule_requested')}
+                              className="hover:underline text-primary font-medium cursor-pointer"
+                            >
+                              Reschedule
+                            </button>
+                          </div>
+                        )}
+
                         {/* The Timestamp - Right aligned, small, slightly transparent */}
                         <p className={`text-[10px] text-right mt-1 ${isFromAdmin(msg) ? "text-primary-foreground/70" : "text-muted-foreground"
                           }`}>
@@ -524,6 +600,59 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
           </div>
         )}
       </div>
+
+      {/* Create Lesson Intent Flag Dialog */}
+      <Dialog open={showFlagDialog} onOpenChange={setShowFlagDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mark Lesson Request</DialogTitle>
+            <DialogDescription>
+              Create a structured intent flag for {selectedStudent?.name || 'Student'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Request Type</Label>
+              <select
+                value={flagIntent}
+                onChange={(e: any) => setFlagIntent(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="skip_requested">Skip Lesson</option>
+                <option value="cancel_requested">Cancel Lesson</option>
+                <option value="reschedule_requested">Reschedule Lesson</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="flag-date">Target Date</Label>
+              <Input
+                id="flag-date"
+                type="date"
+                value={flagDate}
+                onChange={(e) => setFlagDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="flag-note">Internal Notes</Label>
+              <Textarea
+                id="flag-note"
+                value={flagNote}
+                onChange={(e) => setFlagNote(e.target.value)}
+                placeholder="e.g. Parent requested to skip this date..."
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowFlagDialog(false)} disabled={isSavingFlag}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitFlag} disabled={!flagDate || isSavingFlag}>
+              {isSavingFlag ? 'Creating...' : 'Create Flag'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

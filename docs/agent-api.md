@@ -460,10 +460,11 @@ If a lesson has `status: 'completed'` but `credit_snapshot_before` and `credit_s
 ### `POST /lessons`
 
 Schedule a new lesson. Runs:
-1. Conflict check against all non-cancelled lessons in that slot (returns 400 if taken).
-2. Creates a Zoom meeting via the Zoom API; falls back to the admin's static Zoom link if the API call fails.
-3. Creates a Google Calendar event (non-blocking).
-4. Emails both the student and admin (fire-and-forget).
+1. Conflict check against all active lesson intent flags (skip, cancel, reschedule requests) for this student and date. Returns `409 Conflict` unless overridden.
+2. Conflict check against all non-cancelled lessons in that slot (returns 400 if taken).
+3. Creates a Zoom meeting via the Zoom API; falls back to the admin's static Zoom link if the API call fails.
+4. Creates a Google Calendar event (non-blocking).
+5. Emails both the student and admin (fire-and-forget).
 
 Body:
 ```json
@@ -471,7 +472,8 @@ Body:
   "student_id": "uuid",
   "date": "2026-05-02",
   "time": "16:00",
-  "duration": 60
+  "duration": 60,
+  "confirm_override": false
 }
 ```
 
@@ -479,27 +481,36 @@ Body:
 curl -X POST https://<your-domain>/api/agent/lessons \
   -H "Authorization: Bearer $AGENT_API_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"student_id":"<uuid>","date":"2026-05-02","time":"16:00","duration":60}'
+  -d '{"student_id":"<uuid>","date":"2026-05-02","time":"16:00","duration":60,"confirm_override":false}'
 ```
 
-201 on success with `{ "lesson": {...}, "message": "Lesson scheduled for ..." }`.
+201 on success with `{ "lesson": {...}, "message": "Lesson scheduled for ...", "warning": "...", "conflicts": [...] }`.
 400 on slot conflict or missing student.
+409 on active lesson intent flag conflict (returns `{ "error": "lesson_intent_conflict", "conflicts": [...] }` if `confirm_override` is false or missing).
 
 ### `PATCH /lessons/:id`
 
-Reschedule an existing lesson. Runs the same conflict check (excluding itself), updates the row, updates the Zoom meeting in place, and emails the student.
+Reschedule an existing lesson. Runs conflict check against active lesson intent flags for this student and the new date, returning `409 Conflict` unless overridden. Runs the same slot availability check (excluding itself), updates the row, updates the Zoom meeting in place, and emails the student.
 
 Body:
 ```json
-{ "date": "2026-05-03", "time": "17:00", "duration": 60 }
+{ 
+  "date": "2026-05-03", 
+  "time": "17:00", 
+  "duration": 60,
+  "confirm_override": false 
+}
 ```
 
 ```bash
 curl -X PATCH https://<your-domain>/api/agent/lessons/<lesson_id> \
   -H "Authorization: Bearer $AGENT_API_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"date":"2026-05-03","time":"17:00","duration":60}'
+  -d '{"date":"2026-05-03","time":"17:00","duration":60,"confirm_override":false}'
 ```
+
+Response: `{ "success": true, "message": "Lesson rescheduled successfully", "warning": "...", "conflicts": [...] }`
+409 on active lesson intent flag conflict (returns `{ "error": "lesson_intent_conflict", "conflicts": [...] }` if `confirm_override` is false or missing).
 
 ### `POST /lessons/:id/log`
 
@@ -593,6 +604,123 @@ curl -X DELETE https://<your-domain>/api/agent/lessons/<lesson_id> \
 Response: `{ "success": true, "refunded": false, "message": "Lesson cancelled." }`
 
 Note: credits are not deducted at schedule time in this app — they're deducted when a lesson is *logged* (completed). So cancellation doesn't need a refund step.
+
+### `GET /lesson-intent-flags`
+
+Query lesson intent flags (requests from student/parents, e.g. skip/cancel/reschedule).
+
+Query params:
+- `student_id` (optional): Filter by student UUID.
+- `from` (optional): Filter start date (`YYYY-MM-DD`).
+- `to` (optional): Filter end date (`YYYY-MM-DD`).
+- `status` (optional): Filter by status (`active`, `resolved`, `dismissed`).
+
+```bash
+curl -H "Authorization: Bearer $AGENT_API_SECRET" \
+  "https://<your-domain>/api/agent/lesson-intent-flags?student_id=<uuid>&status=active"
+```
+
+Response:
+```json
+{
+  "flags": [
+    {
+      "id": "uuid",
+      "student_id": "uuid",
+      "lesson_id": null,
+      "target_date": "2026-05-28",
+      "intent": "skip_requested",
+      "status": "active",
+      "source_message_id": "uuid",
+      "source": "agent",
+      "note": "Zou said Edwin needs to skip today's lesson.",
+      "created_at": "2026-05-28T...",
+      "updated_at": "2026-05-28T...",
+      "resolved_at": null,
+      "resolved_by": null,
+      "dismissed_at": null,
+      "dismissed_by": null
+    }
+  ]
+}
+```
+
+### `POST /lesson-intent-flags`
+
+Create a new lesson intent flag.
+
+Body:
+```json
+{
+  "student_id": "uuid",
+  "lesson_id": null,
+  "target_date": "2026-05-28",
+  "intent": "skip_requested",
+  "source_message_id": "uuid",
+  "source": "agent",
+  "note": "Zou said Edwin needs to skip today's lesson."
+}
+```
+
+Validation:
+- `intent`: one of `skip_requested`, `cancel_requested`, `reschedule_requested`, `schedule_requested`, `other`.
+- `source`: one of `admin`, `agent`, `system`. Default is `admin`.
+
+```bash
+curl -X POST https://<your-domain>/api/agent/lesson-intent-flags \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"student_id":"<uuid>","target_date":"2026-05-28","intent":"skip_requested","source":"agent","note":"Zou said Edwin needs to skip today\'s lesson."}'
+```
+
+Response (201 Created):
+```json
+{
+  "flag": {
+    "id": "uuid",
+    "student_id": "uuid",
+    "target_date": "2026-05-28",
+    "intent": "skip_requested",
+    "status": "active",
+    "note": "..."
+  }
+}
+```
+
+### `PATCH /lesson-intent-flags/:id`
+
+Resolve or dismiss a lesson intent flag.
+
+Body:
+```json
+{
+  "status": "resolved",
+  "note": "Lesson canceled."
+}
+```
+
+Validation:
+- `status`: one of `active`, `resolved`, `dismissed`.
+
+```bash
+curl -X PATCH https://<your-domain>/api/agent/lesson-intent-flags/<id> \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"resolved","note":"Lesson canceled."}'
+```
+
+Response:
+```json
+{
+  "flag": {
+    "id": "uuid",
+    "status": "resolved",
+    "note": "Lesson canceled.",
+    "resolved_at": "2026-05-28T...",
+    "resolved_by": "uuid"
+  }
+}
+```
 
 ## Error shape
 

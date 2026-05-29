@@ -7,11 +7,12 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Loader2, Music, Calendar, Clock, ArrowDown, ArrowRight, FileText, Video } from "lucide-react"
+import { Loader2, Music, Calendar, Clock, ArrowDown, ArrowRight, FileText, Video, AlertCircle } from "lucide-react"
 import { getStudentLessonHistory } from "@/app/actions/student-history"
 import { getStudentResources, updateAssignmentNote } from "@/app/actions/resources"
 import { useToast } from "@/hooks/use-toast"
 import type { StudentRoster } from "@/types/admin"
+import { getLessonIntentFlagsAction, updateLessonIntentFlagStatusAction } from "@/app/actions/lesson-intent-flags"
 
 interface StudentProfileSheetProps {
     student: StudentRoster | null
@@ -33,8 +34,10 @@ type LessonHistory = {
 }
 
 export function StudentProfileSheet({ student, open, onOpenChange }: StudentProfileSheetProps) {
+    const { toast } = useToast()
     const [lessons, setLessons] = useState<LessonHistory[]>([])
     const [resources, setResources] = useState<any[]>([])
+    const [flags, setFlags] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
 
     useEffect(() => {
@@ -42,19 +45,24 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
             setLoading(true)
             Promise.all([
                 getStudentLessonHistory(student.id),
-                getStudentResources(student.id)
-            ]).then(([lessonRes, resourceRes]) => {
+                getStudentResources(student.id),
+                getLessonIntentFlagsAction(student.id)
+            ]).then(([lessonRes, resourceRes, flagRes]) => {
                 if ('lessons' in lessonRes) {
                     setLessons(lessonRes.lessons as LessonHistory[])
                 }
                 if (resourceRes.resources) {
                     setResources(resourceRes.resources)
                 }
+                if (flagRes && 'flags' in flagRes) {
+                    setFlags(flagRes.flags || [])
+                }
                 setLoading(false)
             })
         } else {
             setLessons([])
             setResources([])
+            setFlags([])
         }
     }, [open, student?.id])
 
@@ -71,6 +79,36 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
         const ap = hn >= 12 ? 'PM' : 'AM'
         const h12 = hn % 12 || 12
         return `${h12}:${m} ${ap}`
+    }
+
+    const handleUpdateFlagStatus = async (flagId: string, status: 'resolved' | 'dismissed') => {
+        const result = await updateLessonIntentFlagStatusAction(flagId, status)
+        if (result.success) {
+            setFlags(prev =>
+                prev.map(f =>
+                    f.id === flagId
+                        ? {
+                              ...f,
+                              status,
+                              resolved_at: result.flag.resolved_at,
+                              dismissed_at: result.flag.dismissed_at,
+                              resolved_by: result.flag.resolved_by,
+                              dismissed_by: result.flag.dismissed_by,
+                          }
+                        : f
+                )
+            )
+            toast({
+                title: `Flag ${status === 'resolved' ? 'Resolved' : 'Dismissed'}`,
+                description: `The lesson intent flag has been updated to ${status}.`,
+            })
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Failed to update flag",
+                description: result.error || "An unknown error occurred",
+            })
+        }
     }
 
     return (
@@ -104,8 +142,97 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
                     </div>
                 </div>
 
+                {/* Lesson Intent Flags */}
+                <div className="px-4 pb-6 mt-4 border-t pt-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center justify-between">
+                        <span>Lesson Intent & Requests</span>
+                        {flags.filter(f => f.status === 'active').length > 0 && (
+                            <Badge variant="destructive" className="animate-pulse">
+                                {flags.filter(f => f.status === 'active').length} Active
+                            </Badge>
+                        )}
+                    </h3>
+
+                    {loading ? (
+                        <div className="flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : flags.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">No requests or intent flags recorded</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {flags.map((flag) => {
+                                const isActive = flag.status === 'active'
+                                return (
+                                    <div
+                                        key={flag.id}
+                                        className={`border rounded-lg p-3 space-y-2 transition-colors ${
+                                            isActive
+                                                ? 'bg-destructive/5 border-destructive/20'
+                                                : 'bg-muted/30 border-muted text-muted-foreground'
+                                        }`}
+                                    >
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-sm font-semibold capitalize">
+                                                        {flag.intent.replace('_', ' ')}
+                                                    </span>
+                                                    <Badge variant={isActive ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0">
+                                                        {formatDate(flag.target_date)}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="text-[10px] uppercase">
+                                                        {flag.source}
+                                                    </Badge>
+                                                </div>
+                                                {flag.note && (
+                                                    <p className={`text-xs leading-relaxed ${isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                                                        {flag.note}
+                                                    </p>
+                                                )}
+                                                <div className="text-[10px] text-muted-foreground">
+                                                    Created {new Date(flag.created_at).toLocaleDateString()}
+                                                    {flag.status !== 'active' && (
+                                                        <span>
+                                                            {" • "}
+                                                            {flag.status === 'resolved' ? 'Resolved' : 'Dismissed'}
+                                                            {flag.resolved_at && ` on ${new Date(flag.resolved_at).toLocaleDateString()}`}
+                                                            {flag.dismissed_at && ` on ${new Date(flag.dismissed_at).toLocaleDateString()}`}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {isActive && (
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-7 px-2 text-xs border-green-500/30 text-green-600 hover:bg-green-50 hover:text-green-700 dark:text-green-400 dark:hover:bg-green-950/20"
+                                                        onClick={() => handleUpdateFlagStatus(flag.id, 'resolved')}
+                                                    >
+                                                        Resolve
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted"
+                                                        onClick={() => handleUpdateFlagStatus(flag.id, 'dismissed')}
+                                                    >
+                                                        Dismiss
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+
                 {/* Lesson History */}
-                <div className="px-4 pb-6">
+                <div className="px-4 pb-6 border-t pt-4">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                         Completed Lessons
                     </h3>

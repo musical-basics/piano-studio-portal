@@ -464,6 +464,7 @@ export type ScheduleLessonArgs = {
     date: string
     time: string
     duration?: number
+    confirmOverride?: boolean
 }
 
 export async function scheduleLessonCore({
@@ -473,6 +474,7 @@ export async function scheduleLessonCore({
     date,
     time,
     duration = 60,
+    confirmOverride = false,
 }: ScheduleLessonArgs) {
     const { data: student, error: studentError } = await client
         .from('profiles')
@@ -483,6 +485,20 @@ export async function scheduleLessonCore({
 
     if (studentError || !student) {
         return { error: 'Student not found' }
+    }
+
+    // Check active lesson intent flags for conflicts
+    const { data: conflicts } = await client
+        .from('lesson_intent_flags')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('target_date', date)
+        .eq('status', 'active')
+        .in('intent', ['skip_requested', 'cancel_requested', 'reschedule_requested'])
+
+    const hasConflict = conflicts && conflicts.length > 0
+    if (hasConflict && !confirmOverride) {
+        return { error: 'lesson_intent_conflict', conflicts }
     }
 
     const isAvailable = await checkAvailabilityCore(client, date, time, duration)
@@ -614,12 +630,18 @@ export async function scheduleLessonCore({
         }
     }
 
-    revalidatePath('/admin')
-    revalidatePath('/student')
+    try {
+        revalidatePath('/admin')
+        revalidatePath('/student')
+    } catch (e) {
+        // Safe to ignore in non-Next environments
+    }
 
     return {
         success: true as const,
         lesson,
+        warning: hasConflict ? `Warning: this student has an active skip/cancel/reschedule request for this date.` : undefined,
+        conflicts: hasConflict ? conflicts : undefined,
         message: `Lesson scheduled for ${student.name} on ${date} at ${time} (${duration} min)${zoomLink ? '. Zoom link created.' : '.'}`,
     }
 }
@@ -631,6 +653,7 @@ export type RescheduleLessonArgs = {
     newDate: string
     newTime: string
     newDuration?: number
+    confirmOverride?: boolean
 }
 
 export async function rescheduleLessonCore({
@@ -640,6 +663,7 @@ export async function rescheduleLessonCore({
     newDate,
     newTime,
     newDuration = 60,
+    confirmOverride = false,
 }: RescheduleLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
@@ -649,6 +673,20 @@ export async function rescheduleLessonCore({
 
     if (lessonFetchError || !lesson) {
         return { error: 'Lesson not found' }
+    }
+
+    // Check active lesson intent flags for conflicts
+    const { data: conflicts } = await client
+        .from('lesson_intent_flags')
+        .select('*')
+        .eq('student_id', lesson.student_id)
+        .eq('target_date', newDate)
+        .eq('status', 'active')
+        .in('intent', ['skip_requested', 'cancel_requested', 'reschedule_requested'])
+
+    const hasConflict = conflicts && conflicts.length > 0
+    if (hasConflict && !confirmOverride) {
+        return { error: 'lesson_intent_conflict', conflicts }
     }
 
     const isAvailable = await checkAvailabilityCore(client, newDate, newTime, newDuration, lessonId)
@@ -728,10 +766,19 @@ export async function rescheduleLessonCore({
         }
     }
 
-    revalidatePath('/admin')
-    revalidatePath('/student')
+    try {
+        revalidatePath('/admin')
+        revalidatePath('/student')
+    } catch (e) {
+        // Safe to ignore in non-Next environments
+    }
 
-    return { success: true as const, message: 'Lesson rescheduled successfully' }
+    return {
+        success: true as const,
+        message: 'Lesson rescheduled successfully',
+        warning: hasConflict ? `Warning: this student has an active skip/cancel/reschedule request for this date.` : undefined,
+        conflicts: hasConflict ? conflicts : undefined
+    }
 }
 
 export type CancelLessonArgs = {

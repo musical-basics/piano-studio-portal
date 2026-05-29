@@ -105,6 +105,24 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const [logTime, setLogTime] = useState("12:00")
     const [logDuration, setLogDuration] = useState<number>(60)
     const [isLoading, setIsLoading] = useState(false)
+    const [activeFlags, setActiveFlags] = useState<any[]>([])
+
+    // Fetch active flags when selectedStudent is selected/changed in scheduling modal
+    React.useEffect(() => {
+        if (selectedStudent) {
+            import("@/app/actions/lesson-intent-flags").then(({ getLessonIntentFlagsAction }) => {
+                getLessonIntentFlagsAction(selectedStudent.id).then(res => {
+                    if (res && res.flags) {
+                        setActiveFlags(res.flags.filter((f: any) => f.status === 'active'))
+                    } else {
+                        setActiveFlags([])
+                    }
+                }).catch(() => setActiveFlags([]))
+            }).catch(() => setActiveFlags([]))
+        } else {
+            setActiveFlags([])
+        }
+    }, [selectedStudent])
     const [isUploading, setIsUploading] = useState(false)
     const [showEventModal, setShowEventModal] = useState(false)
     const [editingEvent, setEditingEvent] = useState<AdminEvent | null>(null)
@@ -345,26 +363,34 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         }
     }
 
-    const handleScheduleSubmit = async () => {
+    const handleScheduleSubmit = async (forceOverride = false) => {
         if (!selectedStudent || !scheduleDate || !scheduleTime) return
 
         setIsLoading(true)
 
         if (isRescheduling && rescheduleLessonId) {
-            // Import dynamically to avoid circular dependencies if any (though unlikely here)
             const { rescheduleLesson } = await import("@/app/actions/lessons")
-            const result = await rescheduleLesson(rescheduleLessonId, scheduleDate, scheduleTime, scheduleDuration)
+            const result = await rescheduleLesson(rescheduleLessonId, scheduleDate, scheduleTime, scheduleDuration, forceOverride)
 
             if (result.error) {
-                toast({
-                    variant: "destructive",
-                    title: "Rescheduling Failed",
-                    description: result.error
-                })
+                if (result.error === 'lesson_intent_conflict') {
+                    const confirmMsg = "Warning: this student has an active skip/cancel/reschedule request for this date.\n\nDo you want to override and schedule anyway?"
+                    setIsLoading(false)
+                    if (confirm(confirmMsg)) {
+                        handleScheduleSubmit(true)
+                        return
+                    }
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Rescheduling Failed",
+                        description: result.error
+                    })
+                }
             } else {
                 toast({
                     title: "Lesson Rescheduled",
-                    description: result.message
+                    description: result.warning ? `${result.message}. Note: ${result.warning}` : result.message
                 })
                 setShowScheduleModal(false)
                 setSelectedStudent(null)
@@ -373,18 +399,27 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                 setCalendarVersion(v => v + 1)
             }
         } else {
-            const result = await scheduleLesson(selectedStudent.id, scheduleDate, scheduleTime, scheduleDuration)
+            const result = await scheduleLesson(selectedStudent.id, scheduleDate, scheduleTime, scheduleDuration, forceOverride)
 
             if (result.error) {
-                toast({
-                    variant: "destructive",
-                    title: "Scheduling Failed",
-                    description: result.error
-                })
+                if (result.error === 'lesson_intent_conflict') {
+                    const confirmMsg = "Warning: this student has an active skip/cancel/reschedule request for this date.\n\nDo you want to override and schedule anyway?"
+                    setIsLoading(false)
+                    if (confirm(confirmMsg)) {
+                        handleScheduleSubmit(true)
+                        return
+                    }
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Scheduling Failed",
+                        description: result.error
+                    })
+                }
             } else {
                 toast({
                     title: "Lesson Scheduled",
-                    description: result.message
+                    description: result.warning ? `${result.message}. Note: ${result.warning}` : result.message
                 })
                 setShowScheduleModal(false)
                 setSelectedStudent(null)
@@ -1053,6 +1088,22 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 ))}
                             </select>
                         </div>
+
+                        {activeFlags.length > 0 && (
+                            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg p-3 space-y-1 text-xs">
+                                <p className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                                    <ShieldAlert className="h-3.5 w-3.5" />
+                                    Active Student Requests:
+                                </p>
+                                <ul className="text-amber-700 dark:text-amber-400 list-disc pl-4 space-y-0.5">
+                                    {activeFlags.map((flag) => (
+                                        <li key={flag.id}>
+                                            <strong>{flag.intent.replace('_', ' ')}</strong> on {flag.target_date} {flag.note ? `(${flag.note})` : ''}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">

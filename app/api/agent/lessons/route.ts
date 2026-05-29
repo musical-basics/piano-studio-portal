@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         return agentError('Invalid JSON body', 400)
     }
 
-    const { student_id: studentId, date, time, duration } = body ?? {}
+    const { student_id: studentId, date, time, duration, confirm_override } = body ?? {}
     if (!studentId || typeof studentId !== 'string') return agentError('student_id is required', 400)
     if (!date || typeof date !== 'string') return agentError('date is required (YYYY-MM-DD)', 400)
     if (!time || typeof time !== 'string') return agentError('time is required (HH:MM 24h)', 400)
@@ -51,8 +51,23 @@ export async function POST(request: NextRequest) {
         date,
         time,
         duration: parsedDuration,
+        confirmOverride: confirm_override === true,
     })
 
-    if ('error' in result) return agentError(result.error ?? 'Request failed', 400)
-    return agentOk({ lesson: result.lesson, message: result.message }, 201)
+    if ('error' in result) {
+        if (result.error === 'lesson_intent_conflict') {
+            return NextResponse.json({
+                error: 'lesson_intent_conflict',
+                conflicts: result.conflicts
+            }, { status: 409 })
+        }
+        return agentError(result.error ?? 'Request failed', 400)
+    }
+
+    return agentOk({ 
+        lesson: result.lesson, 
+        message: result.message,
+        warning: result.warning,
+        conflicts: result.conflicts
+    }, 201)
 }

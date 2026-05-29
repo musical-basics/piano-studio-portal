@@ -19,7 +19,7 @@ export async function PATCH(
         return agentError('Invalid JSON body', 400)
     }
 
-    const { date, time, duration } = body ?? {}
+    const { date, time, duration, confirm_override } = body ?? {}
     if (!date || typeof date !== 'string') return agentError('date is required (YYYY-MM-DD)', 400)
     if (!time || typeof time !== 'string') return agentError('time is required (HH:MM 24h)', 400)
 
@@ -32,10 +32,25 @@ export async function PATCH(
         newDate: date,
         newTime: time,
         newDuration: parsedDuration,
+        confirmOverride: confirm_override === true,
     })
 
-    if ('error' in result) return agentError(result.error ?? 'Request failed', 400)
-    return agentOk({ success: true, message: result.message })
+    if ('error' in result) {
+        if (result.error === 'lesson_intent_conflict') {
+            return NextResponse.json({
+                error: 'lesson_intent_conflict',
+                conflicts: result.conflicts
+            }, { status: 409 })
+        }
+        return agentError(result.error ?? 'Request failed', 400)
+    }
+
+    return agentOk({ 
+        success: true, 
+        message: result.message,
+        warning: result.warning,
+        conflicts: result.conflicts
+    })
 }
 
 export async function DELETE(

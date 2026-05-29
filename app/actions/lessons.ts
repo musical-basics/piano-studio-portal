@@ -340,7 +340,8 @@ export async function rescheduleLesson(
     lessonId: string,
     newDate: string,
     newTime: string,
-    newDuration: number = 60
+    newDuration: number = 60,
+    confirmOverride: boolean = false
 ) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -363,6 +364,7 @@ export async function rescheduleLesson(
         newDate,
         newTime,
         newDuration,
+        confirmOverride,
     })
 }
 
@@ -422,7 +424,8 @@ export async function scheduleLesson(
     studentId: string,
     date: string,
     time: string,
-    duration: number = 60
+    duration: number = 60,
+    confirmOverride: boolean = false
 ) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -445,6 +448,7 @@ export async function scheduleLesson(
         date,
         time,
         duration,
+        confirmOverride,
     })
 }
 
