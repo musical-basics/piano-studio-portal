@@ -61,9 +61,11 @@ export async function sendResetLink(formData: FormData) {
         return { error: 'Email is required' }
     }
 
-    // Get the origin from headers
+    // Get the origin from headers (handles SSL termination and reverse proxies)
     const headersList = await headers()
-    const origin = headersList.get('origin') || 'http://localhost:3000'
+    const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000'
+    const proto = headersList.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https')
+    const origin = `${proto}://${host}`
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${origin}/auth/callback?next=/reset-password`,
