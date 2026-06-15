@@ -63,17 +63,38 @@ export async function sendResetLink(formData: FormData) {
 
     // Get the origin from headers (handles SSL termination and reverse proxies)
     const headersList = await headers()
-    const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000'
-    const proto = headersList.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https')
+    const xForwardedHost = headersList.get('x-forwarded-host')
+    const hostHeader = headersList.get('host')
+    const xForwardedProto = headersList.get('x-forwarded-proto')
+    const originHeader = headersList.get('origin')
+
+    console.log('[VERBOSE PASSWORD RESET LOG - ACTIONS.TS]')
+    console.log('  email:', email)
+    console.log('  x-forwarded-host:', xForwardedHost)
+    console.log('  host:', hostHeader)
+    console.log('  x-forwarded-proto:', xForwardedProto)
+    console.log('  origin header:', originHeader)
+
+    const host = xForwardedHost || hostHeader || 'localhost:3000'
+    const proto = xForwardedProto || (host.includes('localhost') ? 'http' : 'https')
     const origin = `${proto}://${host}`
+    const redirectTo = `${origin}/auth/callback?next=/reset-password`
+
+    console.log('  resolved host:', host)
+    console.log('  resolved proto:', proto)
+    console.log('  resolved origin:', origin)
+    console.log('  redirectTo passed to Supabase:', redirectTo)
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${origin}/auth/callback?next=/reset-password`,
+        redirectTo,
     })
 
     if (error) {
+        console.error('  Supabase resetPasswordForEmail error:', error.message)
         return { error: error.message }
     }
+
+    console.log('  Supabase resetPasswordForEmail call successful!')
 
     await logAuthEvent(email, 'reset_request', 'success')
     return { success: true, message: 'Password reset link sent to your email' }
