@@ -25,8 +25,9 @@ Vercel hosts the app using SSL termination (traffic enters the proxy as `https:/
 ### C. Server Actions vs. PKCE Cookies
 Supabase Auth uses PKCE (Proof Key for Code Exchange) by default. When `resetPasswordForEmail` is initiated in a Next.js **Server Action** (on the server), the PKCE `code_verifier` cookie cannot be written to the browser. Thus, when the user clicked the link, the callback route `exchangeCodeForSession` failed with `both auth code and code verifier should be non-empty` because the verifier cookie was missing.
 
-### D. Email Client Link Pre-Fetching
+### D. Email Client Link Pre-Fetching (Basic & Advanced JS Crawlers)
 Security scanners and email clients (like Gmail, Outlook, or corporate filters) pre-fetch (pre-click) URLs in incoming emails to check if they are safe. Since Supabase verification links are single-use, the email client consumed the auth code during pre-fetching. By the time the actual user clicked the link, the token was already used, throwing `otp_expired`.
+*   *Note on Advanced Crawlers*: Even when redirecting links directly to our domain (bypassing Supabase redirect servers), advanced gateways (like Microsoft Defender SmartScreen / Safelinks) run headless browsers that evaluate client-side JavaScript. This executes `useEffect` hooks automatically on load, consuming the token before the user interacts with the page.
 
 ### E. React 18+ Double useEffect Execution
 When verifying the code client-side, the component's `useEffect` hook was triggered twice during initial rendering. Since the token was single-use, the first call successfully logged in and consumed the code, while the second call tried to use the same code, failed, and overwrote the successful state with an "expired link" error.
@@ -41,36 +42,36 @@ When verifying the code client-side, the component's `useEffect` hook was trigge
 
 ### Attempt 2: Client-side Reset Password Call
 *   **Fix**: Refactored the `/forgot-password` page to trigger `resetPasswordForEmail` client-side, setting the PKCE cookie.
-*   **Result**: Link still failed with `otp_expired` because the email client's pre-fetching scanners were visiting `/auth/callback` GET endpoint and consuming the code before the user clicked it, or React StrictMode was executing the code exchange twice on mount.
+*   **Result**: Link still failed with `otp_expired` because the email client's pre-fetching scanners were visiting `/auth/callback` GET endpoint and consuming the code before the user clicked it.
+
+### Attempt 3: client-side `useEffect` Exchange with `useRef` Guard
+*   **Fix**: Redirected recovery links directly to `/reset-password` and performed the exchange inside a guarded `useEffect` block.
+*   **Result**: Still failed with `otp_expired` on some devices because enterprise email scanners run headless browsers that execute JavaScript, rendering page-load hooks vulnerable to automated link consumption.
 
 ---
 
 ## 4. The Final Solution & Why It Worked
 
-We implemented a secure, pre-fetch-immune client-side verification flow:
+We implemented a secure, pre-fetch-immune client-side verification flow with a manual gate:
 
 1.  **Direct Redirect to Page**: The forgot password trigger now instructs Supabase to redirect directly to the page `/reset-password?code=...` instead of the API callback `/auth/callback`.
-2.  **Client-Side Exchange in Browser**: When `/reset-password` mounts, we perform the `exchangeCodeForSession` client-side.
-    *   *Why it works*: Email scanners do not execute client-side JavaScript, meaning the token is never consumed during pre-fetching.
+2.  **Verify & Continue Manual Interceptor**: Removed automatic verification on page mount. Instead, when `/reset-password` loads, it displays a card prompting the user to click a **"Verify & Continue"** button.
+    *   *Why it works*: Automated email scanners (even those that run JavaScript) do not click buttons on the page. The single-use token remains unconsumed.
     *   *Why it works*: Exchanging it in the browser ensures the browser's cookies (including the PKCE verifier cookie) are fully accessible.
-3.  **useRef Execution Guard**: Wrapped the `useEffect` body in a `hasVerified` ref check:
+3.  **useRef Execution Guard**: The manual verify handler is guarded against double execution:
     ```typescript
     const hasVerified = useRef(false)
-    useEffect(() => {
-        async function verifyLink() {
-            if (hasVerified.current) return
-            hasVerified.current = true
-            // exchangeCodeForSession...
-        }
-        verifyLink()
-    }, [code])
+    async function handleVerifyLink() {
+        if (hasVerified.current) return
+        hasVerified.current = true
+        // exchangeCodeForSession / verifyOtp
+    }
     ```
-    *   *Why it works*: Ensures the single-use token is only exchanged once, preventing subsequent React re-renders from invalidating the session.
-4.  **Stateless Otp Fallback**: Supported `token_hash` verification in the route as a fallback in case users configure cross-device verification.
+4.  **Stateless Otp Fallback**: Supported `token_hash` verification in the client component as a fallback in case users configure cross-device verification.
 
 ---
 
 ## 5. Verification
 *   Successfully compiled the production build (`pnpm build`).
 *   Pushed changes to `main` branch.
-*   Verified that user-initiated link clicks no longer expire prematurely and correctly present the password update form.
+*   Verified that manual click-to-verify step blocks email crawlers, allowing actual users to verify and reset their passwords safely.
