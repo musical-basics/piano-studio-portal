@@ -1,9 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { type EmailOtpType } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const code = searchParams.get('code')
+    const tokenHash = searchParams.get('token_hash')
+    const type = searchParams.get('type') as EmailOtpType | null
     const next = searchParams.get('next') ?? '/student'
 
     // Get the correct origin using headers (especially behind proxies)
@@ -25,6 +28,8 @@ export async function GET(request: Request) {
     console.log('  resolved proto:', proto)
     console.log('  resolved origin:', origin)
     console.log('  code present:', !!code)
+    console.log('  tokenHash present:', !!tokenHash)
+    console.log('  type:', type)
     console.log('  next parameter:', next)
 
     if (code) {
@@ -37,6 +42,20 @@ export async function GET(request: Request) {
             return NextResponse.redirect(redirectUrl)
         } else {
             console.error('  exchangeCodeForSession error:', error.message)
+        }
+    } else if (tokenHash && type) {
+        const supabase = await createClient()
+        const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type,
+        })
+
+        if (!error) {
+            const redirectUrl = `${origin}${next}`
+            console.log('  Token hash verification successful! Redirecting to:', redirectUrl)
+            return NextResponse.redirect(redirectUrl)
+        } else {
+            console.error('  verifyOtp error:', error.message)
         }
     }
 

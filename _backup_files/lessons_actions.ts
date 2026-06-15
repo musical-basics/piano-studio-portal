@@ -1,0 +1,728 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { createClient } from '@/lib/supabase/server'
+import { Resend } from 'resend'
+import { addDays, format } from 'date-fns'
+import {
+    checkAvailabilityCore,
+    listLessonsCore,
+    logLessonCore,
+    scheduleLessonCore,
+    rescheduleLessonCore,
+    cancelLessonCore,
+} from '@/lib/core/lessons'
+
+// Initialize Resend
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+
+export async function checkAvailability(date: string, time: string, duration: number = 60, excludeLessonId?: string) {
+    const supabase = await createClient()
+    return checkAvailabilityCore(supabase as any, date, time, duration, excludeLessonId)
+}
+
+export async function getLessonsForDateRange(startDate: string, endDate: string) {
+    const supabase = await createClient()
+    return listLessonsCore(supabase as any, startDate, endDate)
+}
+
+/**
+ * Log a completed lesson - updates status to 'completed' and deducts 1 credit
+ * Email notification is sent asynchronously (fire-and-forget) to not block the save
+ */
+export async function logLesson(
+    lessonId: string,
+    notes: string,
+    videoUrl?: string,
+    sheetMusicUrl?: string
+) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can log lessons' }
+    }
+
+    return logLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        lessonId,
+        notes,
+        videoUrl,
+        sheetMusicUrl,
+        completedSource: 'admin_ui',
+    })
+}
+
+
+/**
+ * Log a past lesson directly (ad-hoc) without scheduling it first
+ * Creates a lesson with status 'completed' and deducts 1 credit
+ */
+export async function logPastLesson(
+    studentId: string,
+    date: string,
+    time: string,
+    duration: number = 60,
+    notes: string,
+    videoUrl?: string,
+    sheetMusicUrl?: string
+) {
+    const supabase = await createClient()
+
+    // Verify user is admin
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+    // Verify student exists and get credits
+    const { data: student, error: studentError } = await supabase
+        .from('profiles')
+        .select('name, credits, email')
+        .eq('id', studentId)
+        .eq('role', 'student')
+        .single()
+
+    if (studentError || !student) {
+        return { error: 'Student not found' }
+    }
+
+    // Create the completed lesson
+    const { data: newLesson, error: createError } = await supabase
+        .from('lessons')
+        .insert({
+            student_id: studentId,
+            date,
+            time,
+            duration,
+            status: 'completed',
+            notes,
+            video_url: videoUrl || null,
+            sheet_music_url: sheetMusicUrl || null
+        })
+        .select()
+        .single()
+
+    if (createError) {
+        return { error: createError.message }
+    }
+
+    // Deduct 1 credit and save snapshots
+    if (student) {
+        const startingBalance = student.credits
+        const newBalance = startingBalance - 1
+
+        const { error: creditError } = await supabase
+            .from('profiles')
+            .update({ credits: newBalance })
+            .eq('id', studentId)
+
+        if (creditError) {
+            console.error('Failed to deduct credit after logging lesson:', creditError)
+        }
+
+        // Save credit snapshots to the lesson
+        if (newLesson) {
+            await supabase
+                .from('lessons')
+                .update({
+                    credit_snapshot_before: startingBalance,
+                    credit_snapshot: newBalance
+                })
+                .eq('id', newLesson.id)
+
+            console.log('logPastLesson: Credit snapshot saved:', startingBalance, '->', newBalance)
+        }
+    }
+
+    // Auto-create next week's lesson
+    if (date && time) {
+        try {
+            const currentLessonDate = new Date(`${date}T00:00:00`)
+            const nextWeekDate = addDays(currentLessonDate, 7)
+            const nextWeekDateStr = format(nextWeekDate, 'yyyy-MM-dd')
+
+            const { data: existingLesson } = await supabase
+                .from('lessons')
+                .select('id')
+                .eq('student_id', studentId)
+                .eq('date', nextWeekDateStr)
+                .neq('status', 'cancelled')
+                .maybeSingle()
+
+            if (!existingLesson) {
+                await supabase
+                    .from('lessons')
+                    .insert({
+                        student_id: studentId,
+                        date: nextWeekDateStr,
+                        time: time,
+                        duration: duration || 60,
+                        status: 'scheduled',
+                    })
+                console.log(`logPastLesson: Auto-created next lesson for ${nextWeekDateStr} at ${time}`)
+            }
+        } catch (autoCreateError) {
+            console.error('logPastLesson: Auto-create next lesson error:', autoCreateError)
+        }
+    }
+
+    revalidatePath('/admin')
+    revalidatePath('/student')
+
+    // Fire-and-forget email (async IIFE)
+    if (resend) {
+        (async () => {
+            try {
+                // Dynamic import to avoid client bundler issues
+                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
+                // Format date nicely
+                const dateObj = new Date(`${date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                // Extract sheet music filename from URL
+                let sheetMusicFileName: string | undefined
+                if (sheetMusicUrl) {
+                    try {
+                        const url = new URL(sheetMusicUrl)
+                        const pathname = decodeURIComponent(url.pathname)
+                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
+                    } catch {
+                        sheetMusicFileName = 'Sheet Music.pdf'
+                    }
+                }
+
+                await resend.emails.send({
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: student.email,
+                    subject: `Lesson Notes: ${formattedDate}`,
+                    react: LessonLoggedEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        notes: notes,
+                        sheetMusicUrl: sheetMusicUrl || undefined,
+                        sheetMusicFileName
+                    })
+                })
+                console.log('logPastLesson: Email sent to', student.email)
+            } catch (emailError) {
+                console.error('logPastLesson: Email failed (non-blocking):', emailError)
+            }
+        })()
+    }
+
+    return {
+        success: true,
+        message: `Lesson logged for ${student.name}. Credit deducted.`
+    }
+}
+
+/**
+ * Mark a lesson as no-show - updates status and deducts 1 credit (penalty)
+ */
+export async function markNoShow(lessonId: string) {
+    const supabase = await createClient()
+
+    // Verify user is admin
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can mark no-shows' }
+    }
+
+    // Get the lesson to find the student_id
+    const { data: lesson, error: lessonFetchError } = await supabase
+        .from('lessons')
+        .select('student_id, status')
+        .eq('id', lessonId)
+        .single()
+
+    if (lessonFetchError || !lesson) {
+        return { error: 'Lesson not found' }
+    }
+
+    if (lesson.status !== 'scheduled') {
+        return { error: 'Can only mark scheduled lessons as no-show' }
+    }
+
+    // Update the lesson status
+    const { error: lessonError } = await supabase
+        .from('lessons')
+        .update({
+            status: 'cancelled',
+            notes: 'Marked as No-Show by teacher. Credit forfeited.'
+        })
+        .eq('id', lessonId)
+
+    if (lessonError) {
+        return { error: lessonError.message }
+    }
+
+    // Deduct 1 credit from the student (penalty - no refund)
+    const { data: student } = await supabase
+        .from('profiles')
+        .select('credits')
+        .eq('id', lesson.student_id)
+        .single()
+
+    if (student) {
+        await supabase
+            .from('profiles')
+            .update({ credits: student.credits - 1 })
+            .eq('id', lesson.student_id)
+    }
+
+    revalidatePath('/admin')
+    revalidatePath('/student')
+    return { success: true }
+}
+
+/**
+ * Cancel a lesson - deletes the row, deletes Zoom meeting, sends cancellation email.
+ * Admin: any scheduled/completed lesson. Student: own scheduled lesson only.
+ */
+export async function cancelLesson(lessonId: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    const actorRole: 'admin' | 'student' = profile?.role === 'admin' ? 'admin' : 'student'
+
+    return cancelLessonCore({
+        client: supabase as any,
+        actorId: user.id,
+        actorRole,
+        lessonId,
+    })
+}
+
+/**
+ * Reschedule a lesson (admin only)
+ */
+export async function rescheduleLesson(
+    lessonId: string,
+    newDate: string,
+    newTime: string,
+    newDuration: number = 60
+) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can reschedule lessons' }
+    }
+
+    return rescheduleLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        lessonId,
+        newDate,
+        newTime,
+        newDuration,
+    })
+}
+
+/**
+ * Purchase credits (mock - no Stripe integration for testing)
+ */
+export async function purchaseCredits(credits: number) {
+    const supabase = await createClient()
+
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    // Get current profile
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('credits, credits_total')
+        .eq('id', user.id)
+        .single()
+
+    if (profileError || !profile) {
+        return { error: 'Profile not found' }
+    }
+
+    // Add credits
+    const newCredits = profile.credits + credits
+    const newTotal = profile.credits_total + credits
+
+    const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+            credits: newCredits,
+            credits_total: newTotal
+        })
+        .eq('id', user.id)
+
+    if (updateError) {
+        return { error: updateError.message }
+    }
+
+    revalidatePath('/student')
+    revalidatePath('/admin')
+
+    return {
+        success: true,
+        newCredits,
+        message: `Successfully added ${credits} credit${credits > 1 ? 's' : ''} to your account!`
+    }
+}
+
+/**
+ * Schedule a new lesson (admin only)
+ */
+export async function scheduleLesson(
+    studentId: string,
+    date: string,
+    time: string,
+    duration: number = 60
+) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can schedule lessons' }
+    }
+
+    return scheduleLessonCore({
+        client: supabase as any,
+        adminId: user.id,
+        studentId,
+        date,
+        time,
+        duration,
+    })
+}
+
+/**
+ * Update a lesson (notes, video_url, sheet_music_url)
+ * Sends email notification with updated info (fire-and-forget)
+ */
+export async function updateLesson(
+    lessonId: string,
+    notes: string,
+    videoUrl?: string,
+    sheetMusicUrl?: string
+) {
+    const supabase = await createClient()
+
+    // Verify user is admin
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can update lessons' }
+    }
+
+    // Get the lesson to find student_id and date for email
+    const { data: lesson, error: fetchError } = await supabase
+        .from('lessons')
+        .select('student_id, date')
+        .eq('id', lessonId)
+        .single()
+
+    if (fetchError || !lesson) {
+        return { error: 'Lesson not found' }
+    }
+
+    // Update the lesson
+    const { error: lessonError } = await supabase
+        .from('lessons')
+        .update({
+            notes,
+            video_url: videoUrl || null,
+            sheet_music_url: sheetMusicUrl || null
+        })
+        .eq('id', lessonId)
+
+    if (lessonError) {
+        return { error: lessonError.message }
+    }
+
+    console.log('updateLesson: Database update successful')
+
+    // Revalidate paths immediately
+    revalidatePath('/admin')
+    revalidatePath('/student')
+
+    // Fire-and-forget email notification
+    if (resend) {
+        (async () => {
+            try {
+                // Fetch student details
+                const { data: student } = await supabase
+                    .from('profiles')
+                    .select('name, email')
+                    .eq('id', lesson.student_id)
+                    .single()
+
+                if (!student?.email) {
+                    console.log('updateLesson: No student email, skipping notification')
+                    return
+                }
+
+                // Dynamic import to avoid client bundler issues
+                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
+
+                // Format date
+                const dateObj = new Date(`${lesson.date}T00:00:00`)
+                const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                })
+
+                // Extract sheet music filename from URL
+                let sheetMusicFileName: string | undefined
+                if (sheetMusicUrl) {
+                    try {
+                        const url = new URL(sheetMusicUrl)
+                        const pathname = decodeURIComponent(url.pathname)
+                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
+                        // Remove timestamp prefix if present
+                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
+                    } catch {
+                        sheetMusicFileName = 'Sheet Music.pdf'
+                    }
+                }
+
+                await resend.emails.send({
+                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                    to: student.email,
+                    subject: `Lesson Notes Updated: ${formattedDate}`,
+                    react: LessonLoggedEmail({
+                        studentName: student.name || 'Student',
+                        date: formattedDate,
+                        notes: notes,
+                        sheetMusicUrl: sheetMusicUrl || undefined,
+                        sheetMusicFileName
+                    })
+                })
+                console.log('updateLesson: Email sent to', student.email)
+            } catch (emailError) {
+                console.error('updateLesson: Email failed (non-blocking):', emailError)
+            }
+        })()
+    }
+
+    return { success: true, message: 'Lesson updated successfully' }
+}
+
+
+/**
+ * Upload a file to Supabase Storage
+ */
+export async function uploadFile(formData: FormData) {
+    const supabase = await createClient()
+
+    // Verify user is admin
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { error: 'Unauthorized' }
+    }
+
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+    if (adminProfile?.role !== 'admin') {
+        return { error: 'Only admins can upload files' }
+    }
+
+    const file = formData.get('file') as File
+    if (!file) {
+        return { error: 'No file provided' }
+    }
+
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+    const filePath = `lesson-materials/${fileName}`
+
+    const { data, error } = await supabase.storage
+        .from('lesson-materials')
+        .upload(filePath, file)
+
+    if (error) {
+        console.error('Upload error:', error)
+        return { error: error.message }
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+        .from('lesson-materials')
+        .getPublicUrl(filePath)
+
+    return { success: true, url: publicUrl, path: data.path }
+}
+
+
+/**
+ * Confirm attendance for a lesson (student only)
+ * Updates is_confirmed to true
+ * Uses admin client to bypass RLS
+ */
+export async function confirmAttendance(lessonId: string) {
+    const supabase = await createClient()
+
+    // Verify the user is authenticated and owns this lesson
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+        return { success: false, error: 'Unauthorized' }
+    }
+
+    // Use admin client to bypass RLS
+    const { createClient: createAdminClient } = await import('@supabase/supabase-js')
+    const supabaseAdmin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!
+    )
+
+    const { error } = await supabaseAdmin
+        .from('lessons')
+        .update({ is_confirmed: true })
+        .eq('id', lessonId)
+        .eq('student_id', user.id) // Security: only update if student owns the lesson
+
+    if (error) {
+        console.error('Confirmation error:', error)
+        return { success: false, error: 'Failed to confirm attendance' }
+    }
+
+    revalidatePath('/student')
+    return { success: true }
+}
+
+// Helper to get the next occurrence of a specific day of week
+function getNextDayOfWeek(date: Date, dayName: string) {
+    const dayOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        .indexOf(dayName);
+    const resultDate = new Date(date.getTime());
+    resultDate.setDate(date.getDate() + (7 + dayOfWeek - date.getDay()) % 7);
+
+    // If result is today, move to next week (assuming "Next" means future)
+    if (resultDate.toDateString() === date.toDateString()) {
+        resultDate.setDate(resultDate.getDate() + 7);
+    }
+    return resultDate;
+}
+
+export async function bulkScheduleLessons(studentId: string, count: number) {
+    const supabase = await createClient()
+
+    // 1. Fetch Student's Standard Slot
+    const { data: student } = await supabase
+        .from('profiles')
+        .select('name, lesson_day, lesson_time, lesson_duration')
+        .eq('id', studentId)
+        .single()
+
+    if (!student || !student.lesson_day || !student.lesson_time) {
+        return { error: "Student does not have a standard day/time set." }
+    }
+
+    let successes = 0
+    let failures = 0
+    let lastDate = new Date() // Start calculating from today
+
+    // 2. Loop 'count' times
+    for (let i = 0; i < count; i++) {
+        // Find next date
+        const nextDateObj = getNextDayOfWeek(lastDate, student.lesson_day)
+
+        // Fix: Use local date components to avoid timezone shifts (e.g. 8pm PST -> Next Day UTC)
+        const year = nextDateObj.getFullYear()
+        const month = String(nextDateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(nextDateObj.getDate()).padStart(2, '0')
+        const dateStr = `${year}-${month}-${day}`
+
+        // Call your existing scheduler (handles conflicts, Google Cal, Zoom, Email)
+        const result = await scheduleLesson(
+            studentId,
+            dateStr,
+            student.lesson_time,
+            student.lesson_duration || 60
+        )
+
+        if ('success' in result) {
+            successes++
+        } else {
+            failures++
+            console.error(`Failed to schedule ${dateStr}:`, result.error)
+        }
+
+        // Advance cursor so next iteration finds the week after
+        lastDate = nextDateObj
+        // Small hack: add 1 day so getNextDayOfWeek doesn't find the same day again
+        lastDate.setDate(lastDate.getDate() + 1)
+    }
+
+    return {
+        success: true,
+        message: `Scheduled ${successes} lessons. ${failures > 0 ? `(${failures} failed due to conflicts)` : ''}`
+    }
+}

@@ -150,3 +150,8 @@ export async function updatePassword(formData: FormData) {
     redirect('/student')
 }
 
+export async function logResetRequest(email: string) {
+    if (!email) return
+    await logAuthEvent(email, 'reset_request', 'success')
+}
+

@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Music, ArrowLeft, Loader2, Mail, CheckCircle } from "lucide-react"
-import { sendResetLink } from "@/app/login/actions"
+import { createClient } from "@/lib/supabase/client"
+import { logResetRequest } from "@/app/login/actions"
 
 export default function ForgotPasswordPage() {
     const [isLoading, setIsLoading] = useState(false)
@@ -18,14 +19,34 @@ export default function ForgotPasswordPage() {
         setIsLoading(true)
         setError("")
 
-        const result = await sendResetLink(formData)
+        const email = formData.get("email") as string
+        if (!email) {
+            setError("Email is required")
+            setIsLoading(false)
+            return
+        }
 
-        setIsLoading(false)
+        try {
+            const supabase = createClient()
+            const origin = window.location.origin
 
-        if (result.error) {
-            setError(result.error)
-        } else if (result.success) {
-            setSuccess(true)
+            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: `${origin}/auth/callback?next=/reset-password`,
+            })
+
+            if (resetError) {
+                setError(resetError.message)
+            } else {
+                setSuccess(true)
+                // Log the reset request event in the audit log
+                logResetRequest(email).catch((err) => 
+                    console.error("Error logging reset request:", err)
+                )
+            }
+        } catch (err: any) {
+            setError(err?.message || "An unexpected error occurred")
+        } finally {
+            setIsLoading(false)
         }
     }
 
