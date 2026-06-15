@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,10 +22,16 @@ function ResetPasswordForm() {
     const code = searchParams.get("code")
     const tokenHash = searchParams.get("token_hash")
     const type = searchParams.get("type") || "recovery"
+    
+    // Guard to prevent double execution of exchangeCodeForSession/verifyOtp in React 18+ / StrictMode
+    const hasVerified = useRef(false)
 
     useEffect(() => {
         async function verifyLink() {
+            if (hasVerified.current) return
+            
             if (code || tokenHash) {
+                hasVerified.current = true
                 setIsVerifying(true)
                 setError("")
                 const supabase = createClient()
