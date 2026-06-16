@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Music, Repeat, Sparkles, Users, Facebook, Instagram, Mail } from "lucide-react"
+import { Music, Repeat, Sparkles, Users, Facebook, Instagram, Mail, BookOpen, Smile, Briefcase } from "lucide-react"
 import { TrialInquiryForm } from "@/components/trial-inquiry-form"
 import {
     Accordion,
@@ -21,6 +21,39 @@ const PRICING_TIERS = [
     { duration: "30 minutes", price: "$635", note: "per quarter" },
     { duration: "45 minutes", price: "$935", note: "per quarter", featured: true },
     { duration: "60 minutes", price: "$1,135", note: "per quarter" },
+]
+
+const LESSON_FOCUS_AREAS = [
+    {
+        icon: BookOpen,
+        title: "Beginner Basics",
+        description:
+            "Learn proper hand positions, finger placement, music theory, and how to read music in a fun and natural way.",
+    },
+    {
+        icon: Smile,
+        title: "Young Beginners",
+        description:
+            "Building foundational skills through engaging activities and age-appropriate repertoire.",
+    },
+    {
+        icon: Music,
+        title: "Classical Piano",
+        description:
+            "Refine your technique and learn beautiful pieces from the great composers, understanding the many layers of musicality and artistry in high-level classical performance.",
+    },
+    {
+        icon: Sparkles,
+        title: "Improvisation & Creativity",
+        description:
+            "Break free from sheet music and learn to play by ear, improvise, and compose your own music. Bring forth the music inside of you.",
+    },
+    {
+        icon: Briefcase,
+        title: "Professional Coaching",
+        description:
+            "For aspiring professionals and serious amateurs, I offer coaching on content creation, branding, and navigating the music business.",
+    },
 ]
 
 const HOMEPAGE_FAQS = [
@@ -70,6 +103,21 @@ export async function StaticLandingPage() {
 
             {/* Spacer for fixed nav */}
             <div className="h-16" />
+
+            {/* Important enrollment notice */}
+            <section className="border-b border-gray-200 bg-gray-50">
+                <div className="max-w-5xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row items-center justify-center gap-x-5 gap-y-2.5 text-center">
+                    <p className="text-sm sm:text-[0.95rem] leading-snug text-gray-800">
+                        <span className="font-semibold">Important note:</span> Lionel&apos;s studio is full for the remainder of June 2026. We&apos;ll resume accepting new students at the beginning of next month. For now, you can join the waitlist.
+                    </p>
+                    <a
+                        href="#trial"
+                        className="inline-flex shrink-0 h-9 items-center justify-center rounded-md bg-black px-5 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                    >
+                        Join the Waitlist
+                    </a>
+                </div>
+            </section>
 
             {/* Hero */}
             <section className="relative py-20 lg:py-32 overflow-hidden">
@@ -183,6 +231,90 @@ export async function StaticLandingPage() {
                                 </p>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Unlock Your Piano Potential */}
+            <section className="py-20">
+                <div className="max-w-7xl mx-auto px-4">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="text-center space-y-4 mb-12">
+                            <h2 className="font-serif text-4xl font-bold">Unlock Your Piano Potential</h2>
+                            <p className="text-xl text-gray-500">Online Lessons with Lionel Yu</p>
+                            <div className="h-1 w-20 bg-black mx-auto" />
+                        </div>
+
+                        <div className="space-y-6 text-lg leading-relaxed text-gray-700">
+                            <p>
+                                My lessons are designed to build a powerful classical foundation, whether you&apos;re a complete beginner or a professional. I&apos;ll help you master the techniques and artistry to achieve your personal piano goals.
+                            </p>
+
+                            <div className="space-y-3">
+                                <h3 className="font-serif text-2xl font-bold text-gray-950">My Teaching Philosophy</h3>
+                                <p>
+                                    My teaching style is built on patience, commitment, and making music enjoyable. I believe the most important lesson is discovering the music within yourself. I love the piano and dedicated my entire life to it, and my goal is to help you find that same joy, whether you&apos;re just getting started or have been playing for years.
+                                </p>
+                            </div>
+
+                            <div className="rounded-lg border-l-4 border-l-black bg-gray-50 p-6 shadow-sm">
+                                <p className="text-gray-800">
+                                    <span className="font-semibold">For Parents:</span> I especially enjoy working with young students and partnering with parents to foster a lifelong love for music in their children. For younger students, this means creating a supportive, fun environment where they can build confidence and bring forth their inner voice.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* What We'll Work On */}
+            <section className="py-20 bg-gray-50/50">
+                <div className="max-w-7xl mx-auto px-4">
+                    <div className="max-w-5xl mx-auto">
+                        <div className="text-center space-y-4 mb-12">
+                            <h2 className="font-serif text-4xl font-bold">What We&apos;ll Work On</h2>
+                            <p className="text-xl text-gray-500">My lessons are tailored to your personal goals. We can focus on:</p>
+                            <div className="h-1 w-20 bg-black mx-auto" />
+                        </div>
+
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {LESSON_FOCUS_AREAS.map((area) => (
+                                <div
+                                    key={area.title}
+                                    className="rounded-xl border-2 border-gray-100 bg-white p-6 shadow-sm hover:border-black transition-colors"
+                                >
+                                    <div className="space-y-4">
+                                        <div className="h-12 w-12 bg-black rounded-lg flex items-center justify-center text-white">
+                                            <area.icon className="h-6 w-6" />
+                                        </div>
+                                        <h3 className="font-serif text-xl font-bold">{area.title}</h3>
+                                        <p className="text-gray-500 leading-relaxed">{area.description}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <p className="mt-8 text-center text-gray-600 max-w-2xl mx-auto">
+                            All lessons are conducted one-on-one, with a dedicated weekly time slot to ensure consistent progress. Lessons take place via Zoom, with the meeting link shared by email.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            {/* Ready to Start CTA */}
+            <section className="py-20 bg-gray-900 text-white">
+                <div className="max-w-3xl mx-auto px-6 text-center space-y-6">
+                    <h2 className="font-serif text-4xl font-bold">Ready to Start Your Musical Journey?</h2>
+                    <p className="text-lg leading-relaxed text-gray-300">
+                        Whether you are an adult student ready to start your own journey, or a parent looking for the right mentor for your child, the first step is a discounted 30-minute introductory lesson for us to meet so I can hear you play. I&apos;d love to hear about your musical goals. Send me a message today to get started!
+                    </p>
+                    <div className="pt-2">
+                        <a
+                            href="#trial"
+                            className="inline-flex h-12 items-center justify-center rounded-md bg-white px-8 text-base font-medium text-gray-900 shadow hover:bg-gray-100 transition-colors"
+                        >
+                            Send a Message
+                        </a>
                     </div>
                 </div>
             </section>
@@ -386,7 +518,7 @@ export async function StaticLandingPage() {
                     <div className="text-center mb-12 space-y-4">
                         <h2 className="font-serif text-4xl font-bold">Free 15-Minute Trial Lesson</h2>
                         <p className="text-gray-600 text-lg leading-relaxed">
-                            Before enrolling, let&apos;s meet. We&apos;ll talk through your goals, assess where you are, and make sure we&apos;re the right fit. Send a quick note using the form below and I&apos;ll personally reply within 48 hours to schedule.
+                            Before enrolling, let&apos;s meet. We&apos;ll talk through your goals, assess where you are, and make sure we&apos;re the right fit. Send a quick note using the form below and I&apos;ll personally reply within 48 hours to schedule. If enrollment is currently full, this same form adds you to the waitlist, and I&apos;ll reach out as soon as a spot opens.
                         </p>
                     </div>
 
