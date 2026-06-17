@@ -26,6 +26,7 @@ import { updateStudent } from "@/app/actions/users"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile } from "@/lib/supabase/database.types"
 import { PricingPlan } from "@/app/actions/pricing"
+import { RecurringSlotsManager } from "@/components/admin/recurring-slots-manager"
 
 function SubmitButton() {
     const { pending } = useFormStatus()
@@ -322,6 +323,8 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             This determines the lesson length for scheduling
                         </p>
                     </div>
+
+                    <RecurringSlotsManager studentId={student.id} />
 
                     <div className="space-y-2">
                         <Label>Pricing Plan</Label>

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
 import {
@@ -678,55 +679,71 @@ function getNextDayOfWeek(date: Date, dayName: string) {
 export async function bulkScheduleLessons(studentId: string, count: number) {
     const supabase = await createClient()
 
-    // 1. Fetch Student's Standard Slot
+    // 1. Gather all recurring slots: the primary one on the profile, plus any
+    //    additional days in recurring_lesson_slots.
     const { data: student } = await supabase
         .from('profiles')
         .select('name, lesson_day, lesson_time, lesson_duration')
         .eq('id', studentId)
         .single()
 
-    if (!student || !student.lesson_day || !student.lesson_time) {
-        return { error: "Student does not have a standard day/time set." }
+    const slots: { day: string; time: string; duration: number }[] = []
+    if (student?.lesson_day && student?.lesson_time) {
+        slots.push({ day: student.lesson_day, time: student.lesson_time, duration: student.lesson_duration || 30 })
+    }
+
+    // Additional slots are read with the service role (RLS only lets a student
+    // read their own rows; an admin acting on another student would be blocked).
+    const admin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { data: extraSlots } = await admin
+        .from('recurring_lesson_slots')
+        .select('day_of_week, time, duration')
+        .eq('student_id', studentId)
+    for (const s of extraSlots || []) {
+        slots.push({ day: (s as any).day_of_week, time: (s as any).time, duration: (s as any).duration || 30 })
+    }
+
+    if (slots.length === 0) {
+        return { error: "Student does not have any recurring day/time set." }
     }
 
     let successes = 0
     let failures = 0
-    let lastDate = new Date() // Start calculating from today
 
-    // 2. Loop 'count' times
-    for (let i = 0; i < count; i++) {
-        // Find next date
-        const nextDateObj = getNextDayOfWeek(lastDate, student.lesson_day)
+    // 2. Schedule `count` future occurrences for EACH recurring slot.
+    for (const slot of slots) {
+        let lastDate = new Date() // Start calculating from today, per slot
+        for (let i = 0; i < count; i++) {
+            const nextDateObj = getNextDayOfWeek(lastDate, slot.day)
 
-        // Fix: Use local date components to avoid timezone shifts (e.g. 8pm PST -> Next Day UTC)
-        const year = nextDateObj.getFullYear()
-        const month = String(nextDateObj.getMonth() + 1).padStart(2, '0')
-        const day = String(nextDateObj.getDate()).padStart(2, '0')
-        const dateStr = `${year}-${month}-${day}`
+            // Use local date components to avoid timezone shifts (e.g. 8pm PST -> Next Day UTC)
+            const year = nextDateObj.getFullYear()
+            const month = String(nextDateObj.getMonth() + 1).padStart(2, '0')
+            const day = String(nextDateObj.getDate()).padStart(2, '0')
+            const dateStr = `${year}-${month}-${day}`
 
-        // Call your existing scheduler (handles conflicts, Google Cal, Zoom, Email)
-        const result = await scheduleLesson(
-            studentId,
-            dateStr,
-            student.lesson_time,
-            student.lesson_duration || 60
-        )
+            // Existing scheduler (handles conflicts, Google Cal, Zoom, Email)
+            const result = await scheduleLesson(studentId, dateStr, slot.time, slot.duration || 60)
 
-        if ('success' in result) {
-            successes++
-        } else {
-            failures++
-            console.error(`Failed to schedule ${dateStr}:`, result.error)
+            if ('success' in result) {
+                successes++
+            } else {
+                failures++
+                console.error(`Failed to schedule ${dateStr}:`, result.error)
+            }
+
+            // Advance cursor so the next iteration finds the following week
+            lastDate = nextDateObj
+            lastDate.setDate(lastDate.getDate() + 1)
         }
-
-        // Advance cursor so next iteration finds the week after
-        lastDate = nextDateObj
-        // Small hack: add 1 day so getNextDayOfWeek doesn't find the same day again
-        lastDate.setDate(lastDate.getDate() + 1)
     }
 
     return {
         success: true,
-        message: `Scheduled ${successes} lessons. ${failures > 0 ? `(${failures} failed due to conflicts)` : ''}`
+        message: `Scheduled ${successes} lessons across ${slots.length} recurring day(s). ${failures > 0 ? `(${failures} failed due to conflicts)` : ''}`
     }
 }
