@@ -12,7 +12,6 @@
 // + writes video_url — exactly what the webhook would have done.
 
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
-import { logLessonCore } from '@/lib/core/lessons'
 import { getZoomAccessToken } from '@/lib/zoom'
 import {
     downloadFromZoom,
@@ -159,32 +158,18 @@ export async function backfillMissingRecordings(opts: BackfillOptions = {}): Pro
             const uploaded = await uploadBufferToDropbox(dbx, buffer, targetPath)
             const sharedUrl = await getOrCreateSharedLink(dbx, uploaded.path)
 
-            // Persist the recording FIRST so it can never be lost if the credit /
-            // notification step below fails (mirrors the webhook's ordering).
+            // Attach the recording. We ONLY set video_url (and mark completed if
+            // it wasn't already). We deliberately do NOT route through logLessonCore:
+            // attaching a recovered recording must not retroactively deduct credits,
+            // auto-create "next week" lessons, or email the student. Credit/billing
+            // is owned by the original completion flow, not by recording recovery.
+            const update: Record<string, any> = { video_url: sharedUrl }
+            if (lesson.status !== 'completed') update.status = 'completed'
             const { error: videoErr } = await supabase
                 .from('lessons')
-                .update({ video_url: sharedUrl })
+                .update(update)
                 .eq('id', lesson.id)
             if (videoErr) throw new Error(`video_url update failed: ${videoErr.message}`)
-
-            // Then run credit + completion accounting via logLessonCore, preserving
-            // existing notes. revalidatePath() inside it throws when called outside a
-            // request context (e.g. the CLI script); the recording is already saved,
-            // so treat any failure here as non-fatal.
-            try {
-                const logResult = await logLessonCore({
-                    client: supabase as any,
-                    adminId: lesson.student_id,
-                    lessonId: lesson.id,
-                    notes: lesson.notes || '',
-                    videoUrl: sharedUrl,
-                    completedSource: 'system',
-                    awaitNotifications: false,
-                })
-                if ('error' in logResult) log(`credit warning for ${lesson.id}: ${logResult.error} (recording saved)`)
-            } catch (creditErr: any) {
-                log(`credit/notify step warning for ${lesson.id}: ${creditErr?.message || creditErr} (recording saved)`)
-            }
 
             result.recovered.push({ lessonId: lesson.id, meetingId, videoUrl: sharedUrl })
             processed++
