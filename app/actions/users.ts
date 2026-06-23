@@ -4,6 +4,11 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
+// Default tuition plan for newly-created students. Existing students keep their
+// own assigned plan (grandfathered); this only affects brand-new students that
+// don't get an explicit plan from the form.
+const DEFAULT_PRICING_PLAN_NAME = 'Quarterly Plan (30-min Weekly)'
+
 /**
  * Create a new student (Admin only)
  * Uses SUPABASE_SERVICE_KEY to create auth user
@@ -70,6 +75,19 @@ export async function createStudent(formData: FormData) {
         // Step 2: Auto-generate public_id from name
         const publicId = name.toLowerCase().replace(/ /g, '_')
 
+        // Step 2b: Resolve the default tuition plan (unless one was passed in).
+        // New students default to the current standard plan; existing students
+        // are untouched and keep their grandfathered plans.
+        let pricingPlanId = (formData.get('pricingPlanId') as string) || null
+        if (!pricingPlanId) {
+            const { data: defaultPlan } = await supabaseAdmin
+                .from('pricing_plans')
+                .select('id')
+                .eq('name', DEFAULT_PRICING_PLAN_NAME)
+                .maybeSingle()
+            pricingPlanId = defaultPlan?.id ?? null
+        }
+
         // Step 3: Create profile in public.profiles
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
@@ -85,6 +103,7 @@ export async function createStudent(formData: FormData) {
                 balance_due: 0,
                 lesson_duration: lessonDuration,
                 lesson_day: lessonDay,
+                pricing_plan_id: pricingPlanId,
                 public_id: publicId
             })
 
