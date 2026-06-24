@@ -17,9 +17,10 @@ config({ path: '.env.local' })
 
 const PLAN_NAME = 'Quarterly Plan (30-min Weekly)'
 const PLAN_DESCRIPTION =
-  '$635/quarter billed as 3 monthly payments of $211.67. Each payment adds 4 lesson credits (12 per quarter). Subscription lasts for 3 months. 30-minute weekly lessons.'
+  '$635/quarter billed as 3 monthly payments of $211.67. Each payment adds 4 lesson credits (12 per quarter). Each credit = 1 thirty-minute lesson. Subscription lasts for 3 months. 30-minute weekly lessons.'
 const POINT_LABEL = 'Monthly Installment'
-const POINT_DESCRIPTION = '$211.67/mo · 4 credits · subscription lasts for 3 months ($635 total)'
+const POINT_DESCRIPTION =
+  '$211.67/mo · 4 credits (each credit = 1 thirty-minute lesson) · subscription lasts for 3 months ($635 total)'
 const INSTALLMENT_CENTS = 21167 // $211.67  (635 / 3, rounded)
 const CREDITS_PER_INSTALLMENT = 4
 
