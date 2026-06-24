@@ -234,6 +234,9 @@ export interface Database {
 // Convenience types
 export type Profile = Database['public']['Tables']['profiles']['Row'] & {
     lesson_duration?: number
+    lesson_day?: string | null
+    lesson_time?: string | null
+    timezone?: string | null
 }
 export type Lesson = Database['public']['Tables']['lessons']['Row']
 export type Message = Database['public']['Tables']['messages']['Row']

@@ -358,6 +358,25 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         })
     }
 
+    // The student's standing weekly lesson slot (assigned by the studio), shown
+    // independently of whatever the next individually-scheduled lesson is.
+    const recurringSchedule = (() => {
+        if (!profile.lesson_day || !profile.lesson_time) return null
+        const [h, m] = String(profile.lesson_time).split(':').map(Number)
+        if (Number.isNaN(h) || Number.isNaN(m)) return null
+        const ampm = h >= 12 ? 'PM' : 'AM'
+        const displayHour = h % 12 || 12
+        const time = `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`
+        const tzLabels: Record<string, string> = {
+            'America/Los_Angeles': 'Pacific Time',
+            'America/Denver': 'Mountain Time',
+            'America/Chicago': 'Central Time',
+            'America/New_York': 'Eastern Time',
+        }
+        const tz = profile.timezone ? (tzLabels[profile.timezone] || profile.timezone) : null
+        return `${profile.lesson_day}s at ${time}${tz ? ` (${tz})` : ''}`
+    })()
+
     const [currentDate, setCurrentDate] = useState("")
 
     useEffect(() => {
@@ -476,7 +495,15 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 <Card className="border-2 overflow-hidden">
                     <CardHeader className="pb-4 bg-muted/20 border-b">
                         <div className="flex items-center justify-between">
-                            <CardTitle className="text-2xl font-serif">Next Lesson</CardTitle>
+                            <div>
+                                <CardTitle className="text-2xl font-serif">Next Lesson</CardTitle>
+                                {recurringSchedule && (
+                                    <CardDescription className="flex items-center gap-1.5 mt-1">
+                                        <CalendarClock className="h-3.5 w-3.5" />
+                                        Your weekly lesson: {recurringSchedule}
+                                    </CardDescription>
+                                )}
+                            </div>
 
                             {/* STATUS BADGE */}
                             {nextLesson && (
