@@ -52,7 +52,7 @@ const LESSON_FOCUS_AREAS = [
         icon: Briefcase,
         title: "Professional Coaching",
         description:
-            "For aspiring professionals and serious amateurs, I offer coaching on content creation, branding, and navigating the music business.",
+            "For aspiring professionals/serious amateurs, I offer coaching on content creation, branding, and navigating the music business.",
     },
 ]
 
@@ -108,7 +108,7 @@ export async function StaticLandingPage() {
             <section className="border-b border-gray-200 bg-gray-50">
                 <div className="max-w-5xl mx-auto px-4 py-3.5 flex flex-col sm:flex-row items-center justify-center gap-x-5 gap-y-2.5 text-center">
                     <p className="text-sm sm:text-[0.95rem] leading-snug text-gray-800">
-                        <span className="font-semibold">Important note:</span> Lionel&apos;s studio is full for the remainder of June 2026. We&apos;ll resume accepting new students at the beginning of next month. For now, you can join the waitlist.
+                        <span className="font-semibold">Important note:</span> Lionel&apos;s studio is full for the remainder of June 2026. We will resume accepting new students at the beginning of next month. For now you can join the waitlist.
                     </p>
                     <a
                         href="#trial"
@@ -295,7 +295,7 @@ export async function StaticLandingPage() {
                         </div>
 
                         <p className="mt-8 text-center text-gray-600 max-w-2xl mx-auto">
-                            All lessons are conducted one-on-one, with a dedicated weekly time slot to ensure consistent progress. Lessons take place via Zoom, with the meeting link shared by email.
+                            All lessons are conducted one-on-one, with a dedicated weekly time slot to ensure consistent progress. All lessons are conducted via Zoom, with the meeting link being shared via email.
                         </p>
                     </div>
                 </div>
@@ -518,7 +518,7 @@ export async function StaticLandingPage() {
                     <div className="text-center mb-12 space-y-4">
                         <h2 className="font-serif text-4xl font-bold">Free 15-Minute Trial Lesson</h2>
                         <p className="text-gray-600 text-lg leading-relaxed">
-                            Before enrolling, let&apos;s meet. We&apos;ll talk through your goals, assess where you are, and make sure we&apos;re the right fit. Send a quick note using the form below and I&apos;ll personally reply within 48 hours to schedule. If enrollment is currently full, this same form adds you to the waitlist, and I&apos;ll reach out as soon as a spot opens.
+                            Before enrolling, let&apos;s meet. We&apos;ll talk through your goals, assess where you are, and make sure we&apos;re the right fit. Send a quick note using the form below and I&apos;ll personally reply within 48 hours to schedule.
                         </p>
                     </div>
 
