@@ -27,90 +27,37 @@ const PDF_PATH = resolve('docs/Online Lessons Setup LYPS 2025.pdf')
 const subject = 'Welcome to Lionel Yu Piano Studio 🎹'
 
 const html = `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.55;">
-  <h1 style="font-size: 22px; margin: 0 0 4px;">Welcome to Lionel Yu Piano Studio 🎹</h1>
-  <p style="font-size: 15px; color: #444; margin: 16px 0;">Hi ${STUDENT.firstName},</p>
-  <p style="font-size: 15px; color: #444; margin: 16px 0;">
-    Welcome! I'm delighted you're joining the studio for online piano lessons. Here is everything you need to get started.
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; color: #1a1a1a; line-height: 1.55;">
+  <p>Hi ${STUDENT.firstName},</p>
+  <p>Welcome! Your student portal account is ready. You can sign in here:</p>
+  <p>
+    Portal: <a href="${PORTAL_URL}">${PORTAL_URL.replace('https://', '')}</a><br/>
+    Email: ${STUDENT.email}<br/>
+    Temporary password: ${STUDENT.tempPassword}
   </p>
-
-  <h2 style="font-size: 16px; margin: 28px 0 8px;">Your lessons</h2>
-  <ul style="font-size: 15px; color: #444; margin: 0; padding-left: 20px;">
-    <li>Schedule: ${STUDENT.day} at ${STUDENT.time}</li>
-    <li>Length: 30 minutes, weekly</li>
-    <li>Format: online over Zoom</li>
-  </ul>
-
-  <h2 style="font-size: 16px; margin: 28px 0 8px;">Your student portal</h2>
-  <p style="font-size: 15px; color: #444; margin: 8px 0;">
-    You have an account at <a href="${PORTAL_URL}" style="color: #635bff;">${PORTAL_URL.replace('https://', '')}</a>.
-  </p>
-  <ul style="font-size: 15px; color: #444; margin: 0; padding-left: 20px;">
-    <li>Email: ${STUDENT.email}</li>
-    <li>Temporary password: <strong>${STUDENT.tempPassword}</strong> (please change it after your first login)</li>
-  </ul>
-  <p style="font-size: 15px; color: #444; margin: 8px 0;">
-    From the portal you can book lessons, view your schedule, and manage your tuition.
-  </p>
-
-  <h2 style="font-size: 16px; margin: 28px 0 8px;">Tuition</h2>
-  <p style="font-size: 15px; color: #444; margin: 8px 0;">
-    You're on our quarterly plan: $635 per quarter, billed as 3 monthly payments of $211.67.
-    Each payment adds 4 lesson credits, for 12 credits per quarter (one for each weekly lesson).
-  </p>
-
-  <h2 style="font-size: 16px; margin: 28px 0 8px;">First step: start your plan</h2>
-  <p style="font-size: 15px; color: #444; margin: 8px 0;">
-    To activate your credits and book your first lesson, log into the portal and click
-    <strong>Purchase Credits</strong> to start your subscription. Your first payment adds 4 credits right away.
-  </p>
-  <p style="margin: 16px 0;">
-    <a href="${PORTAL_URL}" style="display: inline-block; background: #111; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 15px;">Log in to your portal →</a>
-  </p>
-
-  <h2 style="font-size: 16px; margin: 28px 0 8px;">Setting up for online lessons</h2>
-  <p style="font-size: 15px; color: #444; margin: 8px 0;">
-    I've attached a short setup guide (Online Lessons Setup) covering camera placement, audio tips,
-    and how to join our Zoom sessions. Please take a look before our first lesson.
-  </p>
-
-  <p style="font-size: 15px; color: #444; margin: 24px 0 8px;">
-    If you have any questions, just reply to this email. Looking forward to making music with you!
-  </p>
-  <p style="font-size: 15px; color: #444; margin: 8px 0 0;">Warmly,<br/>Lionel Yu<br/><span style="color:#888;">Lionel Yu Piano Studio</span></p>
+  <p>Please sign in and change your password. You'll find everything else in the portal.</p>
+  <p>The setup guide is attached.</p>
+  <p>Any questions, just reply.</p>
+  <p>Warmly,<br/>Lionel Yu</p>
 </div>
 `
 
-const text = `Welcome to Lionel Yu Piano Studio
+const text = `Hi ${STUDENT.firstName},
 
-Hi ${STUDENT.firstName},
+Welcome! Your student portal account is ready. You can sign in here:
 
-Welcome! I'm delighted you're joining the studio for online piano lessons. Here is everything you need to get started.
+Portal: ${PORTAL_URL}
+Email: ${STUDENT.email}
+Temporary password: ${STUDENT.tempPassword}
 
-YOUR LESSONS
-- Schedule: ${STUDENT.day} at ${STUDENT.time}
-- Length: 30 minutes, weekly
-- Format: online over Zoom
+Please sign in and change your password. You'll find everything else in the portal.
 
-YOUR STUDENT PORTAL (${PORTAL_URL})
-- Email: ${STUDENT.email}
-- Temporary password: ${STUDENT.tempPassword} (please change it after your first login)
-From the portal you can book lessons, view your schedule, and manage your tuition.
+The setup guide is attached.
 
-TUITION
-You're on our quarterly plan: $635 per quarter, billed as 3 monthly payments of $211.67. Each payment adds 4 lesson credits, for 12 credits per quarter (one for each weekly lesson).
-
-FIRST STEP: START YOUR PLAN
-Log into the portal and click "Purchase Credits" to start your subscription. Your first payment adds 4 credits right away so you can book your first lesson.
-
-SETTING UP FOR ONLINE LESSONS
-I've attached a short setup guide (Online Lessons Setup) covering camera placement, audio tips, and how to join our Zoom sessions. Please take a look before our first lesson.
-
-If you have any questions, just reply to this email. Looking forward to making music with you!
+Any questions, just reply.
 
 Warmly,
 Lionel Yu
-Lionel Yu Piano Studio
 `
 
 async function run() {

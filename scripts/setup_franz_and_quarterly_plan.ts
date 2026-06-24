@@ -17,9 +17,9 @@ config({ path: '.env.local' })
 
 const PLAN_NAME = 'Quarterly Plan (30-min Weekly)'
 const PLAN_DESCRIPTION =
-  '$635/quarter billed as 3 monthly payments of $211.67. Each payment adds 4 lesson credits (12 per quarter). 30-minute weekly lessons.'
+  '$635/quarter billed as 3 monthly payments of $211.67. Each payment adds 4 lesson credits (12 per quarter). Subscription lasts for 3 months. 30-minute weekly lessons.'
 const POINT_LABEL = 'Monthly Installment'
-const POINT_DESCRIPTION = '$211.67/mo · 4 credits · part of the $635 quarterly plan'
+const POINT_DESCRIPTION = '$211.67/mo · 4 credits · subscription lasts for 3 months ($635 total)'
 const INSTALLMENT_CENTS = 21167 // $211.67  (635 / 3, rounded)
 const CREDITS_PER_INSTALLMENT = 4
 
@@ -96,7 +96,8 @@ async function run() {
     plan = data
     console.log(`pricing_plans row created: ${plan.id}`)
   } else {
-    console.log(`pricing_plans row exists: ${plan.id}`)
+    await supabase.from('pricing_plans').update({ description: PLAN_DESCRIPTION }).eq('id', plan.id)
+    console.log(`pricing_plans row exists: ${plan.id} (description synced)`)
   }
 
   const { data: existingPoint } = await supabase
@@ -118,13 +119,12 @@ async function run() {
     if (error) throw error
     console.log('pricing_points row created (subscription).')
   } else {
-    // Keep the stripe_price_id in sync.
-    if (existingPoint.stripe_price_id !== price.id) {
-      await supabase.from('pricing_points').update({ stripe_price_id: price.id }).eq('id', existingPoint.id)
-      console.log('pricing_points stripe_price_id updated.')
-    } else {
-      console.log(`pricing_points row exists: ${existingPoint.id}`)
-    }
+    // Keep the stripe_price_id + description in sync.
+    await supabase
+      .from('pricing_points')
+      .update({ stripe_price_id: price.id, description: POINT_DESCRIPTION })
+      .eq('id', existingPoint.id)
+    console.log(`pricing_points row exists: ${existingPoint.id} (price id + description synced)`)
   }
 
   // ---- 3. Student: Franz Chen (0 credits; credits come from Stripe) ----
