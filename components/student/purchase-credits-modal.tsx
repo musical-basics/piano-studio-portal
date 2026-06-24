@@ -106,6 +106,10 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
           </div>
         )}
 
+        <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground leading-relaxed">
+          <span className="font-medium text-foreground">Your tuition includes:</span> weekly Zoom lessons, weekly assignments, lesson recordings, course material, and written questions/answers to your teacher.
+        </div>
+
         <div className="border-t pt-4">
           <Button className="w-full" size="lg" onClick={handleCheckout} disabled={isProcessing || !selectedPointId}>
             {isProcessing ? <Loader2 className="animate-spin mr-2" /> : (

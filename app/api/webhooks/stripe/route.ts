@@ -165,6 +165,17 @@ export async function POST(req: Request) {
                         console.log(`[Webhook] ✅ Added ${creditsToAdd} credits to user ${userId} (Checkout) | ${oldCredits} → ${newBalance}`)
                     }
                 }
+
+                // Fixed-length subscription: schedule cancellation if the plan's
+                // price has a billing_cycles limit (no-op otherwise).
+                if (type === 'subscription' && session.subscription) {
+                    const subId = typeof session.subscription === 'string'
+                        ? session.subscription
+                        : (session.subscription as Stripe.Subscription).id
+                    await enforceBillingCycleLimit(subId).catch(e => {
+                        console.error('[Webhook] billing-cycle enforce (checkout) failed:', e)
+                    })
+                }
             } else {
                 console.warn(`[Webhook] checkout.session.completed missing userId in metadata`)
             }
@@ -262,6 +273,11 @@ export async function POST(req: Request) {
                 }).catch(e => {
                     console.error('[Webhook] Failed to send renewal confirmation:', e)
                 })
+
+                // Stop fixed-length plans once they hit their payment count.
+                await enforceBillingCycleLimit(subscriptionId).catch(e => {
+                    console.error('[Webhook] billing-cycle enforce (renewal) failed:', e)
+                })
             }
         }
 
@@ -299,11 +315,41 @@ export async function POST(req: Request) {
             console.error('[Webhook] Failed to send failure notification email:', e)
         })
 
-        return NextResponse.json({ 
-            error: 'Webhook handler failed', 
+        return NextResponse.json({
+            error: 'Webhook handler failed',
             message: errMsg,
-            stack: errStack 
+            stack: errStack
         }, { status: 500 })
+    }
+}
+
+/**
+ * Enforce a fixed-length subscription. If the subscription's price carries a
+ * `billing_cycles` metadata value (e.g. "3" for the quarterly plan), cancel the
+ * subscription at the end of the current period once that many invoices have
+ * been paid — so the student is charged exactly that many times and never a
+ * cycle more. No-op for open-ended subscriptions (no metadata).
+ */
+async function enforceBillingCycleLimit(subscriptionId: string) {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price'],
+    })
+
+    const price = subscription.items.data[0]?.price as Stripe.Price | undefined
+    const maxCycles = price?.metadata?.billing_cycles ? parseInt(price.metadata.billing_cycles, 10) : 0
+    if (!maxCycles || maxCycles <= 0) return // open-ended plan, nothing to enforce
+
+    // Already scheduled to end? Don't touch it again (idempotent on webhook retries).
+    if (subscription.cancel_at_period_end || subscription.cancel_at) return
+
+    // Count invoices actually paid on this subscription.
+    const paid = await stripe.invoices.list({ subscription: subscriptionId, status: 'paid', limit: 100 })
+    const paidCount = paid.data.length
+    console.log(`[Webhook] billing-cycle check sub=${subscriptionId} paid=${paidCount}/${maxCycles}`)
+
+    if (paidCount >= maxCycles) {
+        await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true })
+        console.log(`[Webhook] ✅ Subscription ${subscriptionId} hit ${maxCycles} payments — set to cancel at period end (no further charges).`)
     }
 }
 

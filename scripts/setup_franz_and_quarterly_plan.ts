@@ -23,6 +23,7 @@ const POINT_DESCRIPTION =
   '$211.67/mo · 4 credits (each credit = 1 thirty-minute lesson) · subscription lasts for 3 months ($635 total)'
 const INSTALLMENT_CENTS = 21167 // $211.67  (635 / 3, rounded)
 const CREDITS_PER_INSTALLMENT = 4
+const BILLING_CYCLES = 3 // subscription auto-cancels after 3 payments (one quarter)
 
 const FRANZ = {
   name: 'Franz Chen',
@@ -68,17 +69,22 @@ async function run() {
       p.currency === 'usd' &&
       p.recurring?.interval === 'month',
   )
+  const priceMetadata = {
+    credits: String(CREDITS_PER_INSTALLMENT),
+    billing_cycles: String(BILLING_CYCLES), // webhook cancels the sub after this many paid invoices
+  }
   if (!price) {
     price = await stripe.prices.create({
       product: product.id,
       currency: 'usd',
       unit_amount: INSTALLMENT_CENTS,
       recurring: { interval: 'month' },
-      metadata: { credits: String(CREDITS_PER_INSTALLMENT) },
+      metadata: priceMetadata,
     })
     console.log(`Stripe price created: ${price.id} ($${(INSTALLMENT_CENTS / 100).toFixed(2)}/mo)`)
   } else {
-    console.log(`Stripe price exists: ${price.id}`)
+    await stripe.prices.update(price.id, { metadata: priceMetadata })
+    console.log(`Stripe price exists: ${price.id} (metadata synced)`)
   }
 
   // ---- 2. DB: pricing_plans + pricing_points ----
