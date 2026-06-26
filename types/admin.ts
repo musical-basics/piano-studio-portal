@@ -25,6 +25,7 @@ export type Inquiry = {
     phone: string | null
     experience: string
     goals: string
-    status: 'new' | 'contacted' | 'student' | 'archived'
+    // CRM lead status, e.g. 'Lead' | 'Contacted' | 'Prospect' | 'Student' | 'Archived'
+    status: string
     created_at: string
 }

@@ -26,7 +26,7 @@ export interface Database {
                     name: string | null
                     email: string | null
                     phone: string | null
-                    role: 'student' | 'admin'
+                    role: 'student' | 'admin' | 'prospect'
                     credits: number
                     credits_total: number
                     balance_due: number
@@ -51,7 +51,7 @@ export interface Database {
                     name?: string | null
                     email?: string | null
                     phone?: string | null
-                    role?: 'student' | 'admin'
+                    role?: 'student' | 'admin' | 'prospect'
                     credits?: number
                     credits_total?: number
                     balance_due?: number
@@ -71,7 +71,7 @@ export interface Database {
                     name?: string | null
                     email?: string | null
                     phone?: string | null
-                    role?: 'student' | 'admin'
+                    role?: 'student' | 'admin' | 'prospect'
                     credits?: number
                     credits_total?: number
                     balance_due?: number

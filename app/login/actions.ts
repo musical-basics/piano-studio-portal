@@ -37,6 +37,8 @@ export async function login(formData: FormData) {
 
         if (profile?.role === 'admin') {
             redirect('/admin')
+        } else if (profile?.role === 'prospect') {
+            redirect('/prospect')
         } else {
             redirect('/student')
         }
@@ -141,6 +143,8 @@ export async function updatePassword(formData: FormData) {
 
         if (profile?.role === 'admin') {
             redirect('/admin')
+        } else if (profile?.role === 'prospect') {
+            redirect('/prospect')
         } else {
             redirect('/student')
         }

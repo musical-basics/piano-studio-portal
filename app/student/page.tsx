@@ -40,6 +40,12 @@ export default async function StudentPage() {
     redirect("/admin")
   }
 
+  // Prospects get a restricted dashboard, never the full student view (which exposes
+  // recordings, library, and credits). Admin impersonation can still preview it.
+  if (!impersonatingId && profile.role === 'prospect') {
+    redirect("/prospect")
+  }
+
   // Fetch teacher/admin profile for default Zoom link
   const { data: teacher } = await supabase
     .from("profiles")

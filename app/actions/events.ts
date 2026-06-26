@@ -151,10 +151,11 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
 export async function getActiveStudents(): Promise<{ id: string; name: string; email: string }[]> {
     const supabase = await createClient()
 
+    // Include prospects so the teacher can invite them to audition events.
     const { data, error } = await supabase
         .from('profiles')
-        .select('id, name, email')
-        .eq('role', 'student')
+        .select('id, name, email, role')
+        .in('role', ['student', 'prospect'])
         .order('name')
 
     if (error) {
@@ -162,7 +163,12 @@ export async function getActiveStudents(): Promise<{ id: string; name: string; e
         return []
     }
 
-    return data as { id: string; name: string; email: string }[]
+    // Label prospects so they're distinguishable in the invite picker.
+    return (data || []).map((p: any) => ({
+        id: p.id,
+        name: p.role === 'prospect' ? `${p.name} (Prospect)` : p.name,
+        email: p.email,
+    })) as { id: string; name: string; email: string }[]
 }
 
 /**

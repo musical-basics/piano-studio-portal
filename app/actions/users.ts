@@ -22,6 +22,11 @@ export async function createStudent(formData: FormData) {
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
     const lessonDay = formData.get('lessonDay') as string || null
     const password = formData.get('password') as string || 'piano123'
+    // Role: 'student' (default) or 'prospect'. Prospects are approved website
+    // requests who can log in to a restricted dashboard (setup + audition + chat)
+    // but are not yet enrolled students, so they get no credits or lessons.
+    const roleInput = formData.get('role') as string | null
+    const role = roleInput === 'prospect' ? 'prospect' : 'student'
 
     // Validate required fields
     if (!name || !email) {
@@ -97,9 +102,9 @@ export async function createStudent(formData: FormData) {
                 email,
                 parent_email: parentEmail || null,
                 phone: phone || null,
-                role: 'student',
-                credits,
-                credits_total: credits,
+                role,
+                credits: role === 'prospect' ? 0 : credits,
+                credits_total: role === 'prospect' ? 0 : credits,
                 balance_due: 0,
                 lesson_duration: lessonDuration,
                 lesson_day: lessonDay,

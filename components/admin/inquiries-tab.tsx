@@ -9,9 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Mail, Phone, Calendar, CheckCircle2, Archive, MessageSquare } from "lucide-react"
+import { Mail, Phone, Calendar, CheckCircle2, Archive, MessageSquare, UserCheck, Loader2 } from "lucide-react"
 import type { Database } from "@/lib/supabase/database.types"
-import { updateInquiryStatus } from "@/app/actions/inquiries"
+import { updateInquiryStatus, approveProspect } from "@/app/actions/inquiries"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 
@@ -23,7 +23,7 @@ type Inquiry = {
     phone: string | null
     experience: string
     goals: string
-    status: 'new' | 'contacted' | 'student' | 'archived'
+    status: string
     created_at: string
 }
 
@@ -36,13 +36,39 @@ export function InquiriesTab({ inquiries }: InquiriesTabProps) {
     const router = useRouter()
     const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null)
     const [isStatusUpdating, setIsStatusUpdating] = useState(false)
+    const [isApproving, setIsApproving] = useState(false)
 
-    // Sort by status (new first) then date
+    // Sort by status (fresh leads first) then date
     const sortedInquiries = [...inquiries].sort((a, b) => {
-        if (a.status === 'new' && b.status !== 'new') return -1
-        if (a.status !== 'new' && b.status === 'new') return 1
+        const aNew = a.status === 'Lead'
+        const bNew = b.status === 'Lead'
+        if (aNew && !bNew) return -1
+        if (!aNew && bNew) return 1
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
+
+    const handleApprove = async () => {
+        if (!selectedInquiry) return
+        setIsApproving(true)
+        const result = await approveProspect(selectedInquiry.id)
+        if (result.success) {
+            toast({
+                title: "Prospect approved",
+                description: result.warning
+                    ? `${result.warning} Temp password: ${result.tempPassword}`
+                    : `${selectedInquiry.name} can now log in. A welcome email with login details was sent.`
+            })
+            router.refresh()
+            setSelectedInquiry(null)
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Approval failed",
+                description: result.error || "Could not create prospect account."
+            })
+        }
+        setIsApproving(false)
+    }
 
     const handleStatusUpdate = async (newStatus: Inquiry['status']) => {
         if (!selectedInquiry) return
@@ -56,8 +82,8 @@ export function InquiriesTab({ inquiries }: InquiriesTabProps) {
                 description: `Inquiry marked as ${newStatus}.`
             })
             router.refresh()
-            // Optionally close dialog if moving to archived/student
-            if (newStatus === 'archived' || newStatus === 'student') {
+            // Optionally close dialog if moving to a terminal status
+            if (newStatus === 'Archived' || newStatus === 'Student' || newStatus === 'Prospect') {
                 setSelectedInquiry(null)
             } else {
                 // Update local state for immediate feedback in modal
@@ -75,10 +101,11 @@ export function InquiriesTab({ inquiries }: InquiriesTabProps) {
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'new': return <Badge className="bg-blue-500 hover:bg-blue-600">New</Badge>
-            case 'contacted': return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200">Contacted</Badge>
-            case 'student': return <Badge className="bg-green-500 hover:bg-green-600">Enrolled</Badge>
-            case 'archived': return <Badge variant="outline" className="text-muted-foreground">Archived</Badge>
+            case 'Lead': return <Badge className="bg-blue-500 hover:bg-blue-600">New</Badge>
+            case 'Contacted': return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200">Contacted</Badge>
+            case 'Prospect': return <Badge className="bg-purple-500 hover:bg-purple-600">Prospect</Badge>
+            case 'Student': return <Badge className="bg-green-500 hover:bg-green-600">Enrolled</Badge>
+            case 'Archived': return <Badge variant="outline" className="text-muted-foreground">Archived</Badge>
             default: return <Badge variant="outline">{status}</Badge>
         }
     }
@@ -185,10 +212,11 @@ export function InquiriesTab({ inquiries }: InquiriesTabProps) {
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="new">New</SelectItem>
-                                            <SelectItem value="contacted">Contacted</SelectItem>
-                                            <SelectItem value="student">Enrolled</SelectItem>
-                                            <SelectItem value="archived">Archived</SelectItem>
+                                            <SelectItem value="Lead">New</SelectItem>
+                                            <SelectItem value="Contacted">Contacted</SelectItem>
+                                            <SelectItem value="Prospect">Prospect</SelectItem>
+                                            <SelectItem value="Student">Enrolled</SelectItem>
+                                            <SelectItem value="Archived">Archived</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -201,16 +229,24 @@ export function InquiriesTab({ inquiries }: InquiriesTabProps) {
                                 </div>
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-4">
+                            <div className="flex flex-wrap justify-end gap-2 pt-4">
                                 <Button variant="outline" onClick={() => setSelectedInquiry(null)}>
                                     Close
                                 </Button>
-                                <Button asChild>
+                                <Button variant="outline" asChild>
                                     <a href={`mailto:${selectedInquiry.email}?subject=Piano Lesson Inquiry`}>
                                         <Mail className="mr-2 h-4 w-4" />
                                         Reply via Email
                                     </a>
                                 </Button>
+                                {selectedInquiry.status !== 'Prospect' && selectedInquiry.status !== 'Student' && (
+                                    <Button onClick={handleApprove} disabled={isApproving || !selectedInquiry.email}>
+                                        {isApproving
+                                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            : <UserCheck className="mr-2 h-4 w-4" />}
+                                        Approve as Prospect
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     )}
