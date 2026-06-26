@@ -67,7 +67,7 @@ const HOMEPAGE_FAQS = [
     },
     {
         q: "What if I need to miss a lesson?",
-        a: "Reschedule with 24+ hours notice and your credit isn't used. Less than 24 hours, half a credit is consumed. Less than 30 minutes notice or a no-show, the full credit is used.",
+        a: "Reschedule with 24+ hours notice and your credit isn't used. Just rebook for another time during the quarter or buffer month, and give as much notice as you reasonably can.",
     },
     {
         q: "What does my quarterly tuition cover?",

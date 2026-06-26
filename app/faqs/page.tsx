@@ -114,12 +114,7 @@ const FAQ_GROUPS: FaqGroup[] = [
                 question: "What if I need to miss a lesson?",
                 answer: (
                     <>
-                        <p>Cancellation timing determines what happens to the credit:</p>
-                        <ul>
-                            <li><strong>24+ hours notice:</strong> credit isn&apos;t used. Just rebook for another time during the quarter or buffer month.</li>
-                            <li><strong>Less than 24 hours notice:</strong> half a credit is consumed.</li>
-                            <li><strong>Less than 30 minutes notice (or a no-show):</strong> the full credit is used.</li>
-                        </ul>
+                        <p>With 24+ hours notice, your credit isn&apos;t used. Just rebook for another time during the quarter or buffer month.</p>
                         <p>Give as much notice as you reasonably can. The buffer month is there to absorb most real-life scheduling friction.</p>
                     </>
                 ),
