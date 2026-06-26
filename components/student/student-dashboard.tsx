@@ -1113,9 +1113,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             <CancellationModal
                 open={showCancellationModal}
                 onOpenChange={setShowCancellationModal}
-                onConfirm={handleConfirmCancel}
+                onConfirmCancel={handleConfirmCancel}
                 isLoading={isCancelling}
-                lesson={nextLesson || undefined}
+                lessonDate={nextLesson?.date}
+                lessonTime={nextLesson?.time}
             />
 
             {selectedLesson && (

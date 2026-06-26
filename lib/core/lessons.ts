@@ -8,6 +8,8 @@ import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-e
 import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
 import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
+import { sendMessageCore } from '@/lib/core/messages'
+import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -873,12 +875,73 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
         }
     }
 
+    // Late-cancellation fee: charged only when a STUDENT cancels their own
+    // lesson inside the 24h window. Admin-initiated cancellations never charge
+    // the student. The fee is added to balance_due and the student is notified;
+    // an admin can reverse it per case via waiveLateCancelFee().
+    let lateCancelFee = 0
+    if (actorRole === 'student' && isLateCancellation(lesson.date, lesson.time, studioNow())) {
+        try {
+            const { data: studentProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('balance_due')
+                .eq('id', lesson.student_id)
+                .single()
+
+            const currentBalance = Number(studentProfile?.balance_due ?? 0)
+            const newBalance = currentBalance + LATE_CANCEL_FEE
+
+            const { error: balanceError } = await supabaseAdmin
+                .from('profiles')
+                .update({ balance_due: newBalance })
+                .eq('id', lesson.student_id)
+
+            if (balanceError) {
+                console.error('cancelLessonCore: late-cancel fee balance update failed (non-blocking):', balanceError)
+            } else {
+                lateCancelFee = LATE_CANCEL_FEE
+
+                // Notify the student in-app, sent from the studio admin account so it
+                // lands in their normal message thread (mirrors addAdHocCharge).
+                try {
+                    const { data: admin } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id')
+                        .eq('role', 'admin')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .single()
+
+                    if (admin?.id) {
+                        const formattedDate = formatDateLong(lesson.date)
+                        const formattedTime = formatTimePst(lesson.time)
+                        await sendMessageCore({
+                            client: supabaseAdmin,
+                            senderId: admin.id,
+                            recipientId: lesson.student_id,
+                            content:
+                                `Late cancellation fee: $${LATE_CANCEL_FEE.toFixed(2)} has been added for canceling your ${formattedDate} at ${formattedTime} lesson with less than 24 hours notice.\n` +
+                                `Current Balance Due: $${newBalance.toFixed(2)}.`,
+                        })
+                    }
+                } catch (notifyError) {
+                    console.error('cancelLessonCore: late-cancel fee notification failed (non-blocking):', notifyError)
+                }
+            }
+        } catch (feeError) {
+            console.error('cancelLessonCore: late-cancel fee failed (non-blocking):', feeError)
+        }
+    }
+
     revalidatePath('/admin')
     revalidatePath('/student')
 
     return {
         success: true as const,
         refunded: false,
-        message: 'Lesson cancelled.',
+        lateCancelFee,
+        message: lateCancelFee > 0
+            ? `Lesson cancelled. $${lateCancelFee.toFixed(2)} late-cancellation fee added to balance.`
+            : 'Lesson cancelled.',
     }
 }

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
+import { LATE_CANCEL_FEE, isLateCancellation } from "@/lib/billing-policy"
 
 interface CancellationModalProps {
   open: boolean
@@ -20,25 +21,6 @@ interface CancellationModalProps {
   isLoading?: boolean
 }
 
-/**
- * Check if a lesson is within 24 hours (late cancellation)
- */
-function isLateCancellation(lessonDate?: string, lessonTime?: string): boolean {
-  if (!lessonDate) return false
-
-  // Parse the lesson date and time as local time
-  const timeStr = lessonTime || '12:00'
-  const lessonDateTime = new Date(`${lessonDate}T${timeStr}:00`)
-  const now = new Date()
-
-  // Calculate hours difference
-  const diffMs = lessonDateTime.getTime() - now.getTime()
-  const diffHours = diffMs / (1000 * 60 * 60)
-
-  // Late if less than 24 hours AND lesson is in the future
-  return diffHours > 0 && diffHours < 24
-}
-
 export function CancellationModal({
   open,
   onOpenChange,
@@ -47,7 +29,7 @@ export function CancellationModal({
   lessonTime,
   isLoading = false
 }: CancellationModalProps) {
-  const isLate = isLateCancellation(lessonDate, lessonTime)
+  const isLate = isLateCancellation(lessonDate, lessonTime, new Date())
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,7 +44,7 @@ export function CancellationModal({
                 <DialogTitle className="text-xl font-serif">Late Cancellation Fee</DialogTitle>
               </div>
               <DialogDescription className="text-base leading-relaxed pt-2">
-                You are cancelling with less than 24 hours notice. A <strong className="text-foreground">$20 fee</strong>{" "}
+                You are cancelling with less than 24 hours notice. A <strong className="text-foreground">${LATE_CANCEL_FEE} fee</strong>{" "}
                 will be charged to preserve your lesson credit for future use.
               </DialogDescription>
             </>
@@ -86,7 +68,7 @@ export function CancellationModal({
             <>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-muted-foreground">Late Cancellation Fee</span>
-                <span className="text-lg font-semibold">$20.00</span>
+                <span className="text-lg font-semibold">${LATE_CANCEL_FEE.toFixed(2)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Credit Status</span>
