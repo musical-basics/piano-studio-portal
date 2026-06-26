@@ -26,6 +26,7 @@ Core endpoints:
 - GET /messages?student_id=<uuid>
 - POST /messages                body: { student_id, content, attachments? }
 - POST /messages/mark-read      body: { student_id }
+- GET /library-files?query=&category=&limit=   search studio docs; each result has a ready-to-send attachment
 - GET /lessons?from=&to=&student_id=
 - POST /lessons                 body: { student_id, date, time, duration?, confirm_override? }
 - PATCH /lessons/:id            body: { date, time, duration?, confirm_override? }

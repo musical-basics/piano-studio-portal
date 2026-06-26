@@ -401,6 +401,52 @@ curl -X POST https://<your-domain>/api/agent/messages \
 
 201 on success. Returns the created message row.
 
+To attach an existing studio document (sheet music, exercises, theory, recordings), don't re-host anything: look it up with `GET /library-files` (below) and send the `attachment` object it returns.
+
+### `GET /library-files?query=hanon&category=Exercises&limit=25`
+
+Searches the studio's uploaded document library, the same files the admin UI shows under **Sheet Music / Theory / Scales / Exercises / Recording**. Use this to send an existing studio file to a student instead of sourcing it elsewhere.
+
+Query params (all optional):
+- `query` — case-insensitive substring match on the file title (e.g. `hanon`)
+- `category` — one of `Sheet Music`, `Theory`, `Scales`, `Exercises`, `Recording`
+- `limit` — max results (default 25, max 100)
+
+```bash
+curl -H "Authorization: Bearer $AGENT_API_SECRET" \
+  "https://<your-domain>/api/agent/library-files?query=hanon"
+```
+
+Response:
+```json
+{
+  "files": [
+    {
+      "id": "uuid",
+      "title": "Hanon Exercise Num 1 - Full Score",
+      "description": null,
+      "category": "Exercises",
+      "file_type": "pdf",
+      "url": "https://…/library/hanon.pdf",
+      "created_at": "2026-05-01T12:00:00Z",
+      "attachment": { "type": "file", "url": "https://…/library/hanon.pdf", "name": "Hanon Exercise Num 1 - Full Score", "size": 0 }
+    }
+  ],
+  "count": 1
+}
+```
+
+Each file's `attachment` field is ready to drop straight into the `attachments` array of `POST /messages`, no edits needed. To send the file to a student:
+
+```bash
+curl -X POST https://<your-domain>/api/agent/messages \
+  -H "Authorization: Bearer $AGENT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"student_id":"<uuid>","content":"Here is the Hanon exercise to practice.","attachments":[{"type":"file","url":"https://…/library/hanon.pdf","name":"Hanon Exercise Num 1 - Full Score","size":0}]}'
+```
+
+Library files are served from public URLs, so the agent never needs storage credentials or a separate signing step.
+
 ### `POST /messages/mark-read`
 
 Mark all unread messages *from* a specific student *to* the admin as read.
