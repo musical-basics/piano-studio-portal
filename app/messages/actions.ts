@@ -9,6 +9,23 @@ import {
     markMessagesReadCore,
     listStudentsWithMessagesCore,
 } from '@/lib/core/messages'
+import { getImpersonationTarget } from '@/app/actions/impersonate'
+
+/**
+ * Resolve the effective "self" id for a messaging action.
+ *
+ * - No asUserId, or asUserId === the real user: act as the real user (the
+ *   common case for both real students and the admin's own chat).
+ * - asUserId differs: only honored when the caller is an admin actively
+ *   impersonating exactly that student (admin previewing the student view).
+ *   Otherwise it is ignored and we fall back to the real user, so a student
+ *   can never read or write another user's thread by passing an id.
+ */
+async function resolveSelfId(realUserId: string, asUserId?: string): Promise<string> {
+    if (!asUserId || asUserId === realUserId) return realUserId
+    const { studentId } = await getImpersonationTarget()
+    return studentId === asUserId ? asUserId : realUserId
+}
 
 // Allowed file types and size limits for chat attachments
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -22,34 +39,40 @@ export type MessageWithProfile = Message & {
     }
 }
 
-export async function sendMessage(recipientId: string, content: string, attachments?: MessageAttachment[]) {
+export async function sendMessage(recipientId: string, content: string, attachments?: MessageAttachment[], asUserId?: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Unauthorized' }
 
+    const senderId = await resolveSelfId(user.id, asUserId)
+
     return sendMessageCore({
         client: supabase as any,
-        senderId: user.id,
+        senderId,
         recipientId,
         content,
         attachments,
     })
 }
 
-export async function getConversation(partnerId: string): Promise<{ messages: Message[], error?: string }> {
+export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { messages: [], error: 'Unauthorized' }
 
-    return getConversationCore(supabase as any, user.id, partnerId)
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    return getConversationCore(supabase as any, selfId, partnerId)
 }
 
-export async function markMessagesAsRead(senderId: string) {
+export async function markMessagesAsRead(senderId: string, asUserId?: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Unauthorized' }
 
-    return markMessagesReadCore(supabase as any, senderId, user.id)
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    return markMessagesReadCore(supabase as any, senderId, selfId)
 }
 
 /**

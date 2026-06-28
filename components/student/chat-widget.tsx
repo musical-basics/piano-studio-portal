@@ -51,12 +51,12 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
           setCurrentTeacherName(admin.name)
         }
 
-        // Get conversation with admin
-        const { messages: conversationMessages } = await getConversation(admin.id)
+        // Get conversation with admin (asUserId keeps admin impersonation previews accurate)
+        const { messages: conversationMessages } = await getConversation(admin.id, studentId)
         setMessages(conversationMessages)
 
         // Mark messages as read
-        await markMessagesAsRead(admin.id)
+        await markMessagesAsRead(admin.id, studentId)
         setUnreadCount(0)
       }
 
@@ -76,7 +76,7 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
     if (!isOpen || !adminId) return
 
     const interval = setInterval(async () => {
-      const { messages: newMessages } = await getConversation(adminId)
+      const { messages: newMessages } = await getConversation(adminId, studentId)
       setMessages(newMessages)
     }, 5000)
 
@@ -110,7 +110,8 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
       const result = await sendMessage(
         adminId,
         tempMessage.trim() || (uploadedAttachments.length > 0 ? '📎 Attachment' : ''),
-        uploadedAttachments.length > 0 ? uploadedAttachments : undefined
+        uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+        studentId
       )
 
       if (result.success && result.message) {
