@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -36,52 +36,56 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Load data when widget opens
+  // Resolve the admin and load the conversation. Self-healing like MessagesPanel:
+  // re-resolves the admin id so a transient failure recovers on the next poll or
+  // focus instead of needing the widget reopened.
+  const adminIdRef = useRef<string | null>(null)
+
+  const refresh = useCallback(async (initial = false) => {
+    try {
+      let id = adminIdRef.current
+      if (!id) {
+        const { admin } = await getAdminProfile()
+        if (!admin) return
+        id = admin.id
+        adminIdRef.current = admin.id
+        setAdminId(admin.id)
+        if (admin.name) setCurrentTeacherName(admin.name)
+      }
+      if (!id) return
+
+      // asUserId keeps admin impersonation previews accurate
+      const { messages: conversationMessages } = await getConversation(id, studentId)
+      setMessages(conversationMessages)
+      await markMessagesAsRead(id, studentId)
+      setUnreadCount(0)
+
+      if (initial) setTimeout(() => scrollToBottom(), 100)
+    } catch (err) {
+      console.error('ChatWidget: refresh failed (will retry):', err)
+    }
+  }, [studentId])
+
+  // Load + poll only while the widget is open; also refetch on focus/visibility.
   useEffect(() => {
     if (!isOpen) return
 
-    async function loadData() {
-      setIsLoading(true)
+    let cancelled = false
+    setIsLoading(true)
+    refresh(true).finally(() => { if (!cancelled) setIsLoading(false) })
 
-      // Get admin profile
-      const { admin } = await getAdminProfile()
-      if (admin) {
-        setAdminId(admin.id)
-        if (admin.name) {
-          setCurrentTeacherName(admin.name)
-        }
+    const interval = setInterval(() => refresh(), 5000)
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
 
-        // Get conversation with admin (asUserId keeps admin impersonation previews accurate)
-        const { messages: conversationMessages } = await getConversation(admin.id, studentId)
-        setMessages(conversationMessages)
-
-        // Mark messages as read
-        await markMessagesAsRead(admin.id, studentId)
-        setUnreadCount(0)
-      }
-
-      setIsLoading(false)
-
-      // Scroll to bottom on load
-      setTimeout(() => scrollToBottom(), 100)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
     }
-
-    loadData()
-  }, [isOpen])
-
-  // Removed auto-scroll useEffect that was triggered by polling
-
-  // Poll for new messages when open
-  useEffect(() => {
-    if (!isOpen || !adminId) return
-
-    const interval = setInterval(async () => {
-      const { messages: newMessages } = await getConversation(adminId, studentId)
-      setMessages(newMessages)
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [isOpen, adminId])
+  }, [isOpen, refresh])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return

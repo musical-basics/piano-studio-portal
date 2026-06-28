@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,50 +35,56 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Load admin profile and messages on mount
-  useEffect(() => {
-    async function loadData() {
-      setIsLoading(true)
+  // Resolve the admin and load the conversation. Self-healing: the admin id is
+  // re-resolved here (not just once on mount), so a transient first-load failure
+  // recovers on the next poll or focus instead of stranding an empty thread
+  // until the user manually refreshes the page.
+  const adminIdRef = useRef<string | null>(null)
 
-      // Get admin profile
-      const { admin } = await getAdminProfile()
-      if (admin) {
+  const refresh = useCallback(async (initial = false) => {
+    try {
+      let id = adminIdRef.current
+      if (!id) {
+        const { admin } = await getAdminProfile()
+        if (!admin) return
+        id = admin.id
+        adminIdRef.current = admin.id
         setAdminId(admin.id)
-        if (admin.name) {
-          setCurrentTeacherName(admin.name)
-        }
-
-        // Get conversation with admin (asUserId keeps admin impersonation previews accurate)
-        const { messages: conversationMessages } = await getConversation(admin.id, studentId)
-        setMessages(conversationMessages)
-
-        // Mark messages as read
-        await markMessagesAsRead(admin.id, studentId)
+        if (admin.name) setCurrentTeacherName(admin.name)
       }
+      if (!id) return
 
-      setIsLoading(false)
+      // asUserId keeps admin impersonation previews accurate
+      const { messages: conversationMessages } = await getConversation(id, studentId)
+      setMessages(conversationMessages)
+      await markMessagesAsRead(id, studentId)
 
-      // Scroll to bottom after initial load
-      setTimeout(() => scrollToBottom(), 100)
+      // Don't auto-scroll on every poll - only on initial load and when sending
+      if (initial) setTimeout(() => scrollToBottom(), 100)
+    } catch (err) {
+      console.error('MessagesPanel: refresh failed (will retry):', err)
     }
+  }, [studentId])
 
-    loadData()
-  }, [])
-
-  // Don't auto-scroll on every poll - only scroll when user sends a message
-  // The scrollToBottom is now called explicitly in handleSendMessage
-
-  // Poll for new messages every 5 seconds
   useEffect(() => {
-    if (!adminId) return
+    let cancelled = false
+    setIsLoading(true)
+    refresh(true).finally(() => { if (!cancelled) setIsLoading(false) })
 
-    const interval = setInterval(async () => {
-      const { messages: newMessages } = await getConversation(adminId, studentId)
-      setMessages(newMessages)
-    }, 5000)
+    // Poll, and also refetch when the user returns to the tab/window so new
+    // messages appear without a manual refresh.
+    const interval = setInterval(() => refresh(), 5000)
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
 
-    return () => clearInterval(interval)
-  }, [adminId])
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refresh])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
