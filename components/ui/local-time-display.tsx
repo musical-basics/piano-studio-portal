@@ -16,11 +16,13 @@ export function LocalTimeDisplay({ date, time }: LocalTimeDisplayProps) {
     // Check if time exists first
     if (!time) return <span className="font-medium text-foreground">TBD</span>
 
-    const [h, m] = time.split(':')
+    // Tolerate both "HH:MM" and "HH:MM:SS" (Postgres TIME comes back with seconds).
+    const [h, m = '00'] = time.split(':')
     const hours = parseInt(h)
+    const minutes = m.padStart(2, '0')
     const suffix = hours >= 12 ? 'PM' : 'AM'
     const hours12 = hours % 12 || 12
-    const studioTimeStr = `${hours12}:${m} ${suffix} PST`
+    const studioTimeStr = `${hours12}:${minutes} ${suffix} PST`
 
     useEffect(() => {
         // 2. Detect User's Timezone
@@ -31,10 +33,10 @@ export function LocalTimeDisplay({ date, time }: LocalTimeDisplayProps) {
 
         try {
             // 3. Create a Date object for the lesson in PST
-            // We append -08:00 for Standard PST. 
-            // (Note: To handle Daylight Savings perfectly year-round, we'd use a library like 'date-fns-tz', 
+            // We append -08:00 for Standard PST.
+            // (Note: To handle Daylight Savings perfectly year-round, we'd use a library like 'date-fns-tz',
             // but this native approach works for the immediate request).
-            const lessonDate = new Date(`${date}T${time}:00-08:00`)
+            const lessonDate = new Date(`${date}T${hours.toString().padStart(2, '0')}:${minutes}:00-08:00`)
 
             // 4. Format to User's Local Time
             const userTimeStr = lessonDate.toLocaleTimeString('en-US', {

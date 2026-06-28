@@ -234,13 +234,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
         setIsCancelling(true)
         const result = await cancelLesson(nextLesson.id)
-        if (result.success) {
+        if ("success" in result && result.success) {
             toast({
                 title: "Lesson Cancelled",
                 description: result.message
             })
             setShowCancellationModal(false)
-        } else {
+        } else if ("error" in result) {
             toast({
                 variant: "destructive",
                 title: "Error",
@@ -540,7 +540,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                         </div>
                                         <div>
                                             <p className="text-sm text-muted-foreground">Time</p>
-                                            <LocalTimeDisplay date={nextLesson.date} time={nextLesson.time} />
+                                            <LocalTimeDisplay date={nextLesson.date} time={nextLesson.rawTime ?? nextLesson.time} />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
@@ -1116,7 +1116,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 onConfirmCancel={handleConfirmCancel}
                 isLoading={isCancelling}
                 lessonDate={nextLesson?.date}
-                lessonTime={nextLesson?.time}
+                lessonTime={nextLesson?.rawTime}
             />
 
             {selectedLesson && (

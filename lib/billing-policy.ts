@@ -26,8 +26,13 @@ export function isLateCancellation(
 ): boolean {
     if (!lessonDate) return false
 
-    const timeStr = lessonTime || '12:00'
-    const lessonDateTime = new Date(`${lessonDate}T${timeStr}:00`)
+    // Normalize to HH:MM so we tolerate DB TIME values that carry seconds
+    // ("15:15:00") as well as plain "HH:MM". Appending raw seconds would make
+    // new Date("...T15:15:00:00") an Invalid Date and silently skip the fee.
+    const [rawH = '12', rawM = '00'] = (lessonTime || '12:00').split(':')
+    const hh = rawH.padStart(2, '0')
+    const mm = rawM.padStart(2, '0')
+    const lessonDateTime = new Date(`${lessonDate}T${hh}:${mm}:00`)
     const diffHours = (lessonDateTime.getTime() - now.getTime()) / (1000 * 60 * 60)
 
     return diffHours > 0 && diffHours < LATE_CANCEL_WINDOW_HOURS
