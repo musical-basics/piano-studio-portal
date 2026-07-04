@@ -4,6 +4,7 @@ import { addDays, format } from 'date-fns'
 import { studioNow } from '@/lib/studio-timezone'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
+import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
 import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
 import { createGoogleCalendarEvent } from '@/lib/google-calendar'
@@ -818,6 +819,11 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
 
     const supabaseAdmin = createAdminClient()
 
+    // Whether this cancel lands inside the 24h late-cancel window. Computed up
+    // front (before the row is deleted) so it can feed the audit log and the
+    // admin notification regardless of whether a fee is actually charged below.
+    const wasLate = isLateCancellation(lesson.date, lesson.time, studioNow())
+
     const { error: deleteError } = await supabaseAdmin
         .from('lessons')
         .delete()
@@ -880,7 +886,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
     // the student. The fee is added to balance_due and the student is notified;
     // an admin can reverse it per case via waiveLateCancelFee().
     let lateCancelFee = 0
-    if (actorRole === 'student' && isLateCancellation(lesson.date, lesson.time, studioNow())) {
+    if (actorRole === 'student' && wasLate) {
         try {
             const { data: studentProfile } = await supabaseAdmin
                 .from('profiles')
@@ -930,6 +936,71 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
             }
         } catch (feeError) {
             console.error('cancelLessonCore: late-cancel fee failed (non-blocking):', feeError)
+        }
+    }
+
+    // Audit log: the lessons row is now deleted, so this is the only durable
+    // record that the cancellation happened. Non-blocking: a log failure must not
+    // fail the cancellation itself.
+    try {
+        const { error: logError } = await supabaseAdmin
+            .from('cancellation_log')
+            .insert({
+                student_id: lesson.student_id,
+                lesson_id: lessonId,
+                lesson_date: lesson.date,
+                lesson_time: lesson.time,
+                cancelled_by: actorRole,
+                actor_id: actorId,
+                was_late: wasLate,
+                fee_charged: lateCancelFee,
+            })
+        if (logError) {
+            console.error('cancelLessonCore: cancellation_log insert failed (non-blocking):', logError)
+        }
+    } catch (logErr) {
+        console.error('cancelLessonCore: cancellation_log insert threw (non-blocking):', logErr)
+    }
+
+    // Notify the studio admin by email that a cancellation happened. Non-blocking.
+    if (resend) {
+        try {
+            const { data: student } = await client
+                .from('profiles')
+                .select('name')
+                .eq('id', lesson.student_id)
+                .single()
+
+            const { data: adminProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('email, studio_name')
+                .eq('role', 'admin')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single()
+
+            if (adminProfile?.email) {
+                const studioName = adminProfile.studio_name || 'Lionel Yu Piano Studio'
+                const formattedDate = formatDateLong(lesson.date)
+                const formattedTime = formatTimePst(lesson.time)
+
+                await resend.emails.send({
+                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                    to: adminProfile.email,
+                    subject: `Cancellation: ${student?.name || 'Student'} — ${formattedDate} at ${formattedTime}`,
+                    react: LessonCanceledAdminEmail({
+                        studentName: student?.name || 'Student',
+                        date: formattedDate,
+                        time: formattedTime,
+                        cancelledBy: actorRole,
+                        wasLate,
+                        feeCharged: lateCancelFee,
+                        studioName,
+                    }),
+                })
+            }
+        } catch (adminEmailError) {
+            console.error('cancelLessonCore: admin notification email failed (non-blocking):', adminEmailError)
         }
     }
 
