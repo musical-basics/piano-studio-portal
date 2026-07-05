@@ -285,6 +285,14 @@ export async function logLessonCore({
     awaitNotifications = false,
     completedSource = 'agent_log',
 }: LogLessonArgs) {
+    // Credit deduction is a privileged cross-user write on `profiles`. When this
+    // is called from the admin UI, `client` is the admin's own RLS-scoped session,
+    // and the credits UPDATE silently matches 0 rows (no error), so the credit is
+    // never deducted (the admin_ui path used to leave credits untouched). Route
+    // every privileged credit write through the service-role client so deduction
+    // happens regardless of the caller's context, matching cancelLessonCore.
+    const supabaseAdmin = createAdminClient()
+
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
         .select('student_id, status, date, time, duration, zoom_link, credit_snapshot_before, credit_snapshot')
@@ -331,7 +339,7 @@ export async function logLessonCore({
     const creditRepaired = isAlreadyCompleted && !hasSnapshots
 
     if (needsCredit) {
-        const { data: studentCredits, error: studentCreditsError } = await client
+        const { data: studentCredits, error: studentCreditsError } = await supabaseAdmin
             .from('profiles')
             .select('credits')
             .eq('id', lesson.student_id)
@@ -346,7 +354,7 @@ export async function logLessonCore({
         previousCredits = startingCredits
         newCredits = startingCredits - 1
 
-        const { error: creditError } = await client
+        const { error: creditError } = await supabaseAdmin
             .from('profiles')
             .update({ credits: newCredits })
             .eq('id', lesson.student_id)
@@ -358,7 +366,7 @@ export async function logLessonCore({
 
         creditDeducted = true
 
-        const { error: snapshotError } = await client
+        const { error: snapshotError } = await supabaseAdmin
             .from('lessons')
             .update({
                 credit_snapshot_before: previousCredits,
