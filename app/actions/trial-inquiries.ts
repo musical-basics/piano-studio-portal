@@ -9,7 +9,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 interface TrialInquiryInput {
     name: string
     email: string
-    ageConfirmed: boolean
+    age: number
     timezone: string
     availability: string[]
     experience: string
@@ -19,14 +19,14 @@ interface TrialInquiryInput {
 export async function submitTrialInquiry(input: TrialInquiryInput) {
     const supabase = await createClient()
 
-    const { name, email, ageConfirmed, timezone, availability, experience, goals } = input
+    const { name, email, age, timezone, availability, experience, goals } = input
 
     if (!name || !email || !timezone || !experience || !goals) {
         return { success: false, error: "Missing required fields" }
     }
 
-    if (!ageConfirmed) {
-        return { success: false, error: "Age confirmation is required" }
+    if (!Number.isInteger(age) || age < 12) {
+        return { success: false, error: "Students must be 12 or older" }
     }
 
     if (availability.length === 0) {
@@ -35,9 +35,9 @@ export async function submitTrialInquiry(input: TrialInquiryInput) {
 
     const contextNotes = [
         `**Inquiry Source:** Trial Lesson Form`,
+        `**Age:** ${age}`,
         `**Time Zone:** ${timezone}`,
         `**Availability:** ${availability.join(", ")}`,
-        `**Age 12+ confirmed:** Yes`,
     ].join("\n")
 
     try {
@@ -96,7 +96,7 @@ export async function submitTrialInquiry(input: TrialInquiryInput) {
                     <div style="background-color: #f4f4f4; padding: 20px; border-radius: 8px; margin: 20px 0;">
                         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
                         <p><strong>Email:</strong> <a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>
-                        <p><strong>Age 12+ confirmed:</strong> Yes</p>
+                        <p><strong>Age:</strong> ${escapeHtml(String(age))}</p>
                         <p><strong>Time zone:</strong> ${escapeHtml(timezone)}</p>
                         <p><strong>Availability:</strong> ${escapeHtml(availability.join(", "))}</p>
                         <p><strong>Experience level:</strong> ${escapeHtml(experience)}</p>

@@ -56,7 +56,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
 
     const [name, setName] = useState("")
     const [email, setEmail] = useState("")
-    const [ageConfirmed, setAgeConfirmed] = useState(false)
+    const [age, setAge] = useState("")
     const [timezone, setTimezone] = useState("")
     const [availability, setAvailability] = useState<string[]>([])
     const [experience, setExperience] = useState("")
@@ -71,10 +71,11 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault()
 
-        if (!ageConfirmed) {
+        const ageNumber = Number(age)
+        if (!age || !Number.isInteger(ageNumber) || ageNumber < 12) {
             toast({
                 variant: "destructive",
-                title: "Age confirmation required",
+                title: "Please enter a valid age",
                 description: "This studio currently teaches students 12 and over.",
             })
             return
@@ -95,7 +96,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
             const result = await submitTrialInquiry({
                 name,
                 email,
-                ageConfirmed,
+                age: ageNumber,
                 timezone,
                 availability,
                 experience,
@@ -162,16 +163,21 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
                 </div>
             </div>
 
-            <div className="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-4">
-                <Checkbox
+            <div className="space-y-2">
+                <Label htmlFor="trial-age">Age *</Label>
+                <Input
                     id="trial-age"
-                    checked={ageConfirmed}
-                    onCheckedChange={(checked) => setAgeConfirmed(checked === true)}
+                    type="number"
+                    inputMode="numeric"
+                    min={12}
+                    max={120}
                     required
+                    placeholder="Your age"
+                    className="sm:max-w-[160px]"
+                    value={age}
+                    onChange={(e) => setAge(e.target.value)}
                 />
-                <Label htmlFor="trial-age" className="text-sm font-normal leading-relaxed cursor-pointer">
-                    I confirm I am 12 or older. *
-                </Label>
+                <p className="text-sm text-gray-500">This studio currently teaches students 12 and over.</p>
             </div>
 
             <div className="space-y-2">
