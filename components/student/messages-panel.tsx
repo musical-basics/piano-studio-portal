@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Send, Music, Loader2, Paperclip } from "lucide-react"
-import { sendMessage, getConversation, markMessagesAsRead, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
+import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
+import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 
 interface MessagesPanelProps {
   studentId: string
@@ -18,11 +19,9 @@ interface MessagesPanelProps {
 }
 
 export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
   const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
 
   // Attachment states
@@ -31,60 +30,85 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+  }, [])
 
-  // Resolve the admin and load the conversation. Self-healing: the admin id is
-  // re-resolved here (not just once on mount), so a transient first-load failure
-  // recovers on the next poll or focus instead of stranding an empty thread
-  // until the user manually refreshes the page.
+  const {
+    messages,
+    isLoadingInitial,
+    isLoadingOlder,
+    hasMore,
+    scrollContainerRef,
+    loadInitial,
+    loadOlder,
+    poll,
+    appendLocal,
+  } = usePaginatedConversation({
+    partnerId: adminId,
+    asUserId: studentId,
+    onInitialLoaded: scrollToBottom,
+  })
+
+  const [isResolvingAdmin, setIsResolvingAdmin] = useState(true)
+  const isLoading = isResolvingAdmin || isLoadingInitial
+
+  // Resolve the admin id once. Self-healing: keeps retrying on each poll tick
+  // until it succeeds, so a transient first-load failure recovers on its own.
   const adminIdRef = useRef<string | null>(null)
-
-  const refresh = useCallback(async (initial = false) => {
+  const resolveAdmin = useCallback(async (): Promise<string | null> => {
+    if (adminIdRef.current) return adminIdRef.current
     try {
-      let id = adminIdRef.current
-      if (!id) {
-        const { admin } = await getAdminProfile()
-        if (!admin) return
-        id = admin.id
-        adminIdRef.current = admin.id
-        setAdminId(admin.id)
-        if (admin.name) setCurrentTeacherName(admin.name)
-      }
-      if (!id) return
-
-      // asUserId keeps admin impersonation previews accurate
-      const { messages: conversationMessages } = await getConversation(id, studentId)
-      setMessages(conversationMessages)
-      await markMessagesAsRead(id, studentId)
-
-      // Don't auto-scroll on every poll - only on initial load and when sending
-      if (initial) setTimeout(() => scrollToBottom(), 100)
+      const { admin } = await getAdminProfile()
+      if (!admin) return null
+      adminIdRef.current = admin.id
+      setAdminId(admin.id)
+      if (admin.name) setCurrentTeacherName(admin.name)
+      return admin.id
     } catch (err) {
-      console.error('MessagesPanel: refresh failed (will retry):', err)
+      console.error('MessagesPanel: resolveAdmin failed (will retry):', err)
+      return null
     }
-  }, [studentId])
+  }, [])
 
+  // Kick off admin resolution + initial load.
   useEffect(() => {
     let cancelled = false
-    setIsLoading(true)
-    refresh(true).finally(() => { if (!cancelled) setIsLoading(false) })
+    setIsResolvingAdmin(true)
+    resolveAdmin().finally(() => { if (!cancelled) setIsResolvingAdmin(false) })
+    return () => { cancelled = true }
+  }, [resolveAdmin])
 
-    // Poll, and also refetch when the user returns to the tab/window so new
-    // messages appear without a manual refresh.
-    const interval = setInterval(() => refresh(), 5000)
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+  // Once the admin id is known, load the newest page.
+  useEffect(() => {
+    if (adminId) loadInitial()
+  }, [adminId, loadInitial])
+
+  // Poll for new messages; also refetch on focus/visibility. Re-resolves the
+  // admin id first in case the initial resolution failed.
+  useEffect(() => {
+    const tick = async () => {
+      const id = await resolveAdmin()
+      if (id) poll()
+    }
+    const interval = setInterval(tick, 5000)
+    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
     window.addEventListener('focus', onVisible)
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
-      cancelled = true
       clearInterval(interval)
       window.removeEventListener('focus', onVisible)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refresh])
+  }, [resolveAdmin, poll])
+
+  // Load older messages when scrolled near the top.
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop < 80 && hasMore && !isLoadingOlder) {
+      loadOlder()
+    }
+  }, [hasMore, isLoadingOlder, loadOlder])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
@@ -118,9 +142,9 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
       )
 
       if (result.success && result.message) {
-        setMessages((prev) => [...prev, result.message!])
+        appendLocal(result.message)
         // Scroll to show the new message
-        setTimeout(() => scrollToBottom(), 100)
+        scrollToBottom()
       } else if (result.error) {
         alert(`Failed to send message: ${result.error}`)
         setNewMessage(tempMessage)
@@ -211,7 +235,7 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+      <CardContent ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -224,7 +248,13 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
             <p className="text-sm text-muted-foreground">Start a conversation with your teacher</p>
           </div>
         ) : (
-          messages.map((message) => (
+          <>
+            {isLoadingOlder && (
+              <div className="flex justify-center py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {messages.map((message) => (
             <div key={message.id} className={`flex ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isFromStudent(message)
@@ -249,7 +279,8 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
                 </p>
               </div>
             </div>
-          ))
+            ))}
+          </>
         )}
         <div ref={messagesEndRef} />
       </CardContent>

@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { MessageCircle, X, Send, Music, Minimize2, Loader2, Paperclip } from "lucide-react"
-import { sendMessage, getConversation, markMessagesAsRead, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
+import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
+import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 
 interface ChatWidgetProps {
   studentId: string
@@ -18,11 +19,9 @@ interface ChatWidgetProps {
 
 export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadCount }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
   const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
-  const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
 
@@ -32,60 +31,83 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100)
+  }, [])
 
-  // Resolve the admin and load the conversation. Self-healing like MessagesPanel:
-  // re-resolves the admin id so a transient failure recovers on the next poll or
-  // focus instead of needing the widget reopened.
+  const {
+    messages,
+    isLoadingInitial,
+    isLoadingOlder,
+    hasMore,
+    scrollContainerRef,
+    loadInitial,
+    loadOlder,
+    poll,
+    appendLocal,
+  } = usePaginatedConversation({
+    partnerId: adminId,
+    asUserId: studentId,
+    onInitialLoaded: () => { scrollToBottom(); setUnreadCount(0) },
+  })
+
+  const isLoading = isLoadingInitial
+
+  // Resolve the admin id once (self-healing: retried on each poll tick).
   const adminIdRef = useRef<string | null>(null)
-
-  const refresh = useCallback(async (initial = false) => {
+  const resolveAdmin = useCallback(async (): Promise<string | null> => {
+    if (adminIdRef.current) return adminIdRef.current
     try {
-      let id = adminIdRef.current
-      if (!id) {
-        const { admin } = await getAdminProfile()
-        if (!admin) return
-        id = admin.id
-        adminIdRef.current = admin.id
-        setAdminId(admin.id)
-        if (admin.name) setCurrentTeacherName(admin.name)
-      }
-      if (!id) return
-
-      // asUserId keeps admin impersonation previews accurate
-      const { messages: conversationMessages } = await getConversation(id, studentId)
-      setMessages(conversationMessages)
-      await markMessagesAsRead(id, studentId)
-      setUnreadCount(0)
-
-      if (initial) setTimeout(() => scrollToBottom(), 100)
+      const { admin } = await getAdminProfile()
+      if (!admin) return null
+      adminIdRef.current = admin.id
+      setAdminId(admin.id)
+      if (admin.name) setCurrentTeacherName(admin.name)
+      return admin.id
     } catch (err) {
-      console.error('ChatWidget: refresh failed (will retry):', err)
+      console.error('ChatWidget: resolveAdmin failed (will retry):', err)
+      return null
     }
-  }, [studentId])
+  }, [])
 
-  // Load + poll only while the widget is open; also refetch on focus/visibility.
+  // Resolve admin + load newest page when the widget opens.
   useEffect(() => {
     if (!isOpen) return
+    resolveAdmin()
+  }, [isOpen, resolveAdmin])
 
-    let cancelled = false
-    setIsLoading(true)
-    refresh(true).finally(() => { if (!cancelled) setIsLoading(false) })
+  useEffect(() => {
+    if (isOpen && adminId) loadInitial()
+  }, [isOpen, adminId, loadInitial])
 
-    const interval = setInterval(() => refresh(), 5000)
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+  // Poll + focus/visibility refetch, only while open.
+  useEffect(() => {
+    if (!isOpen) return
+    const tick = async () => {
+      const id = await resolveAdmin()
+      if (id) {
+        const added = await poll()
+        if (added) setUnreadCount(0)
+      }
+    }
+    const interval = setInterval(tick, 5000)
+    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
     window.addEventListener('focus', onVisible)
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
-      cancelled = true
       clearInterval(interval)
       window.removeEventListener('focus', onVisible)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [isOpen, refresh])
+  }, [isOpen, resolveAdmin, poll])
+
+  // Load older messages when scrolled near the top.
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop < 80 && hasMore && !isLoadingOlder) {
+      loadOlder()
+    }
+  }, [hasMore, isLoadingOlder, loadOlder])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
@@ -119,9 +141,9 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
       )
 
       if (result.success && result.message) {
-        setMessages((prev) => [...prev, result.message!])
+        appendLocal(result.message)
         // Scroll to newly sent message
-        setTimeout(() => scrollToBottom(), 100)
+        scrollToBottom()
       } else if (result.error) {
         console.error('Failed to send message:', result.error)
         setNewMessage(tempMessage)
@@ -242,7 +264,7 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background">
+          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-3 bg-background">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center h-full">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -255,7 +277,13 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                 <p className="text-xs text-muted-foreground">Start a conversation with your teacher</p>
               </div>
             ) : (
-              messages.map((message) => (
+              <>
+                {isLoadingOlder && (
+                  <div className="flex justify-center py-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+                {messages.map((message) => (
                 <div
                   key={message.id}
                   className={`flex ${isFromStudent(message) ? "justify-end" : "justify-start"}`}
@@ -283,7 +311,8 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                     </p>
                   </div>
                 </div>
-              ))
+                ))}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>

@@ -140,19 +140,99 @@ export async function sendMessageCore({
     return { success: true, message: data as Message }
 }
 
+/** Default number of messages loaded per page for the reverse-infinite-scroll chat. */
+export const CONVERSATION_PAGE_SIZE = 30
+
+interface GetConversationOptions {
+    /** Max messages to return. Omit to fetch the entire conversation (legacy behavior). */
+    limit?: number
+    /**
+     * Cursor for reverse pagination: only return messages strictly OLDER than this
+     * ISO timestamp. Used to load the next page when scrolling up.
+     */
+    before?: string
+}
+
+/**
+ * Fetch a conversation between two users, oldest -> newest.
+ *
+ * With no options, returns the whole history (unchanged legacy behavior).
+ *
+ * With `limit`, returns the newest `limit` messages (optionally older than
+ * `before`) as a page, still ordered ascending for rendering, plus `hasMore`
+ * indicating whether older messages remain beyond this page. This powers the
+ * "load older on scroll up" behavior.
+ */
 export async function getConversationCore(
     client: DbClient,
     userA: string,
     userB: string,
+    opts: GetConversationOptions = {},
+): Promise<{ messages: Message[]; hasMore: boolean; error?: string }> {
+    const between = `and(sender_id.eq.${userA},recipient_id.eq.${userB}),and(sender_id.eq.${userB},recipient_id.eq.${userA})`
+
+    // Legacy path: no pagination requested -> fetch everything ascending.
+    if (opts.limit == null) {
+        const { data, error } = await client
+            .from('messages')
+            .select('*')
+            .or(between)
+            .order('created_at', { ascending: true })
+
+        if (error) {
+            console.error('getConversationCore error:', error)
+            return { messages: [], hasMore: false, error: error.message }
+        }
+        return { messages: (data || []) as Message[], hasMore: false }
+    }
+
+    // Paginated path: grab the newest page (descending), fetching one extra row
+    // to detect whether older messages remain, then reverse for rendering.
+    let query = client
+        .from('messages')
+        .select('*')
+        .or(between)
+        .order('created_at', { ascending: false })
+
+    if (opts.before) {
+        query = query.lt('created_at', opts.before)
+    }
+
+    const { data, error } = await query.limit(opts.limit + 1)
+
+    if (error) {
+        console.error('getConversationCore error:', error)
+        return { messages: [], hasMore: false, error: error.message }
+    }
+
+    const rows = (data || []) as Message[]
+    const hasMore = rows.length > opts.limit
+    const page = hasMore ? rows.slice(0, opts.limit) : rows
+    // Reverse the descending page back to ascending (oldest -> newest) for the UI.
+    page.reverse()
+    return { messages: page, hasMore }
+}
+
+/**
+ * Fetch messages in a conversation strictly NEWER than `after` (ISO timestamp),
+ * oldest -> newest. Used by the polling loop to append only new messages without
+ * clobbering older pages already loaded into state.
+ */
+export async function getNewMessagesSinceCore(
+    client: DbClient,
+    userA: string,
+    userB: string,
+    after: string,
 ): Promise<{ messages: Message[]; error?: string }> {
     const { data, error } = await client
         .from('messages')
         .select('*')
         .or(`and(sender_id.eq.${userA},recipient_id.eq.${userB}),and(sender_id.eq.${userB},recipient_id.eq.${userA})`)
+        .gt('created_at', after)
         .order('created_at', { ascending: true })
 
     if (error) {
-        console.error('getConversationCore error:', error)
+        console.error('getNewMessagesSinceCore error:', error)
         return { messages: [], error: error.message }
     }
     return { messages: (data || []) as Message[] }

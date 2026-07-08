@@ -6,8 +6,10 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import {
     sendMessageCore,
     getConversationCore,
+    getNewMessagesSinceCore,
     markMessagesReadCore,
     listStudentsWithMessagesCore,
+    CONVERSATION_PAGE_SIZE,
 } from '@/lib/core/messages'
 import { getImpersonationTarget } from '@/app/actions/impersonate'
 
@@ -55,10 +57,52 @@ export async function sendMessage(recipientId: string, content: string, attachme
     })
 }
 
-export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], error?: string }> {
+/**
+ * Load a page of a conversation for the reverse-infinite-scroll chat.
+ *
+ * - First page: call with no `before`; returns the newest `CONVERSATION_PAGE_SIZE`
+ *   messages plus `hasMore`.
+ * - Older pages: pass the `created_at` of the oldest currently-loaded message as
+ *   `before` to fetch the previous page.
+ */
+export async function getConversationPage(
+    partnerId: string,
+    opts: { before?: string; limit?: number; asUserId?: string } = {},
+): Promise<{ messages: Message[]; hasMore: boolean; error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { messages: [], hasMore: false, error: 'Unauthorized' }
+
+    const selfId = await resolveSelfId(user.id, opts.asUserId)
+
+    return getConversationCore(supabase as any, selfId, partnerId, {
+        limit: opts.limit ?? CONVERSATION_PAGE_SIZE,
+        before: opts.before,
+    })
+}
+
+/**
+ * Fetch only messages newer than `after` for the polling loop, so new messages
+ * are appended without wiping older pages already loaded in the UI.
+ */
+export async function getNewMessages(
+    partnerId: string,
+    after: string,
+    asUserId?: string,
+): Promise<{ messages: Message[]; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { messages: [], error: 'Unauthorized' }
+
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    return getNewMessagesSinceCore(supabase as any, selfId, partnerId, after)
+}
+
+export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], hasMore: boolean, error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { messages: [], hasMore: false, error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, asUserId)
 

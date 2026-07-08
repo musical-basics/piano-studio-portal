@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder } from "lucide-react"
-import { sendMessage, getConversation, markMessagesAsRead, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
+import { sendMessage, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
+import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 import { LibraryFileSelector } from "@/components/admin/library-file-selector"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -26,13 +27,11 @@ interface AdminChatProps {
 export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChatProps) {
   const [students, setStudents] = useState<StudentWithMessages[]>([])
   const [selectedStudent, setSelectedStudent] = useState<StudentWithMessages | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
 
   // Loading states
   const [isLoadingStudents, setIsLoadingStudents] = useState(true)
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
 
   // Lesson Intent Flag Modal State
@@ -87,12 +86,34 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     // Small timeout ensures DOM is updated before scrolling
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }, 100)
-  }
+  }, [])
+
+  const {
+    messages,
+    isLoadingInitial: isLoadingMessages,
+    isLoadingOlder,
+    hasMore,
+    scrollContainerRef,
+    loadInitial,
+    loadOlder,
+    poll,
+    appendLocal,
+  } = usePaginatedConversation({
+    partnerId: selectedStudent?.id ?? null,
+    onInitialLoaded: scrollToBottom,
+  })
+
+  // Load older messages when scrolled near the top.
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop < 80 && hasMore && !isLoadingOlder) {
+      loadOlder()
+    }
+  }, [hasMore, isLoadingOlder, loadOlder])
 
   // 1. Load students on mount
   useEffect(() => {
@@ -124,50 +145,22 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     }
   }, [initialStudentId, students, onClearInitialStudent])
 
-  // 2. Load messages when student is selected
+  // 2. Load newest page when student is selected, and clear the unread badge.
   useEffect(() => {
     if (!selectedStudent) return
-
     const studentId = selectedStudent.id
+    loadInitial()
+    setStudents(prev => prev.map(s =>
+      s.id === studentId ? { ...s, unreadCount: 0 } : s
+    ))
+  }, [selectedStudent, loadInitial])
 
-    async function loadMessages() {
-      setIsLoadingMessages(true)
-      try {
-        const { messages: conversationMessages } = await getConversation(studentId)
-        // CRITICAL FIX: Default to [] if null to prevent white screen crash
-        setMessages(conversationMessages || [])
-      } catch (error) {
-        console.error("Failed to load conversation", error)
-        setMessages([])
-      } finally {
-        setIsLoadingMessages(false)
-        // Scroll to bottom after loading messages
-        setTimeout(() => scrollToBottom(), 100)
-      }
-
-      // Mark as read in background
-      await markMessagesAsRead(studentId)
-
-      // Update local unread count immediately
-      setStudents(prev => prev.map(s =>
-        s.id === studentId ? { ...s, unreadCount: 0 } : s
-      ))
-    }
-
-    loadMessages()
-  }, [selectedStudent])
-
-  // Removed auto-scroll useEffect triggered by polling
-
-  // Poll for new messages
+  // Poll for new messages (append-only, so scrolled-in older pages are preserved).
   useEffect(() => {
     if (!selectedStudent) return
-    const interval = setInterval(async () => {
-      const { messages: newMessages } = await getConversation(selectedStudent.id)
-      if (newMessages) setMessages(newMessages)
-    }, 5000)
+    const interval = setInterval(() => { poll() }, 5000)
     return () => clearInterval(interval)
-  }, [selectedStudent])
+  }, [selectedStudent, poll])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !selectedStudent) return
@@ -221,14 +214,14 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
       )
 
       if (result.success && result.message) {
-        setMessages(prev => [...prev, result.message!])
+        appendLocal(result.message)
         setStudents(prev => prev.map(s =>
           s.id === selectedStudent.id
             ? { ...s, lastMessage: result.message! }
             : s
         ))
         // Scroll to newly sent message
-        setTimeout(() => scrollToBottom(), 100)
+        scrollToBottom()
       } else {
         setNewMessage(tempMessage)
         setPendingAttachments(tempAttachments)
@@ -456,7 +449,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
             </div>
 
             {/* Messages List - This is the flexible scrolling area */}
-            <div className="flex-1 overflow-y-auto p-4 bg-muted/5 space-y-6">
+            <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 bg-muted/5 space-y-6">
               {isLoadingMessages ? (
                 <div className="h-full flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -469,6 +462,11 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                 </div>
               ) : (
                 <>
+                  {isLoadingOlder && (
+                    <div className="flex justify-center py-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
                   {messages.map((msg) => (
                     <div key={msg.id} className={`flex ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
