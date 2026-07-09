@@ -64,10 +64,12 @@ export async function POST(request: NextRequest) {
         return agentError(result.error ?? 'Request failed', 400)
     }
 
-    return agentOk({ 
-        lesson: result.lesson, 
+    return agentOk({
+        lesson: result.lesson,
         message: result.message,
         warning: result.warning,
+        student_canceled_lesson: result.student_canceled_lesson,
+        prior_cancellations: result.prior_cancellations,
         conflicts: result.conflicts
     }, 201)
 }

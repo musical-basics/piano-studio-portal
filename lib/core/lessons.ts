@@ -512,6 +512,26 @@ export async function scheduleLessonCore({
         return { error: 'lesson_intent_conflict', conflicts }
     }
 
+    // Surface prior cancellations for THIS date. Cancelling a lesson deletes its
+    // row (cancelLessonCore) and records it in cancellation_log, so this is the
+    // only durable trace. If the student previously cancelled a lesson on the
+    // exact date we're now scheduling, warn the caller (the external AI agent
+    // relies on this to avoid silently re-booking a slot the student dropped).
+    //
+    // cancellation_log is RLS deny-all, so read it through the service-role
+    // client: the admin UI passes its own RLS-scoped session here, which would
+    // silently return zero rows and defeat the warning. Matches logLessonCore /
+    // cancelLessonCore, which route privileged reads/writes the same way.
+    const supabaseAdmin = createAdminClient()
+    const { data: priorCancellations } = await supabaseAdmin
+        .from('cancellation_log')
+        .select('lesson_date, lesson_time, cancelled_by, was_late, cancelled_at')
+        .eq('student_id', studentId)
+        .eq('lesson_date', date)
+        .order('cancelled_at', { ascending: false })
+
+    const hasPriorCancellation = Boolean(priorCancellations && priorCancellations.length > 0)
+
     const isAvailable = await checkAvailabilityCore(client, date, time, duration)
     if (!isAvailable) {
         return { error: 'This time slot is already booked by another student.' }
@@ -648,10 +668,23 @@ export async function scheduleLessonCore({
         // Safe to ignore in non-Next environments
     }
 
+    // Build warning string. A prior cancellation on this date takes priority in
+    // the message (it's the stronger signal the external AI agent watches for),
+    // and an active intent-flag conflict is appended if also present.
+    const warnings: string[] = []
+    if (hasPriorCancellation) {
+        warnings.push(`STUDENT CANCELED LESSON: this student previously cancelled a lesson on ${date}. Confirm before re-booking.`)
+    }
+    if (hasConflict) {
+        warnings.push(`Warning: this student has an active skip/cancel/reschedule request for this date.`)
+    }
+
     return {
         success: true as const,
         lesson,
-        warning: hasConflict ? `Warning: this student has an active skip/cancel/reschedule request for this date.` : undefined,
+        warning: warnings.length ? warnings.join(' ') : undefined,
+        student_canceled_lesson: hasPriorCancellation,
+        prior_cancellations: hasPriorCancellation ? priorCancellations : undefined,
         conflicts: hasConflict ? conflicts : undefined,
         message: `Lesson scheduled for ${student.name} on ${date} at ${time} (${duration} min)${zoomLink ? '. Zoom link created.' : '.'}`,
     }
