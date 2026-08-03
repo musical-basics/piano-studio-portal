@@ -81,6 +81,23 @@ export async function createCheckoutSession(pricingPointId: string) {
                 return { error: 'System Error: Subscription Price ID missing.' }
             }
 
+            // Guard against duplicate subscriptions. Two families have accidentally
+            // double-subscribed (double-submit at checkout, or subscribing again while
+            // an older subscription was still running), which double-charges them every
+            // month. If any subscription is still running for this customer, refuse
+            // self-serve checkout and have them contact the teacher instead.
+            const existingSubs = await stripe.subscriptions.list({
+                customer: stripeCustomerId,
+                status: 'all',
+                limit: 10,
+            })
+            const hasRunningSubscription = existingSubs.data.some(sub =>
+                ['active', 'trialing', 'past_due'].includes(sub.status)
+            )
+            if (hasRunningSubscription) {
+                return { error: 'You already have an active subscription, so this purchase would create a duplicate and charge you twice. If you want to change your plan, please message me and I will sort it out.' }
+            }
+
             sessionParams = {
                 mode: 'subscription',
                 payment_method_types: ['card'],
