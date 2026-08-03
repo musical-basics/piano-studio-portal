@@ -224,7 +224,7 @@ export async function updateStudent(formData: FormData) {
                 lesson_time: lessonTime,
                 public_id: publicId,
                 timezone: formData.get('timezone') as string || null,
-                status: (formData.get('status') as 'active' | 'inactive' | 'other') || null,
+                status: (formData.get('status') as 'active' | 'inactive' | 'prospective' | 'other') || null,
                 pricing_plan_id: formData.get('pricingPlanId') as string || null,
                 preferred_name: preferredNameRaw,
                 parent_contact_name: parentContactNameRaw,

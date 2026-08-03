@@ -74,18 +74,23 @@ export default async function AdminPage() {
     student: lesson.student
   }))
 
-  // Fetch all students (profiles with role = 'student')
+  // Fetch all students, plus prospect-role accounts (approved website leads).
   const { data: studentsRaw, error: studentsError } = await supabase
     .from("profiles")
     .select("*")
-    .eq("role", "student")
+    .in("role", ["student", "prospect"])
     .order("name", { ascending: true })
 
   if (studentsError) {
     console.error("Students fetch error:", studentsError)
   }
 
-  const students: StudentRoster[] = studentsRaw || []
+  // Prospect-role accounts are prospective by definition; normalize their
+  // status so they land in the roster's Prospective tab and their weekly
+  // slots render as tentative, regardless of what their status column says.
+  const students: StudentRoster[] = (studentsRaw || []).map(p =>
+    p.role === 'prospect' ? { ...p, status: 'prospective' as const } : p
+  )
 
   // Sort students by lesson_day (Sunday -> Saturday, then others)
   const dayOrder: Record<string, number> = {

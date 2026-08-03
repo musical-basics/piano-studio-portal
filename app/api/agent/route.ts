@@ -18,7 +18,7 @@ Base: this URL's parent path (\`/api/agent\`)
 Core endpoints:
 - GET /students
 - GET /students/:id
-- PATCH /students/:id           body: { status: "active" | "inactive" | "other" } ("other" = test/teacher accounts)
+- PATCH /students/:id           body: { status: "active" | "inactive" | "prospective" | "other" } ("prospective" = trial/audition students whose weekly slots are tentative; "other" = test/teacher accounts)
 - PATCH /students/:id/settings  body: { lesson_day?, lesson_time?, lesson_duration?, timezone?, status? }
 - PATCH /students/:id/profile   body: { name?, phone?, parent_email?, preferred_name?, parent_contact_name?, contact_salutation?, primary_contact_role? }
 - POST /students/:id/credits    body: { delta: integer } or { set: integer >= 0 }

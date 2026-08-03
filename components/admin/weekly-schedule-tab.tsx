@@ -90,6 +90,8 @@ interface WeeklySlot {
     startMin: number
     endMin: number
     source: "standing" | "extra" | "inferred"
+    /** Slot belongs to a prospective (trial/audition) student, not an enrolled one. */
+    tentative: boolean
 }
 
 interface PositionedSlot extends WeeklySlot {
@@ -153,21 +155,26 @@ function computeGaps(daySlots: WeeklySlot[], windowStart: number, windowEnd: num
 }
 
 export function WeeklyScheduleTab({ students, recurringSlots, scheduledLessons }: WeeklyScheduleTabProps) {
-    const { slotsByDay, unslotted, hasInferred, windowStartHour, windowEndHour, totalSlots, totalMinutes, activeCount } =
+    const { slotsByDay, unslotted, hasInferred, hasTentative, windowStartHour, windowEndHour, totalSlots, totalMinutes, activeCount, prospectiveCount } =
         useMemo(() => {
             const activeStudents = students.filter(s => !s.status || s.status === "active")
-            const activeById = new Map(activeStudents.map(s => [s.id, s]))
+            // Prospective (trial/audition) students occupy the grid too, but
+            // their slots are marked tentative and drawn hollow.
+            const prospectiveStudents = students.filter(s => s.status === "prospective")
+            const tentativeIds = new Set(prospectiveStudents.map(s => s.id))
+            const slottableStudents = [...activeStudents, ...prospectiveStudents]
+            const activeById = new Map(slottableStudents.map(s => [s.id, s]))
 
             const slots: WeeklySlot[] = []
             const seen = new Set<string>()
-            const push = (slot: WeeklySlot) => {
+            const push = (slot: Omit<WeeklySlot, "tentative">) => {
                 const key = `${slot.studentId}|${slot.day}|${slot.startMin}`
                 if (seen.has(key)) return
                 seen.add(key)
-                slots.push(slot)
+                slots.push({ ...slot, tentative: tentativeIds.has(slot.studentId) })
             }
 
-            for (const student of activeStudents) {
+            for (const student of slottableStudents) {
                 const day = normalizeDay(student.lesson_day)
                 const startMin = toMinutes(student.lesson_time)
                 if (day && startMin !== null) {
@@ -238,11 +245,13 @@ export function WeeklyScheduleTab({ students, recurringSlots, scheduledLessons }
                 slotsByDay,
                 unslotted,
                 hasInferred: slots.some(s => s.source === "inferred"),
+                hasTentative: slots.some(s => s.tentative),
                 windowStartHour,
                 windowEndHour,
                 totalSlots: slots.length,
                 totalMinutes: slots.reduce((sum, s) => sum + (s.endMin - s.startMin), 0),
                 activeCount: activeStudents.length,
+                prospectiveCount: prospectiveStudents.length,
             }
         }, [students, recurringSlots, scheduledLessons])
 
@@ -260,9 +269,15 @@ export function WeeklyScheduleTab({ students, recurringSlots, scheduledLessons }
                     Standing weekly slots for active students. Gaps in the grid (and the open times listed under each
                     day) are where a new student can fit.
                     {hasInferred && " Dashed blocks have no standing slot set and are inferred from upcoming lessons."}
+                    {hasTentative && " Hollow dashed blocks are tentative slots held by prospective students."}
                 </CardDescription>
                 <div className="flex flex-wrap gap-2 pt-1">
                     <Badge variant="secondary">{activeCount} active students</Badge>
+                    {prospectiveCount > 0 && (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/50">
+                            {prospectiveCount} prospective
+                        </Badge>
+                    )}
                     <Badge variant="secondary">{totalSlots} weekly lessons</Badge>
                     <Badge variant="secondary">{(totalMinutes / 60).toFixed(1).replace(/\.0$/, "")}h / week</Badge>
                 </div>
@@ -324,6 +339,7 @@ export function WeeklyScheduleTab({ students, recurringSlots, scheduledLessons }
                                                 const tooltip = [
                                                     slot.studentName,
                                                     `${day} ${formatTime(slot.startMin)} - ${formatTime(slot.endMin)} (${duration} min)`,
+                                                    slot.tentative ? "TENTATIVE: prospective student, not yet enrolled" : "",
                                                     slot.source === "extra" ? "Additional weekly day" : "",
                                                     slot.source === "inferred" ? "Inferred from upcoming lessons (no standing slot set)" : "",
                                                     slot.hasOverlap ? "WARNING: overlaps another lesson" : "",
@@ -332,10 +348,12 @@ export function WeeklyScheduleTab({ students, recurringSlots, scheduledLessons }
                                                     <div
                                                         key={`${slot.studentId}-${slot.startMin}-${i}`}
                                                         title={tooltip}
-                                                        className={`absolute overflow-hidden rounded-md px-1.5 py-0.5 cursor-default ${color.bg} ${color.text} ${
-                                                            slot.source === "inferred"
-                                                                ? `border-2 border-dashed ${color.borderFull}`
-                                                                : `border-l-2 ${color.border}`
+                                                        className={`absolute overflow-hidden rounded-md px-1.5 py-0.5 cursor-default ${color.text} ${
+                                                            slot.tentative
+                                                                ? `border-2 border-dashed ${color.borderFull} italic`
+                                                                : slot.source === "inferred"
+                                                                    ? `${color.bg} border-2 border-dashed ${color.borderFull}`
+                                                                    : `${color.bg} border-l-2 ${color.border}`
                                                         } ${slot.hasOverlap ? "ring-2 ring-destructive" : ""}`}
                                                         style={{
                                                             top,

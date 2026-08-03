@@ -215,6 +215,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pr
                     <div className="flex items-center justify-between">
                         <TabsList>
                             <TabsTrigger value="active">Active</TabsTrigger>
+                            <TabsTrigger value="prospective">Prospective</TabsTrigger>
                             <TabsTrigger value="inactive">Inactive</TabsTrigger>
                             <TabsTrigger value="other">Other</TabsTrigger>
                         </TabsList>
@@ -224,6 +225,24 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pr
                         <div className="rounded-md border">
                             <StudentTable
                                 students={sortedStudents.filter(s => !s.status || s.status === 'active')}
+                                sortConfig={sortConfig}
+                                handleSort={handleSort}
+                                onLog={onLog}
+                                onSchedule={onSchedule}
+                                onDelete={onDelete}
+                                onMessage={onMessage}
+                                getClassroomLink={getClassroomLink}
+                                pricingPlans={pricingPlans}
+                            />
+                        </div>
+                    </TabsContent>
+
+                    {/* Trial/audition students not yet enrolled; their weekly
+                        calendar slots render as tentative. */}
+                    <TabsContent value="prospective" className="space-y-4">
+                        <div className="rounded-md border">
+                            <StudentTable
+                                students={sortedStudents.filter(s => s.status === 'prospective')}
                                 sortConfig={sortConfig}
                                 handleSort={handleSort}
                                 onLog={onLog}
@@ -384,6 +403,10 @@ function StudentTable({
                                     {student.status === 'other' ? (
                                         <Badge variant="outline" className="text-muted-foreground">
                                             Test / Teacher
+                                        </Badge>
+                                    ) : student.status === 'prospective' ? (
+                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/50">
+                                            Prospective
                                         </Badge>
                                     ) : student.credits === 0 ? (
                                         <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">

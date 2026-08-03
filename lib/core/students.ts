@@ -1,9 +1,9 @@
 import { revalidatePath } from 'next/cache'
 import type { DbClient } from '@/lib/supabase/admin'
 
-export type StudentStatus = 'active' | 'inactive' | 'other'
+export type StudentStatus = 'active' | 'inactive' | 'prospective' | 'other'
 
-export const ALLOWED_STUDENT_STATUSES: readonly StudentStatus[] = ['active', 'inactive', 'other'] as const
+export const ALLOWED_STUDENT_STATUSES: readonly StudentStatus[] = ['active', 'inactive', 'prospective', 'other'] as const
 
 export type UpdateStudentStatusResult =
     | { student: Record<string, any> }
