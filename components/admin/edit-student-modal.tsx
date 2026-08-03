@@ -242,6 +242,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             <SelectContent>
                                 <SelectItem value="active">Active</SelectItem>
                                 <SelectItem value="inactive">Inactive</SelectItem>
+                                <SelectItem value="other">Other (Test/Teacher)</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

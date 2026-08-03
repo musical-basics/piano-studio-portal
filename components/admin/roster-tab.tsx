@@ -216,6 +216,7 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pr
                         <TabsList>
                             <TabsTrigger value="active">Active</TabsTrigger>
                             <TabsTrigger value="inactive">Inactive</TabsTrigger>
+                            <TabsTrigger value="other">Other</TabsTrigger>
                         </TabsList>
                     </div>
 
@@ -239,6 +240,24 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pr
                         <div className="rounded-md border">
                             <StudentTable
                                 students={sortedStudents.filter(s => s.status === 'inactive')}
+                                sortConfig={sortConfig}
+                                handleSort={handleSort}
+                                onLog={onLog}
+                                onSchedule={onSchedule}
+                                onDelete={onDelete}
+                                onMessage={onMessage}
+                                getClassroomLink={getClassroomLink}
+                                pricingPlans={pricingPlans}
+                            />
+                        </div>
+                    </TabsContent>
+
+                    {/* Test accounts and fellow teachers; kept out of Active so they
+                        don't show up in the weekly schedule or student counts. */}
+                    <TabsContent value="other" className="space-y-4">
+                        <div className="rounded-md border">
+                            <StudentTable
+                                students={sortedStudents.filter(s => s.status === 'other')}
                                 sortConfig={sortConfig}
                                 handleSort={handleSort}
                                 onLog={onLog}
@@ -362,7 +381,11 @@ function StudentTable({
                                     )}
                                 </TableCell>
                                 <TableCell>
-                                    {student.credits === 0 ? (
+                                    {student.status === 'other' ? (
+                                        <Badge variant="outline" className="text-muted-foreground">
+                                            Test / Teacher
+                                        </Badge>
+                                    ) : student.credits === 0 ? (
                                         <Badge variant="outline" className="bg-warning/10 text-warning-foreground border-warning">
                                             Needs Renewal
                                         </Badge>
