@@ -45,7 +45,7 @@ export function LibraryFileSelector({ onSelect, trigger }: LibraryFileSelectorPr
     const [searchQuery, setSearchQuery] = useState("")
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
     const [viewMode, setViewMode] = useState<ViewMode>("grid")
-    const [sortBy, setSortBy] = useState<SortOption>("recent")
+    const [sortBy, setSortBy] = useState<SortOption>("title-asc")
 
     useEffect(() => {
         if (isOpen) {
