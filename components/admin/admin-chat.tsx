@@ -105,7 +105,6 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     appendLocal,
   } = usePaginatedConversation({
     partnerId: selectedStudent?.id ?? null,
-    onInitialLoaded: scrollToBottom,
   })
 
   // Load older messages when scrolled near the top.

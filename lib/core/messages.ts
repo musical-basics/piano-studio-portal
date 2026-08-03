@@ -141,7 +141,7 @@ export async function sendMessageCore({
 }
 
 /** Default number of messages loaded per page for the reverse-infinite-scroll chat. */
-export const CONVERSATION_PAGE_SIZE = 30
+export const CONVERSATION_PAGE_SIZE = 15
 
 interface GetConversationOptions {
     /** Max messages to return. Omit to fetch the entire conversation (legacy behavior). */

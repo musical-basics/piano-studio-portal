@@ -47,7 +47,6 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
-    onInitialLoaded: scrollToBottom,
   })
 
   const [isResolvingAdmin, setIsResolvingAdmin] = useState(true)

@@ -48,7 +48,7 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
-    onInitialLoaded: () => { scrollToBottom(); setUnreadCount(0) },
+    onInitialLoaded: () => setUnreadCount(0),
   })
 
   const isLoading = isLoadingInitial

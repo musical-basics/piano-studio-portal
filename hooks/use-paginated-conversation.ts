@@ -10,6 +10,9 @@ import { getConversationPage, getNewMessages, markMessagesAsRead } from "@/app/m
  *
  * Instead of loading a whole conversation on open, this loads the newest page and
  * then:
+ *  - the viewport is pinned to the newest message instantly (pre-paint) once the
+ *    initial page renders; `loadOlder()` stays inert until that has happened, so
+ *    scroll events fired while the chat is settling can't chain-load history.
  *  - `loadOlder()` fetches the previous page when the user scrolls to the top,
  *    preserving the visual scroll position (so the viewport doesn't jump).
  *  - `poll()` fetches only messages newer than the newest one already loaded and
@@ -53,7 +56,10 @@ interface Options {
     partnerId: string | null
     /** Impersonation target for admin previews; forwarded to the server actions. */
     asUserId?: string
-    /** Called after the initial page loads, so the caller can scroll to bottom. */
+    /**
+     * Called after the initial page loads (e.g. to clear an unread badge).
+     * Scrolling to the bottom is handled internally; don't scroll here.
+     */
     onInitialLoaded?: () => void
     /** Whether to mark the partner's messages as read after loading. Defaults to true. */
     markRead?: boolean
@@ -87,17 +93,51 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
     // layout effect can restore the viewport to the same message after the DOM grows.
     const pendingScrollAdjust = useRef<number | null>(null)
 
+    // Set when a fresh page has been fetched and the viewport should jump to the
+    // newest message as soon as it renders. Done pre-paint with an instant jump
+    // (never a smooth animation: an animated scroll starts at the top of the
+    // container, and the scroll events it emits while passing through the
+    // near-top zone would trigger loadOlder over and over, interrupting the
+    // animation halfway and chain-loading the entire history).
+    const pendingInitialScroll = useRef(false)
+
+    // False until the initial bottom-pin has been applied; loadOlder is inert
+    // before then, so nothing can chain-load pages while the chat is settling.
+    const initialPositionedRef = useRef(false)
+
     // Guards so overlapping calls (poll firing mid-load, double scroll events) don't race.
     const loadingRef = useRef(false)
 
+    // Filled in below; lets the fill-viewport effect call loadOlder without
+    // being declared after it.
+    const loadOlderRef = useRef<(() => Promise<void>) | null>(null)
+
     useLayoutEffect(() => {
-        if (pendingScrollAdjust.current == null) return
         const el = scrollContainerRef.current
+        if (pendingInitialScroll.current) {
+            pendingInitialScroll.current = false
+            pendingScrollAdjust.current = null
+            if (el) el.scrollTop = el.scrollHeight
+            initialPositionedRef.current = true
+            return
+        }
+        if (pendingScrollAdjust.current == null) return
         if (el) {
             el.scrollTop = el.scrollHeight - pendingScrollAdjust.current
         }
         pendingScrollAdjust.current = null
     }, [messages])
+
+    // If the loaded messages don't overflow the container there's no scrollbar,
+    // so the scroll-up trigger can never fire; keep fetching older pages until
+    // the container becomes scrollable (or history runs out).
+    useLayoutEffect(() => {
+        const el = scrollContainerRef.current
+        if (!el || !initialPositionedRef.current) return
+        if (hasMore && !loadingRef.current && el.scrollHeight <= el.clientHeight) {
+            loadOlderRef.current?.()
+        }
+    }, [messages, hasMore])
 
     const reset = useCallback(() => {
         setMessages([])
@@ -105,6 +145,8 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         setIsLoadingOlder(false)
         loadingRef.current = false
         pendingScrollAdjust.current = null
+        pendingInitialScroll.current = false
+        initialPositionedRef.current = false
     }, [])
 
     const loadInitial = useCallback(async () => {
@@ -116,12 +158,21 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         messagesRef.current = []
         setMessages([])
         setHasMore(false)
+        initialPositionedRef.current = false
         try {
             const { messages: page, hasMore: more } = await getConversationPage(partnerId, { asUserId })
+            // These state updates must land in ONE commit: callers hide the list
+            // behind a spinner while isLoadingInitial is true, so if the loading
+            // flag cleared in a later render than the messages, the bottom-pin
+            // layout effect would fire against the spinner DOM and the list
+            // would then appear scrolled to the top.
+            pendingInitialScroll.current = true
             setMessages(page || [])
             setHasMore(more)
-            if (markRead) await markMessagesAsRead(partnerId, asUserId)
+            setIsLoadingInitial(false)
+            loadingRef.current = false
             onInitialLoadedRef.current?.()
+            if (markRead) await markMessagesAsRead(partnerId, asUserId)
         } catch (err) {
             console.error("usePaginatedConversation: loadInitial failed", err)
         } finally {
@@ -132,6 +183,9 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
 
     const loadOlder = useCallback(async () => {
         if (!partnerId || !hasMoreRef.current || loadingRef.current) return
+        // Not armed until the initial page has rendered and been pinned to the
+        // bottom; scroll events fired before then are layout noise, not the user.
+        if (!initialPositionedRef.current) return
         const oldest = messagesRef.current[0]
         if (!oldest) return
 
@@ -165,6 +219,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
             loadingRef.current = false
         }
     }, [partnerId, asUserId])
+    loadOlderRef.current = loadOlder
 
     const poll = useCallback(async (): Promise<boolean> => {
         // Skip while an initial load / older-page fetch is mid-flight to avoid
@@ -179,6 +234,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
             if (!newest) {
                 const { messages: page, hasMore: more } = await getConversationPage(partnerId, { asUserId })
                 if (page && page.length > 0) {
+                    pendingInitialScroll.current = true
                     setMessages(page)
                     setHasMore(more)
                     added = true
