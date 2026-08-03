@@ -1057,3 +1057,150 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
             : 'Lesson cancelled.',
     }
 }
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function shiftDateStr(dateStr: string, days: number): string {
+    const d = new Date(`${dateStr}T00:00:00`)
+    d.setDate(d.getDate() + days)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export type AutoScheduleArgs = {
+    /** Must be a service-role client: reads recurring_lesson_slots, lesson_intent_flags and cancellation_log across students. */
+    client: DbClient
+    adminId: string
+    /** YYYY-MM-DD, inclusive. */
+    fromDate: string
+    /** YYYY-MM-DD, inclusive. */
+    toDate: string
+}
+
+export type AutoScheduleResultRow = {
+    student: string
+    date: string
+    time: string
+    action: 'scheduled' | 'already_booked' | 'skipped_flag' | 'skipped_prior_cancellation' | 'error'
+    detail?: string
+}
+
+/**
+ * Ensure every active student's standing weekly slots (profiles.lesson_day/
+ * lesson_time plus recurring_lesson_slots extras) have lesson rows for each
+ * occurrence in [fromDate, toDate]. Used by the daily auto-schedule cron (rolling
+ * next week) and by one-off bulk fills.
+ *
+ * A slot occurrence is skipped when:
+ *  - the student already has a non-cancelled lesson on that date (same convention
+ *    as logLessonCore's +7d auto-create: one lesson per student per day),
+ *  - an active skip/cancel/reschedule lesson_intent_flag targets that date,
+ *  - the student previously cancelled a lesson on that exact date
+ *    (cancellation_log; never silently re-book a dropped date).
+ * Everything else goes through scheduleLessonCore, so Google Calendar, Zoom and
+ * the confirmation email behave exactly like a manual booking.
+ */
+export async function autoScheduleStandingLessonsCore({ client, adminId, fromDate, toDate }: AutoScheduleArgs) {
+    const { data: studentsRaw } = await client
+        .from('profiles')
+        .select('id, name, status, lesson_day, lesson_time, lesson_duration')
+        .eq('role', 'student')
+    const students = (studentsRaw || []).filter((s: any) => !s.status || s.status === 'active')
+    const studentIds = students.map((s: any) => s.id)
+
+    const { data: extraSlots } = await client
+        .from('recurring_lesson_slots')
+        .select('student_id, day_of_week, time, duration')
+
+    // Prefetch everything that can block an occurrence in the window.
+    const { data: existingLessons } = await client
+        .from('lessons')
+        .select('student_id, date')
+        .in('student_id', studentIds)
+        .gte('date', fromDate)
+        .lte('date', toDate)
+        .neq('status', 'cancelled')
+    const bookedKeys = new Set((existingLessons || []).map((l: any) => `${l.student_id}|${l.date}`))
+
+    const { data: activeFlags } = await client
+        .from('lesson_intent_flags')
+        .select('student_id, target_date, intent, note')
+        .eq('status', 'active')
+        .in('intent', ['skip_requested', 'cancel_requested', 'reschedule_requested'])
+        .gte('target_date', fromDate)
+        .lte('target_date', toDate)
+    const flaggedKeys = new Map(
+        (activeFlags || []).map((f: any) => [`${f.student_id}|${f.target_date}`, f.intent as string])
+    )
+
+    const { data: priorCancellations } = await client
+        .from('cancellation_log')
+        .select('student_id, lesson_date')
+        .in('student_id', studentIds)
+        .gte('lesson_date', fromDate)
+        .lte('lesson_date', toDate)
+    const cancelledKeys = new Set((priorCancellations || []).map((c: any) => `${c.student_id}|${c.lesson_date}`))
+
+    const slotsByStudent = new Map<string, Array<{ day: string; time: string; duration: number }>>()
+    for (const s of students as any[]) {
+        const slots: Array<{ day: string; time: string; duration: number }> = []
+        if (s.lesson_day && s.lesson_time && DAY_NAMES.includes(s.lesson_day)) {
+            slots.push({ day: s.lesson_day, time: s.lesson_time.slice(0, 5), duration: s.lesson_duration || 30 })
+        }
+        for (const e of (extraSlots || []) as any[]) {
+            if (e.student_id === s.id && DAY_NAMES.includes(e.day_of_week)) {
+                slots.push({ day: e.day_of_week, time: String(e.time).slice(0, 5), duration: e.duration || 30 })
+            }
+        }
+        if (slots.length > 0) slotsByStudent.set(s.id, slots)
+    }
+
+    const results: AutoScheduleResultRow[] = []
+    for (let date = fromDate; date <= toDate; date = shiftDateStr(date, 1)) {
+        const dayName = DAY_NAMES[new Date(`${date}T00:00:00`).getDay()]
+        for (const s of students as any[]) {
+            const daySlots = (slotsByStudent.get(s.id) || []).filter(slot => slot.day === dayName)
+            for (const slot of daySlots) {
+                const key = `${s.id}|${date}`
+                const base = { student: s.name || s.id, date, time: slot.time }
+                if (bookedKeys.has(key)) {
+                    results.push({ ...base, action: 'already_booked' })
+                    continue
+                }
+                if (flaggedKeys.has(key)) {
+                    results.push({ ...base, action: 'skipped_flag', detail: flaggedKeys.get(key) })
+                    continue
+                }
+                if (cancelledKeys.has(key)) {
+                    results.push({ ...base, action: 'skipped_prior_cancellation' })
+                    continue
+                }
+                const res = await scheduleLessonCore({
+                    client,
+                    adminId,
+                    studentId: s.id,
+                    date,
+                    time: slot.time,
+                    duration: slot.duration,
+                })
+                if (res && 'success' in res && res.success) {
+                    bookedKeys.add(key)
+                    results.push({ ...base, action: 'scheduled' })
+                } else {
+                    results.push({ ...base, action: 'error', detail: (res as any)?.error || 'unknown error' })
+                }
+            }
+        }
+    }
+
+    const count = (action: AutoScheduleResultRow['action']) => results.filter(r => r.action === action).length
+    return {
+        fromDate,
+        toDate,
+        scheduled: count('scheduled'),
+        already_booked: count('already_booked'),
+        skipped_flag: count('skipped_flag'),
+        skipped_prior_cancellation: count('skipped_prior_cancellation'),
+        errors: count('error'),
+        results,
+    }
+}
