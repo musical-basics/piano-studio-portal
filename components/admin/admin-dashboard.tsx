@@ -5,6 +5,7 @@ import { RosterTab } from "@/components/admin/roster-tab"
 import { InquiriesTab } from "@/components/admin/inquiries-tab"
 import { AnnouncementTab } from "@/components/admin/announcement-tab"
 import { MasterCalendar } from "./master-calendar"
+import { WeeklyScheduleTab, type RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import React, { useState, useRef, Suspense, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone } from "lucide-react"
+import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -52,13 +53,14 @@ export interface AdminDashboardProps {
     scheduledLessons: LessonWithStudent[]
     completedLessons: LessonWithStudent[]
     students: StudentRoster[]
+    recurringSlots: RecurringSlotRow[]
     totalUnread: number
     inquiries: Inquiry[]
     resources: Resource[]
     pricingPlans: PricingPlan[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -742,6 +744,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             <Calendar className="h-4 w-4" />
                             <span className="hidden sm:inline">Calendar</span>
                         </TabsTrigger>
+                        <TabsTrigger value="weekly" className="gap-2">
+                            <CalendarClock className="h-4 w-4" />
+                            <span className="hidden sm:inline">Weekly</span>
+                        </TabsTrigger>
                         <TabsTrigger value="scheduled" className="gap-2">
                             <Clock className="h-4 w-4" />
                             <span className="hidden sm:inline">List</span>
@@ -891,6 +897,14 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </CardContent>
                             </Card>
                         </Suspense>
+                    </TabsContent>
+
+                    <TabsContent value="weekly">
+                        <WeeklyScheduleTab
+                            students={students}
+                            recurringSlots={recurringSlots}
+                            scheduledLessons={scheduledLessons}
+                        />
                     </TabsContent>
                 </Tabs >
             </main >

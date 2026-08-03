@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { AdminDashboard } from "@/components/admin/admin-dashboard"
 import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components/admin/admin-dashboard"
+import type { RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { getInquiries } from "@/app/actions/inquiries"
 import { getResources } from "@/app/actions/resources"
 
@@ -102,6 +104,22 @@ export default async function AdminPage() {
     return (a.name || '').localeCompare(b.name || '')
   })
 
+  // Fetch all additional recurring weekly slots for the Weekly schedule tab.
+  // RLS on recurring_lesson_slots only lets students read their own rows, so
+  // this read goes through the service-role client (we are past the admin gate).
+  let recurringSlots: RecurringSlotRow[] = []
+  try {
+    const { data: recurringSlotsRaw, error: recurringSlotsError } = await createAdminClient()
+      .from("recurring_lesson_slots")
+      .select("student_id, day_of_week, time, duration")
+    if (recurringSlotsError) {
+      console.error("Recurring slots fetch error:", recurringSlotsError)
+    }
+    recurringSlots = recurringSlotsRaw || []
+  } catch (e) {
+    console.error("Recurring slots fetch error:", e)
+  }
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
@@ -121,6 +139,7 @@ export default async function AdminPage() {
       scheduledLessons={scheduledLessons}
       completedLessons={completedLessons}
       students={students}
+      recurringSlots={recurringSlots}
       totalUnread={totalUnread}
       inquiries={inquiries || []}
       resources={resources || []}
