@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Music, Plus, Video, MapPin, Calendar, Clock, CheckCircle2, HelpCircle, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { getAdminEvents, type AdminEvent } from "@/app/actions/events"
+import { studioToday } from "@/lib/studio-timezone"
 import { CreateEventModal } from "@/components/admin/create-event-modal"
 
 export default function EventsPage() {
@@ -26,12 +27,15 @@ export default function EventsPage() {
     loadEvents()
   }, [])
 
-  const today = new Date().toISOString().split("T")[0]
+  const today = studioToday()
   const upcomingEvents = events.filter((e) => e.date >= today)
   const previousEvents = events.filter((e) => e.date < today)
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr)
+    // Parse YYYY-MM-DD as local calendar parts. new Date("YYYY-MM-DD") parses
+    // as UTC midnight, which shows the previous day in any US timezone.
+    const [y, m, d] = dateStr.split("-").map(Number)
+    const date = new Date(y, m - 1, d)
     return {
       month: date.toLocaleString("en-US", { month: "short" }).toUpperCase(),
       day: date.getDate(),
