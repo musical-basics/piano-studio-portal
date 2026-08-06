@@ -27,5 +27,15 @@ export default async function RecitalReviewPage() {
 
     const students = (studentsRaw || []).filter(s => !s.status || s.status === 'active')
 
-    return <RecitalReview students={students} />
+    // Upcoming recital event, so each row can link to that family's RSVP page
+    const { data: recitalEvent } = await supabase
+        .from("events")
+        .select("id")
+        .ilike("title", "%recital%")
+        .gte("start_time", new Date().toISOString())
+        .order("start_time", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+    return <RecitalReview students={students} recitalEventId={recitalEvent?.id || null} />
 }

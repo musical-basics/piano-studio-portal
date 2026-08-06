@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Loader2, AlertTriangle, Mail } from "lucide-react"
+import { ArrowLeft, Loader2, AlertTriangle, Mail, ExternalLink } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { resolveRecitalAddressing } from "@/lib/recital-addressing"
 import { updateStudentContactFields } from "@/app/actions/recital-review"
@@ -32,11 +32,12 @@ interface StudentRow {
 
 interface RecitalReviewProps {
     students: StudentRow[]
+    recitalEventId: string | null
 }
 
 const NONE = "__none__"
 
-function StudentCard({ student }: { student: StudentRow }) {
+function StudentCard({ student, recitalEventId }: { student: StudentRow; recitalEventId: string | null }) {
     const { toast } = useToast()
     const [parentName, setParentName] = useState(student.parent_contact_name || "")
     const [parentEmail, setParentEmail] = useState(student.parent_email || "")
@@ -150,6 +151,24 @@ function StudentCard({ student }: { student: StudentRow }) {
                                 : <span className="text-destructive font-medium">no email on file!</span>}
                         </p>
                         <p className="text-xs text-muted-foreground">{addressing.basis}</p>
+                        {recitalEventId && student.public_id && (
+                            <div className="pt-2 border-t space-y-1">
+                                <Button variant="outline" size="sm" asChild className="w-full">
+                                    <a
+                                        href={`/recital/${recitalEventId}/${student.public_id}?a=yes`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="gap-2"
+                                    >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                        View their RSVP page
+                                    </a>
+                                </Button>
+                                <p className="text-[11px] text-muted-foreground text-center">
+                                    View only: pressing Confirm on it records an RSVP as this family.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </CardContent>
@@ -157,7 +176,7 @@ function StudentCard({ student }: { student: StudentRow }) {
     )
 }
 
-export function RecitalReview({ students }: RecitalReviewProps) {
+export function RecitalReview({ students, recitalEventId }: RecitalReviewProps) {
     const summary = students.map(s => resolveRecitalAddressing({
         name: s.name, email: s.email, preferred_name: s.preferred_name,
         parent_email: s.parent_email, parent_contact_name: s.parent_contact_name,
@@ -207,7 +226,7 @@ export function RecitalReview({ students }: RecitalReviewProps) {
                     </CardHeader>
                 </Card>
 
-                {students.map(s => <StudentCard key={s.id} student={s} />)}
+                {students.map(s => <StudentCard key={s.id} student={s} recitalEventId={recitalEventId} />)}
             </main>
         </div>
     )
