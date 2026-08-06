@@ -692,6 +692,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </a>
                             </Button>
                             <Button variant="outline" asChild>
+                                <a href="/admin/recital-review" className="gap-2">
+                                    <Mail className="h-4 w-4" />
+                                    Recital
+                                </a>
+                            </Button>
+                            <Button variant="outline" asChild>
                                 <a href="/admin/library" className="gap-2">
                                     <FileText className="h-4 w-4" />
                                     Library
