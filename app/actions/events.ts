@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createZoomMeeting } from '@/lib/zoom'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
+import { studioWallClockToISO } from '@/lib/studio-timezone'
 
 // ==========================================
 // Types matching v0 UI expectations
@@ -110,10 +111,12 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
             student_notes: invite.student_notes
         }))
 
-        // Extract date and time from ISO start_time
+        // Extract date and time from ISO start_time in the admin's timezone.
+        // toISOString()/server-local formatting shifted these by 7-8 hours on
+        // Vercel (UTC), showing Aug 29 2pm PT events as Aug 28 9:00 PM.
         const startDateTime = new Date(event.start_time)
-        const dateStr = startDateTime.toISOString().split('T')[0]
-        const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+        const dateStr = startDateTime.toLocaleDateString('en-CA', { timeZone: timezone })
+        const timeStr = startDateTime.toLocaleTimeString('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit' })
 
         // Handle RSVP Deadline (stored as ISO presumably)
         let rsvpStr = ''
@@ -180,14 +183,18 @@ export async function createEvent(
 ): Promise<{ success: boolean; event?: AdminEvent; error?: string }> {
     const supabase = await createClient()
 
+    // The form's date/time are STUDIO (PST) wall-clock. Parse them in the
+    // studio timezone: `new Date(...)` here would use the server's timezone
+    // (UTC on Vercel) and store a shifted instant.
+    const fullStartTime = studioWallClockToISO(input.date, input.start_time)
+    const fullRsvpDeadline = studioWallClockToISO(input.rsvp_deadline, '23:59')
+
     // 1. Zoom Logic
     let locationDetails = input.location_address || ''
     if (input.location_type === 'virtual') {
-        // Construct full ISO string for Zoom
-        const isoDateTime = new Date(`${input.date}T${input.start_time}`).toISOString()
         const zoomMeeting = await createZoomMeeting(
             input.title,
-            isoDateTime,
+            fullStartTime,
             input.duration_minutes
         )
         if (zoomMeeting) {
@@ -196,12 +203,6 @@ export async function createEvent(
     }
 
     // 2. Insert Event
-    // Combine date and time into ISO string for DB storage
-    // We assume DB `start_time` column is TIMESTAMPTZ
-    const fullStartTime = new Date(`${input.date}T${input.start_time}`).toISOString()
-    // RSVP deadline typically needs a time too, default to end of day? 
-    // Input is just a date string.
-    const fullRsvpDeadline = new Date(`${input.rsvp_deadline}T23:59:59`).toISOString()
 
     const { data: eventData, error: eventError } = await supabase
         .from('events')
@@ -479,8 +480,9 @@ export async function updateEvent(
     }
 
     // 2. Update Event
-    const fullStartTime = new Date(`${input.date}T${input.start_time}`).toISOString()
-    const fullRsvpDeadline = new Date(`${input.rsvp_deadline}T23:59:59`).toISOString()
+    // Studio wall-clock -> instant (see createEvent note)
+    const fullStartTime = studioWallClockToISO(input.date, input.start_time)
+    const fullRsvpDeadline = studioWallClockToISO(input.rsvp_deadline, '23:59')
 
     const { error: eventError } = await supabase
         .from('events')

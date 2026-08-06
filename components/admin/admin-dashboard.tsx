@@ -36,6 +36,7 @@ import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
+import { isoToStudioWallClock } from "@/lib/studio-timezone"
 
 // Re-export types for compatibility if used elsewhere (e.g. page.tsx)
 export type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry }
@@ -88,12 +89,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // Filter "Upcoming" to likely show today + future
     const upcomingLessons = scheduledLessons.filter(l => l.date >= todayStr)
 
-    // Events happening today (consultations etc.), compared in local wall-clock
-    const todaysEvents = todayEvents.filter(e => {
-        const d = new Date(e.start_time)
-        const eventDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        return eventDateStr === todayStr
-    })
+    // Events happening today (consultations etc.), compared in STUDIO
+    // wall-clock so viewing from another timezone doesn't shift the day
+    const todaysEvents = todayEvents.filter(e => isoToStudioWallClock(e.start_time).localDate === todayStr)
 
 
     const [showLogLessonModal, setShowLogLessonModal] = useState(false)

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
+import { isoToStudioWallClock } from "@/lib/studio-timezone"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 
@@ -64,11 +65,10 @@ export function DashboardTab({
         day: 'numeric'
     })
 
-    // Local wall-clock HH:MM for an event's timestamptz, comparable to lesson.time
-    const eventLocalTime = (startTime: string) => {
-        const d = new Date(startTime)
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    }
+    // Studio wall-clock HH:MM for an event's timestamptz, comparable to
+    // lesson.time (which is stored as naive studio time). Browser-local
+    // conversion would shift times for an admin viewing from another timezone.
+    const eventLocalTime = (startTime: string) => isoToStudioWallClock(startTime).localTime
 
     // Merge lessons and events into one chronological schedule
     type ScheduleItem =

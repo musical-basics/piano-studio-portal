@@ -12,24 +12,12 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Video, MapPin, Sparkles, Users } from "lucide-react"
 import { getActiveStudents, createEvent, updateEvent, type CreateEventInput, type AdminEvent } from "@/app/actions/events"
+import { isoToStudioWallClock } from "@/lib/studio-timezone"
 
-// Helper to extract LOCAL date and time from an ISO string
-const getLocalDateTime = (isoString: string) => {
-  const date = new Date(isoString); // Creates a date object in User's Local Time (PST)
-
-  // Manually build YYYY-MM-DD using local methods
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const localDate = `${year}-${month}-${day}`;
-
-  // Manually build HH:mm using local methods
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const localTime = `${hours}:${minutes}`;
-
-  return { localDate, localTime };
-};
+// Helper to extract STUDIO wall-clock date and time from an ISO string.
+// The form's date/time fields are studio (PST) wall-clock, so prefill must
+// convert with the studio timezone, not the browser's.
+const getLocalDateTime = (isoString: string) => isoToStudioWallClock(isoString);
 
 type Student = {
   id: string

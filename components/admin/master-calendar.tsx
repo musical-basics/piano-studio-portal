@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, Clock, Pe
 import { getLessonsForDateRange } from "@/app/actions/lessons"
 import type { Lesson, Profile } from "@/lib/supabase/database.types"
 import type { AdminEvent, EventInvite } from "@/app/actions/events"
+import { isoToStudioWallClock } from "@/lib/studio-timezone"
 
 // Helper to format date as YYYY-MM-DD for comparison/filtering
 const formatDateKey = (date: Date) => {
@@ -17,24 +18,12 @@ const formatDateKey = (date: Date) => {
     return `${year}-${month}-${day}`
 }
 
-// Helper to extract LOCAL date and time from an ISO string
-// (Same as in create-event-modal.tsx)
+// Helper to extract STUDIO wall-clock date and time from an ISO string.
+// Uses the studio timezone (not the browser's), so an admin viewing from
+// another timezone still sees PST times, matching the lesson columns.
 const getLocalDateTime = (isoString: string) => {
     if (!isoString) return { localDate: '', localTime: '' }
-
-    const date = new Date(isoString);
-    if (isNaN(date.getTime())) return { localDate: '', localTime: '' }
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const localDate = `${year}-${month}-${day}`;
-
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const localTime = `${hours}:${minutes}`;
-
-    return { localDate, localTime };
+    return isoToStudioWallClock(isoString)
 };
 
 export type CalendarLesson = Lesson & {
