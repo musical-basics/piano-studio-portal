@@ -4,12 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users } from "lucide-react"
-import type { TodayLesson, LessonWithStudent } from "@/types/admin"
+import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 
 interface DashboardTabProps {
     lessons: TodayLesson[]
+    /** Today's calendar events (consultations, recitals, ...), rendered inline with lessons. */
+    events?: AdminTodayEvent[]
     adminZoomLink?: string | null
     onLog: (lesson: TodayLesson) => void
     onReschedule: (lesson: LessonWithStudent) => void
@@ -22,6 +24,7 @@ interface DashboardTabProps {
 
 export function DashboardTab({
     lessons,
+    events = [],
     adminZoomLink,
     onLog,
     onReschedule,
@@ -61,6 +64,21 @@ export function DashboardTab({
         day: 'numeric'
     })
 
+    // Local wall-clock HH:MM for an event's timestamptz, comparable to lesson.time
+    const eventLocalTime = (startTime: string) => {
+        const d = new Date(startTime)
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    }
+
+    // Merge lessons and events into one chronological schedule
+    type ScheduleItem =
+        | { kind: 'lesson'; sortKey: string; lesson: TodayLesson }
+        | { kind: 'event'; sortKey: string; event: AdminTodayEvent }
+    const scheduleItems: ScheduleItem[] = [
+        ...lessons.map(lesson => ({ kind: 'lesson' as const, sortKey: lesson.time.slice(0, 5), lesson })),
+        ...events.map(event => ({ kind: 'event' as const, sortKey: eventLocalTime(event.start_time), event })),
+    ].sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+
     return (
         <Card>
             <CardHeader>
@@ -73,16 +91,60 @@ export function DashboardTab({
                         </CardDescription>
                     </div>
                     <Badge variant="secondary" className="text-base px-4 py-2">
-                        {lessons.length} Lessons
+                        {lessons.length} Lesson{lessons.length === 1 ? '' : 's'}
+                        {events.length > 0 && ` · ${events.length} Event${events.length === 1 ? '' : 's'}`}
                     </Badge>
                 </div>
             </CardHeader>
             <CardContent>
                 <div className="space-y-4">
-                    {lessons.length === 0 ? (
+                    {scheduleItems.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">No lessons scheduled for today</p>
                     ) : (
-                        lessons.map((lesson) => (
+                        scheduleItems.map((item) => item.kind === 'event' ? (
+                            <Card key={`event-${item.event.id}`} className="border-2 border-violet-500/40 bg-violet-500/5">
+                                <CardContent className="flex items-center justify-between p-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-violet-600 text-white rounded-lg">
+                                            <span className="text-xs font-medium">{formatTime(item.sortKey).split(' ')[0]}</span>
+                                            <span className="text-xs">{formatTime(item.sortKey).split(' ')[1]}</span>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="font-semibold text-lg">{item.event.title}</h3>
+                                                <Badge variant="outline" className="border-violet-500/50 text-violet-700 dark:text-violet-300">
+                                                    <Users className="h-3 w-3 mr-1" />
+                                                    Event
+                                                </Badge>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                                <div className="flex items-center gap-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>{item.event.duration_minutes || item.event.duration || 30} min</span>
+                                                </div>
+                                                {item.event.description && (
+                                                    <span className="truncate max-w-[360px]">{item.event.description}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap justify-end">
+                                        {item.event.location_type === 'virtual' && item.event.location_details?.startsWith('http') && (
+                                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" asChild>
+                                                <a href={item.event.location_details} target="_blank" rel="noopener noreferrer">
+                                                    <Video className="h-4 w-4 mr-2" />
+                                                    Zoom
+                                                </a>
+                                            </Button>
+                                        )}
+                                        <Button size="sm" variant="outline" asChild>
+                                            <a href="/admin/events">Manage</a>
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            (({ lesson }) => (
                             <Card key={lesson.id} className="border-2">
                                 <CardContent className="flex items-center justify-between p-6">
                                     <div className="flex items-center gap-4">
@@ -215,6 +277,7 @@ export function DashboardTab({
                                     </div>
                                 </CardContent>
                             </Card>
+                            ))(item)
                         ))
                     )}
                 </div>

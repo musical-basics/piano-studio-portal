@@ -18,6 +18,18 @@ export type StudentRoster = Profile & {
     balance_due?: number
 }
 
+// Calendar event (consultation, recital, ...) surfaced on the admin Today view.
+export type AdminTodayEvent = {
+    id: string
+    title: string
+    description: string | null
+    start_time: string
+    duration: number | null
+    duration_minutes: number | null
+    location_type: 'virtual' | 'physical' | null
+    location_details: string | null
+}
+
 export type Inquiry = {
     id: string
     name: string

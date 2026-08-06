@@ -125,6 +125,19 @@ export default async function AdminPage() {
     console.error("Recurring slots fetch error:", e)
   }
 
+  // Events (consultations, recitals, ...) around today for the Today schedule.
+  // Window is padded a day each side so timezone offsets never hide today's.
+  const eventWindowStart = new Date()
+  eventWindowStart.setDate(eventWindowStart.getDate() - 1)
+  const eventWindowEnd = new Date()
+  eventWindowEnd.setDate(eventWindowEnd.getDate() + 2)
+  const { data: eventsRaw } = await supabase
+    .from("events")
+    .select("id, title, description, start_time, duration, duration_minutes, location_type, location_details")
+    .gte("start_time", eventWindowStart.toISOString())
+    .lte("start_time", eventWindowEnd.toISOString())
+    .order("start_time", { ascending: true })
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
@@ -145,6 +158,7 @@ export default async function AdminPage() {
       completedLessons={completedLessons}
       students={students}
       recurringSlots={recurringSlots}
+      todayEvents={eventsRaw || []}
       totalUnread={totalUnread}
       inquiries={inquiries || []}
       resources={resources || []}

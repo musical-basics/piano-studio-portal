@@ -35,7 +35,7 @@ import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
-import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry } from "@/types/admin"
+import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 
 // Re-export types for compatibility if used elsewhere (e.g. page.tsx)
 export type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry }
@@ -54,13 +54,14 @@ export interface AdminDashboardProps {
     completedLessons: LessonWithStudent[]
     students: StudentRoster[]
     recurringSlots: RecurringSlotRow[]
+    todayEvents: AdminTodayEvent[]
     totalUnread: number
     inquiries: Inquiry[]
     resources: Resource[]
     pricingPlans: PricingPlan[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -86,6 +87,13 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     // Filter "Upcoming" to likely show today + future
     const upcomingLessons = scheduledLessons.filter(l => l.date >= todayStr)
+
+    // Events happening today (consultations etc.), compared in local wall-clock
+    const todaysEvents = todayEvents.filter(e => {
+        const d = new Date(e.start_time)
+        const eventDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        return eventDateStr === todayStr
+    })
 
 
     const [showLogLessonModal, setShowLogLessonModal] = useState(false)
@@ -800,6 +808,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         {/* Daily Schedule */}
                         <DashboardTab
                             lessons={todaysLessons}
+                            events={todaysEvents}
                             adminZoomLink={admin.zoom_link}
                             onLog={handleLogLesson}
                             onReschedule={handleReschedule}
