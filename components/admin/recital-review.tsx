@@ -30,14 +30,22 @@ interface StudentRow {
     public_id: string | null
 }
 
+export interface StudentEngagement {
+    rsvpStatus: string | null
+    rsvpNotes: string | null
+    opened: boolean
+    clicked: boolean
+}
+
 interface RecitalReviewProps {
     students: StudentRow[]
     recitalEventId: string | null
+    engagement: Record<string, StudentEngagement>
 }
 
 const NONE = "__none__"
 
-function StudentCard({ student, recitalEventId }: { student: StudentRow; recitalEventId: string | null }) {
+function StudentCard({ student, recitalEventId, engagement }: { student: StudentRow; recitalEventId: string | null; engagement?: StudentEngagement }) {
     const { toast } = useToast()
     const [parentName, setParentName] = useState(student.parent_contact_name || "")
     const [parentEmail, setParentEmail] = useState(student.parent_email || "")
@@ -136,13 +144,35 @@ function StudentCard({ student, recitalEventId }: { student: StudentRow; recital
 
                     {/* Computed email preview */}
                     <div className="space-y-2 rounded-lg bg-secondary/50 p-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <Badge variant={addressing.addressedTo === 'student' ? 'outline' : 'default'}>
                                 {addressing.addressedTo === 'parent' ? 'To the parent'
                                     : addressing.addressedTo === 'override' ? 'Manual override'
                                     : 'To the student'}
                             </Badge>
+                            {engagement && (
+                                <>
+                                    {engagement.rsvpStatus === 'going' && (
+                                        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40" variant="outline">Attending</Badge>
+                                    )}
+                                    {engagement.rsvpStatus === 'not_going' && (
+                                        <Badge variant="secondary">Not attending</Badge>
+                                    )}
+                                    {engagement.rsvpStatus === 'pending' && (
+                                        <Badge variant="outline">No response yet</Badge>
+                                    )}
+                                    <Badge variant="outline" className={engagement.opened ? "" : "opacity-40"}>
+                                        {engagement.opened ? "Opened" : "Not opened"}
+                                    </Badge>
+                                    <Badge variant="outline" className={engagement.clicked ? "" : "opacity-40"}>
+                                        {engagement.clicked ? "Clicked" : "No click"}
+                                    </Badge>
+                                </>
+                            )}
                         </div>
+                        {engagement?.rsvpNotes && (
+                            <p className="text-xs bg-background rounded px-2 py-1.5">{engagement.rsvpNotes}</p>
+                        )}
                         <p className="font-medium">Hi {addressing.greetingName},</p>
                         <p className="text-sm">
                             <span className="text-muted-foreground">Sends to: </span>
@@ -176,7 +206,7 @@ function StudentCard({ student, recitalEventId }: { student: StudentRow; recital
     )
 }
 
-export function RecitalReview({ students, recitalEventId }: RecitalReviewProps) {
+export function RecitalReview({ students, recitalEventId, engagement }: RecitalReviewProps) {
     const summary = students.map(s => resolveRecitalAddressing({
         name: s.name, email: s.email, preferred_name: s.preferred_name,
         parent_email: s.parent_email, parent_contact_name: s.parent_contact_name,
@@ -226,7 +256,7 @@ export function RecitalReview({ students, recitalEventId }: RecitalReviewProps) 
                     </CardHeader>
                 </Card>
 
-                {students.map(s => <StudentCard key={s.id} student={s} recitalEventId={recitalEventId} />)}
+                {students.map(s => <StudentCard key={s.id} student={s} recitalEventId={recitalEventId} engagement={engagement[s.id]} />)}
             </main>
         </div>
     )

@@ -329,8 +329,10 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
 
         const event = invite.events
         const startDateTime = new Date(event.start_time)
-        const dateStr = startDateTime.toISOString().split('T')[0]
-        const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+        // Studio wall-clock (America/Los_Angeles), not server-local: on Vercel the
+        // server runs UTC and the old formatting shifted times by 7-8 hours.
+        const dateStr = startDateTime.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+        const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })
 
         const studentEvent: StudentEvent = {
             id: event.id,
@@ -405,6 +407,40 @@ export async function rsvpToEvent(
     if (updateError) {
         console.error('Error updating RSVP:', updateError)
         return { error: 'Failed to update RSVP' }
+    }
+
+    // 3. Notify the studio inbox of every confirm/unconfirm (non-blocking).
+    // Uses the service-role client: the student's RLS session can't read the
+    // admin profile or event details for other users.
+    if (process.env.RESEND_API_KEY) {
+        try {
+            const { createAdminClient } = await import('@/lib/supabase/admin')
+            const adminDb = createAdminClient()
+            const [{ data: student }, { data: eventRow }, { data: adminProfile }] = await Promise.all([
+                adminDb.from('profiles').select('name, email').eq('id', user.id).single(),
+                adminDb.from('events').select('title, start_time').eq('id', eventId).single(),
+                adminDb.from('profiles').select('email').eq('role', 'admin').limit(1).single(),
+            ])
+            const { Resend } = await import('resend')
+            const resend = new Resend(process.env.RESEND_API_KEY)
+            const who = student?.name || student?.email || 'A student'
+            const when = eventRow?.start_time
+                ? new Date(eventRow.start_time).toLocaleString('en-US', {
+                    timeZone: 'America/Los_Angeles',
+                    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                })
+                : ''
+            await resend.emails.send({
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                to: adminProfile?.email || 'support@musicalbasics.com',
+                subject: status === 'going'
+                    ? `✅ ${who} confirmed for ${eventRow?.title || 'event'}`
+                    : `❌ ${who} is not attending ${eventRow?.title || 'event'}`,
+                html: `<p><strong>${who}</strong> responded <strong>${status === 'going' ? 'ATTENDING' : 'NOT ATTENDING'}</strong> to "${eventRow?.title || 'event'}"${when ? ` (${when} PST)` : ''} from the student portal.</p>${notes ? `<p>Note: ${notes}</p>` : ''}`,
+            })
+        } catch (notifyError) {
+            console.error('rsvpToEvent: admin notification failed (non-blocking):', notifyError)
+        }
     }
 
     revalidatePath('/student/events')

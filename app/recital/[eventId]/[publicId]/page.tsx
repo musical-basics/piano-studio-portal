@@ -1,23 +1,44 @@
 import { getRecitalRsvpContext } from '@/app/actions/recital-rsvp'
 import { RecitalRsvpForm } from '@/components/recital/recital-rsvp-form'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Music } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 // Public token-based RSVP page, reached from the recital email CTAs:
-//   /recital/[eventId]/[publicId]?a=yes|no
+//   /recital/[eventId]/[publicId]?a=yes|no&src=em
 // No login required: the publicId identifies the family (same token as
 // classroom links). All writes go through the recital-rsvp server action.
+// src=em marks arrival from an email link and is logged as a click (URL-param
+// tracking, no redirect wrapping).
 export default async function RecitalRsvpPage({
     params,
     searchParams,
 }: {
     params: Promise<{ eventId: string; publicId: string }>
-    searchParams: Promise<{ a?: string }>
+    searchParams: Promise<{ a?: string; src?: string }>
 }) {
     const { eventId, publicId } = await params
-    const { a } = await searchParams
+    const { a, src } = await searchParams
     const context = await getRecitalRsvpContext(eventId, publicId)
+
+    if (src === 'em' && !('error' in context)) {
+        try {
+            const supabase = createAdminClient()
+            const { data: profile } = await supabase
+                .from('profiles').select('id').eq('public_id', publicId).maybeSingle()
+            if (profile) {
+                await supabase.from('recital_email_events').insert({
+                    event_id: eventId,
+                    student_id: profile.id,
+                    kind: 'click',
+                    detail: a === 'no' ? 'not able to make it' : 'i can attend',
+                })
+            }
+        } catch (e) {
+            console.error('recital click logging failed (non-blocking):', e)
+        }
+    }
 
     return (
         <div className="min-h-screen bg-background flex items-center justify-center p-4">

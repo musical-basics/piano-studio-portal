@@ -1,5 +1,5 @@
 import {
-    Body, Button, Container, Head, Heading, Html, Preview, Section, Text,
+    Body, Button, Container, Head, Heading, Html, Img, Link, Preview, Section, Text,
 } from '@react-email/components'
 import * as React from 'react'
 
@@ -7,6 +7,10 @@ interface RecitalInviteEmailProps {
     recipientName: string
     rsvpYesUrl: string
     rsvpNoUrl: string
+    /** Self-hosted 1x1 open-tracking pixel URL (identifying via URL params, no redirects). */
+    trackingPixelUrl?: string
+    /** Announcement-emails unsubscribe page URL for this family. */
+    unsubscribeUrl?: string
 }
 
 // Online studio recital announcement: Saturday, August 29 2026, 2:00 PM PST.
@@ -14,6 +18,8 @@ export default function RecitalInviteEmail({
     recipientName,
     rsvpYesUrl,
     rsvpNoUrl,
+    trackingPixelUrl,
+    unsubscribeUrl,
 }: RecitalInviteEmailProps) {
     return (
         <Html>
@@ -57,7 +63,19 @@ export default function RecitalInviteEmail({
                         <Text style={footerText}>
                             Lionel Yu Piano Studio
                         </Text>
+                        {unsubscribeUrl && (
+                            <Text style={unsubText}>
+                                You&apos;re receiving this because you&apos;re part of Lionel Yu Piano
+                                Studio. Lesson emails will continue either way.{' '}
+                                <Link href={unsubscribeUrl} style={unsubLink}>
+                                    Unsubscribe from announcement emails
+                                </Link>
+                            </Text>
+                        )}
                     </Section>
+                    {trackingPixelUrl && (
+                        <Img src={trackingPixelUrl} width="1" height="1" alt="" style={{ display: 'block' }} />
+                    )}
                 </Container>
             </Body>
         </Html>
@@ -77,3 +95,5 @@ const buttonBase = {
 const attendButton = { ...buttonBase, backgroundColor: '#10b981', margin: '28px auto 12px' }
 const declineButton = { ...buttonBase, backgroundColor: '#6b7280', margin: '0 auto 8px' }
 const footerText = { fontSize: '12px', color: '#999', textAlign: 'center' as const, margin: '28px 0 0' }
+const unsubText = { fontSize: '11px', color: '#aaa', textAlign: 'center' as const, margin: '12px 0 0', lineHeight: '17px' }
+const unsubLink = { color: '#888', textDecoration: 'underline' }

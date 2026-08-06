@@ -611,6 +611,66 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     </CardContent>
                 </Card>
 
+                {/* Upcoming Events (recitals etc.): visible to every invited student,
+                    with a clear confirmed/unconfirmed attendance state */}
+                {events.length > 0 && (
+                    <Card className="border-2">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-2xl font-serif">Upcoming Events</CardTitle>
+                            <CardDescription>Studio recitals and special events you&apos;re invited to</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {events.map(event => (
+                                <div key={event.id} className="rounded-lg border p-4 space-y-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                            <h3 className="font-serif font-semibold text-lg">{event.title}</h3>
+                                            <p className="text-sm text-muted-foreground">
+                                                {new Date(`${event.date}T00:00:00`).toLocaleDateString('en-US', {
+                                                    weekday: 'long', month: 'long', day: 'numeric',
+                                                })}
+                                                {' at '}{event.start_time} PST
+                                                {event.location_type === 'virtual' ? ' · Zoom' : ''}
+                                            </p>
+                                        </div>
+                                        {event.invite_status === 'going' ? (
+                                            <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 pl-1.5 pr-2.5 py-1">
+                                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                                Confirmed
+                                            </Badge>
+                                        ) : event.invite_status === 'not_going' ? (
+                                            <Badge variant="secondary" className="pl-1.5 pr-2.5 py-1">
+                                                Not attending
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 pl-1.5 pr-2.5 py-1">
+                                                <HelpCircle className="w-3.5 h-3.5 mr-1" />
+                                                Unconfirmed
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    {event.description && (
+                                        <p className="text-sm text-muted-foreground">{event.description}</p>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        {event.invite_status !== 'going' && (
+                                            <Button size="sm" onClick={() => handleSignUpClick(event)}>
+                                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                                                {event.invite_status === 'not_going' ? 'Change: I can attend' : 'Confirm attendance'}
+                                            </Button>
+                                        )}
+                                        {event.invite_status !== 'not_going' && (
+                                            <Button size="sm" variant="outline" onClick={() => handleUnenroll(event.id)}>
+                                                Can&apos;t attend
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                )}
+
                 {/* Stats Bar */}
                 <div className="flex flex-wrap gap-3">
                     <Card className="flex-1 min-w-[200px]">
