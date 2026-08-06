@@ -8,8 +8,12 @@ interface LessonReminderEmailProps {
     time: string
     zoomLink?: string | null
     classroomLink?: string | null
-    variant: '24h' | '2h' | '15m' | 'exact'
+    variant: '48h' | '24h' | '12h' | '2h' | '15m' | 'exact'
     exactDuration?: string
+    /** e.g. "Saturday, August 8" — used by the 48h notice. */
+    dayLabel?: string
+    /** Student has not confirmed attendance: show the confirm warning + button. */
+    confirmNudge?: boolean
 }
 
 export default function LessonReminderEmail({
@@ -19,15 +23,29 @@ export default function LessonReminderEmail({
     classroomLink,
     variant = '24h',
     exactDuration,
+    dayLabel,
+    confirmNudge = false,
 }: LessonReminderEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
     // Dynamic Text based on the variant
     const content = {
+        '48h': {
+            subject: `Please confirm your lesson${dayLabel ? ` on ${dayLabel}` : ''} at ${time}`,
+            heading: 'Upcoming lesson 🎹',
+            body: `You have a piano lesson scheduled for ${dayLabel || 'the day after tomorrow'} at ${time}.`,
+            btnText: 'View Schedule'
+        },
         '24h': {
             subject: `Upcoming Lesson Tomorrow at ${time}`,
             heading: 'See you tomorrow! 🎹',
             body: `Just a friendly reminder that you have a piano lesson scheduled for tomorrow at ${time}.`,
+            btnText: 'View Schedule'
+        },
+        '12h': {
+            subject: `Please confirm your lesson at ${time}`,
+            heading: 'Your lesson is coming up',
+            body: `Your piano lesson is coming up in about 12 hours, at ${time}.`,
             btnText: 'View Schedule'
         },
         '2h': {
@@ -64,6 +82,18 @@ export default function LessonReminderEmail({
                         <Text style={bodyText}>
                             {text.body}
                         </Text>
+
+                        {confirmNudge && (
+                            <Section style={nudgeBox}>
+                                <Text style={nudgeText}>
+                                    Please confirm you will attend this lesson. If unconfirmed, the piano
+                                    teacher may not be able to conduct the lesson at the scheduled time.
+                                </Text>
+                                <Button style={confirmButton} href={`${loginUrl}/student`}>
+                                    Confirm Lesson
+                                </Button>
+                            </Section>
+                        )}
 
                         {/* Only show Zoom link prominently for the 15m warning */}
                         {variant === '15m' && zoomLink ? (
@@ -111,6 +141,19 @@ const button = { backgroundColor: '#3b82f6', borderRadius: '6px', color: '#fff',
 const joinButton = {
     ...button,
     backgroundColor: '#10b981',
+}
+const nudgeBox = {
+    backgroundColor: '#fffbeb',
+    border: '1px solid #f59e0b',
+    borderRadius: '6px',
+    padding: '4px 16px 16px',
+    margin: '20px 0',
+}
+const nudgeText = { ...bodyText, color: '#92400e', margin: '12px 0 0' }
+const confirmButton = {
+    ...button,
+    backgroundColor: '#f59e0b',
+    margin: '16px auto 0',
 }
 const zoomLinkText = { ...bodyText, fontSize: '14px', margin: '24px 0 0', textAlign: 'center' as const }
 

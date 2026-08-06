@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, addDays, format } from 'date-fns'
+import { dueNotice, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,15 +27,15 @@ export async function GET(request: Request) {
 
     console.log(`[Cron] Checking reminders at ${now.toISOString()} (Studio Time)`)
 
-    // 2. Fetch Relevant Lessons (Today and Tomorrow)
-    // We only need to look at lessons happening today or tomorrow to cover 15m, 2h, and 24h windows.
+    // 2. Fetch Relevant Lessons (today through +2 days, to cover the 48h notice)
     const todayStr = format(now, 'yyyy-MM-dd')
-    const tomorrowStr = format(addDays(now, 1), 'yyyy-MM-dd')
+    const horizonStr = format(addDays(now, 2), 'yyyy-MM-dd')
 
     const { data: lessons, error } = await supabase
         .from('lessons')
         .select('*, profiles(email, name, public_id)')
-        .in('date', [todayStr, tomorrowStr])
+        .gte('date', todayStr)
+        .lte('date', horizonStr)
         .neq('status', 'cancelled') // Don't remind cancelled lessons
 
     if (error) {
@@ -42,11 +43,12 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    console.log(`[Cron] Found ${lessons?.length || 0} active lessons for ${todayStr} and ${tomorrowStr}`)
+    console.log(`[Cron] Found ${lessons?.length || 0} active lessons for ${todayStr} .. ${horizonStr}`)
 
-    let sent24h = 0
-    let sent2h = 0
-    let sent15m = 0
+    // Confirmation-aware notice schedule:
+    //   unconfirmed lessons -> 48h, 24h, 12h, 15m (each asks the student to confirm)
+    //   confirmed lessons   -> 24h, 15m
+    const sentCounts: Record<NoticeKey, number> = { '48h': 0, '24h': 0, '12h': 0, '15m': 0 }
 
     if (lessons) {
         for (const lesson of lessons) {
@@ -56,93 +58,59 @@ export async function GET(request: Request) {
             const lessonTime = new Date(`${lesson.date}T${lesson.time}`)
             const diffMinutes = differenceInMinutes(lessonTime, now)
 
-            // --- 24 Hour Reminder ---
-            // Window: 24h to 25h (1440 mins to 1500 mins)
-            if (diffMinutes >= 1440 && diffMinutes < 1500 && !lesson.reminder_24h_sent) {
-                console.log(`[Cron] Sending 24h reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
-                const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
-                const classroomLink = lesson.profiles.public_id ? `${classroomBase}/${lesson.profiles.public_id}` : null
-                const { error: emailError } = await resend.emails.send({
-                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: lesson.profiles.email,
-                    subject: 'Reminder: Lesson Tomorrow',
-                    react: LessonReminderEmail({
-                        studentName: lesson.profiles.name || 'Student',
-                        time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-                        zoomLink: lesson.zoom_link,
-                        classroomLink,
-                        variant: '24h'
-                    })
-                })
+            const isConfirmed = Boolean(lesson.is_confirmed)
+            const notice = dueNotice(diffMinutes, isConfirmed, {
+                '48h': Boolean(lesson.reminder_48h_sent),
+                '24h': Boolean(lesson.reminder_24h_sent),
+                '12h': Boolean(lesson.reminder_12h_sent),
+                '15m': Boolean(lesson.reminder_15m_sent),
+            })
+            if (!notice) continue
 
-                if (!emailError) {
-                    await supabase.from('lessons').update({ reminder_24h_sent: true }).eq('id', lesson.id)
-                    sent24h++
-                } else {
-                    console.error(`[Cron] Failed to send 24h email:`, emailError)
-                }
+            const timeLabel = lessonTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            const dayLabel = new Date(`${lesson.date}T00:00:00`).toLocaleDateString('en-US', {
+                weekday: 'long', month: 'long', day: 'numeric',
+            })
+            const confirmNudge = !isConfirmed
+            const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
+            const classroomLink = lesson.profiles.public_id ? `${classroomBase}/${lesson.profiles.public_id}` : null
+
+            const subjects: Record<NoticeKey, string> = {
+                '48h': `Please confirm your lesson on ${dayLabel} (${timeLabel})`,
+                '24h': confirmNudge ? `Please confirm your lesson tomorrow at ${timeLabel}` : 'Reminder: Lesson Tomorrow',
+                '12h': `Please confirm your lesson today at ${timeLabel}`,
+                '15m': 'Lesson Starting Soon!',
             }
 
-            // --- 2 Hour Reminder ---
-            // Window: 2h to 3h (120 mins to 180 mins)
-            if (diffMinutes >= 120 && diffMinutes < 180 && !lesson.reminder_2h_sent) {
-                console.log(`[Cron] Sending 2h reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
-                const classroomBase2h = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
-                const classroomLink2h = lesson.profiles.public_id ? `${classroomBase2h}/${lesson.profiles.public_id}` : null
-                const { error: emailError } = await resend.emails.send({
-                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: lesson.profiles.email,
-                    subject: 'Lesson in 2 Hours',
-                    react: LessonReminderEmail({
-                        studentName: lesson.profiles.name || 'Student',
-                        time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-                        zoomLink: lesson.zoom_link,
-                        classroomLink: classroomLink2h,
-                        variant: '2h'
-                    })
-                })
+            console.log(`[Cron] Sending ${notice} notice (${confirmNudge ? 'unconfirmed' : 'confirmed'}) to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
+            const { error: emailError } = await resend.emails.send({
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                to: lesson.profiles.email,
+                subject: subjects[notice],
+                react: LessonReminderEmail({
+                    studentName: lesson.profiles.name || 'Student',
+                    time: timeLabel,
+                    zoomLink: lesson.zoom_link,
+                    classroomLink,
+                    variant: notice,
+                    dayLabel,
+                    confirmNudge,
+                }),
+            })
 
-                if (!emailError) {
-                    await supabase.from('lessons').update({ reminder_2h_sent: true }).eq('id', lesson.id)
-                    sent2h++
-                } else {
-                    console.error(`[Cron] Failed to send 2h email:`, emailError)
-                }
-            }
-
-            // --- 15 Minute Reminder ---
-            // Window: 0 to 25 mins (widened to catch early)
-            if (diffMinutes >= 0 && diffMinutes < 25 && !lesson.reminder_15m_sent) {
-                console.log(`[Cron] Sending 15m reminder to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
-                const classroomBase15m = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
-                const classroomLink15m = lesson.profiles.public_id ? `${classroomBase15m}/${lesson.profiles.public_id}` : null
-                const { error: emailError } = await resend.emails.send({
-                    from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: lesson.profiles.email,
-                    subject: 'Lesson Starting Soon!',
-                    react: LessonReminderEmail({
-                        studentName: lesson.profiles.name || 'Student',
-                        time: new Date(`${lesson.date}T${lesson.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-                        zoomLink: lesson.zoom_link,
-                        classroomLink: classroomLink15m,
-                        variant: '15m'
-                    })
-                })
-
-                if (!emailError) {
-                    await supabase.from('lessons').update({ reminder_15m_sent: true }).eq('id', lesson.id)
-                    sent15m++
-                } else {
-                    console.error(`[Cron] Failed to send 15m email:`, emailError)
-                }
+            if (!emailError) {
+                await supabase.from('lessons').update({ [NOTICE_FLAG_COLUMNS[notice]]: true }).eq('id', lesson.id)
+                sentCounts[notice]++
+            } else {
+                console.error(`[Cron] Failed to send ${notice} email:`, emailError)
             }
         }
     }
 
-    console.log(`[Cron] Finished. Sent: 24h(${sent24h}), 2h(${sent2h}), 15m(${sent15m})`)
+    console.log(`[Cron] Finished. Sent: 48h(${sentCounts['48h']}), 24h(${sentCounts['24h']}), 12h(${sentCounts['12h']}), 15m(${sentCounts['15m']})`)
     return NextResponse.json({
         success: true,
         checked: now.toISOString(),
-        stats: { sent24h, sent2h, sent15m }
+        stats: sentCounts,
     })
 }

@@ -647,6 +647,14 @@ export async function confirmAttendance(lessonId: string) {
         process.env.SUPABASE_SERVICE_KEY!
     )
 
+    // Fetch first so a repeat click doesn't re-notify the admin
+    const { data: lessonBefore } = await supabaseAdmin
+        .from('lessons')
+        .select('date, time, is_confirmed')
+        .eq('id', lessonId)
+        .eq('student_id', user.id)
+        .single()
+
     const { error } = await supabaseAdmin
         .from('lessons')
         .update({ is_confirmed: true })
@@ -656,6 +664,39 @@ export async function confirmAttendance(lessonId: string) {
     if (error) {
         console.error('Confirmation error:', error)
         return { success: false, error: 'Failed to confirm attendance' }
+    }
+
+    // Notify the studio inbox on the first confirmation (non-blocking)
+    if (lessonBefore && !lessonBefore.is_confirmed && process.env.RESEND_API_KEY) {
+        try {
+            const { data: studentProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('name, email')
+                .eq('id', user.id)
+                .single()
+            const { data: adminProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('email')
+                .eq('role', 'admin')
+                .limit(1)
+                .single()
+
+            const when = new Date(`${lessonBefore.date}T${lessonBefore.time}`)
+            const dayLabel = when.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+            const timeLabel = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            const studentName = studentProfile?.name || studentProfile?.email || 'A student'
+
+            const { Resend } = await import('resend')
+            const resend = new Resend(process.env.RESEND_API_KEY)
+            await resend.emails.send({
+                from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
+                to: adminProfile?.email || 'support@musicalbasics.com',
+                subject: `✅ ${studentName} confirmed: ${dayLabel} at ${timeLabel}`,
+                html: `<p><strong>${studentName}</strong> confirmed their lesson on <strong>${dayLabel}</strong> at <strong>${timeLabel}</strong> PST.</p>`,
+            })
+        } catch (notifyError) {
+            console.error('confirmAttendance: admin notification failed (non-blocking):', notifyError)
+        }
     }
 
     revalidatePath('/student')
