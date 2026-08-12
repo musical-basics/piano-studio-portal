@@ -34,8 +34,6 @@ import {
 } from "lucide-react"
 import {
     mockEvents,
-    mockTutorials,
-    type Tutorial,
 } from "@/lib/mock-data"
 import { MakeupScheduler } from "./makeup-scheduler"
 import { CancellationModal } from "./cancellation-modal"
@@ -323,10 +321,6 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     const handleDownload = (resource: Resource) => {
         // Open file in new tab for download
         window.open(resource.file_url, '_blank')
-    }
-
-    const handleWatchTutorial = (tutorial: Tutorial) => {
-        alert(`Opening tutorial: ${tutorial.title}`)
     }
 
     const needsRenewal = profile.credits <= 1
@@ -732,7 +726,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 </TabsTrigger>
                                 <TabsTrigger value="tutorials" className="gap-2">
                                     <PlayCircle className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Tutorials (still under construction)</span>
+                                    <span className="hidden sm:inline">Tutorials</span>
                                 </TabsTrigger>
                                 <TabsTrigger value="messages" className="gap-2 relative">
                                     <MessageCircle className="h-4 w-4" />
@@ -1030,46 +1024,15 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                             <TabsContent value="tutorials" className="space-y-4">
                                 <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-2xl font-serif font-semibold">Tutorials (still under construction)</h2>
-                                    <Badge variant="secondary">{mockTutorials.length} videos</Badge>
+                                    <h2 className="text-2xl font-serif font-semibold">Tutorials</h2>
                                 </div>
-                                <div className="grid gap-4">
-                                    {mockTutorials.map((tutorial) => (
-                                        <Card key={tutorial.id} className="border-2 hover:shadow-md transition-shadow">
-                                            <CardContent className="p-6">
-                                                <div className="flex gap-4">
-                                                    <div className="relative w-40 h-24 bg-muted rounded-lg flex items-center justify-center overflow-hidden shrink-0">
-                                                        {tutorial.thumbnail_url ? (
-                                                            <img
-                                                                src={tutorial.thumbnail_url || "/placeholder.svg"}
-                                                                alt={tutorial.title}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <PlayCircle className="h-10 w-10 text-muted-foreground" />
-                                                        )}
-                                                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded">
-                                                            {tutorial.duration}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <h3 className="font-semibold mb-1">{tutorial.title}</h3>
-                                                        <p className="text-sm text-muted-foreground mb-3">{tutorial.description}</p>
-                                                        <div className="flex items-center justify-between">
-                                                            <Badge variant="outline" className="text-xs capitalize">
-                                                                {tutorial.category.replace("-", " ")}
-                                                            </Badge>
-                                                            <Button size="sm" onClick={() => handleWatchTutorial(tutorial)}>
-                                                                <PlayCircle className="h-4 w-4 mr-2" />
-                                                                Watch
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    ))}
-                                </div>
+                                <Card className="border-2 border-dashed p-12 text-center bg-muted/10">
+                                    <PlayCircle className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
+                                    <h3 className="font-semibold text-lg mb-1 font-serif">Video Tutorials Coming Soon</h3>
+                                    <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                                        Practice tips, technique guides, and theory lessons will appear here once your teacher publishes them.
+                                    </p>
+                                </Card>
                             </TabsContent>
 
                             <TabsContent value="messages" className="space-y-4">
