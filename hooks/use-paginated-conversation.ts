@@ -3,7 +3,7 @@
 import type React from "react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import type { Message } from "@/lib/supabase/database.types"
-import { getConversationPage, getNewMessages, markMessagesAsRead } from "@/app/messages/actions"
+import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage } from "@/app/messages/actions"
 
 /**
  * Reverse-infinite-scroll chat state.
@@ -39,8 +39,19 @@ export interface UsePaginatedConversationResult {
     poll: () => Promise<boolean>
     /** Append a locally-created (optimistic) message. */
     appendLocal: (message: Message) => void
+    /**
+     * Delete a message the current user sent, turning it into a tombstone
+     * immediately and rolling back if the server rejects it. Resolves to an
+     * error string on failure, or null on success.
+     */
+    remove: (messageId: string) => Promise<string | null>
     /** Reset all state (e.g. when switching conversations). */
     reset: () => void
+}
+
+/** Local stand-in for the redaction the server applies to a deleted message. */
+function tombstone(message: Message): Message {
+    return { ...message, content: "", attachments: null, deleted_at: message.deleted_at ?? new Date().toISOString() }
 }
 
 function mergeAppend(existing: Message[], incoming: Message[]): Message[] {
@@ -240,12 +251,26 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
                     added = true
                 }
             } else {
-                const { messages: fresh } = await getNewMessages(partnerId, newest.created_at, asUserId)
+                const { messages: fresh, deletedIds } = await getNewMessages(partnerId, newest.created_at, asUserId)
                 if (fresh && fresh.length > 0) {
                     setMessages((prev) => {
                         const merged = mergeAppend(prev, fresh)
                         if (merged !== prev) added = true
                         return merged
+                    })
+                }
+                // Reconcile deletions the append-only cursor can't see: a message
+                // deleted by the other participant may sit anywhere in history.
+                if (deletedIds && deletedIds.length > 0) {
+                    const deleted = new Set(deletedIds)
+                    setMessages((prev) => {
+                        let changed = false
+                        const next = prev.map((m) => {
+                            if (!deleted.has(m.id) || m.deleted_at) return m
+                            changed = true
+                            return tombstone(m)
+                        })
+                        return changed ? next : prev
                     })
                 }
             }
@@ -261,6 +286,30 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         setMessages((prev) => mergeAppend(prev, [message]))
     }, [])
 
+    const remove = useCallback(async (messageId: string): Promise<string | null> => {
+        const original = messagesRef.current.find((m) => m.id === messageId)
+        if (!original || original.deleted_at) return null
+
+        // Optimistic: tombstone it now, restore the original if the server says no.
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? tombstone(m) : m)))
+
+        try {
+            const result = await deleteMessage(messageId, asUserId)
+            if (result.error) {
+                setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)))
+                return result.error
+            }
+            if (result.message) {
+                setMessages((prev) => prev.map((m) => (m.id === messageId ? result.message! : m)))
+            }
+            return null
+        } catch (err) {
+            console.error("usePaginatedConversation: remove failed", err)
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)))
+            return err instanceof Error ? err.message : "Failed to delete message"
+        }
+    }, [asUserId])
+
     return {
         messages,
         isLoadingInitial,
@@ -271,6 +320,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         loadOlder,
         poll,
         appendLocal,
+        remove,
         reset,
     }
 }

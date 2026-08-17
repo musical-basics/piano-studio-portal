@@ -8,6 +8,7 @@ import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder } from
 import { sendMessage, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
+import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 import { LibraryFileSelector } from "@/components/admin/library-file-selector"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -103,6 +104,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     loadOlder,
     poll,
     appendLocal,
+    remove,
   } = usePaginatedConversation({
     partnerId: selectedStudent?.id ?? null,
   })
@@ -234,6 +236,18 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     } finally {
       setIsSending(false)
     }
+  }
+
+  const handleDeleteMessage = async (messageId: string): Promise<string | null> => {
+    const err = await remove(messageId)
+    if (err) return err
+    // Keep the sidebar preview honest if the deleted message was the thread's latest.
+    setStudents(prev => prev.map(s =>
+      s.lastMessage?.id === messageId
+        ? { ...s, lastMessage: { ...s.lastMessage, content: "", attachments: null, deleted_at: new Date().toISOString() } as Message }
+        : s
+    ))
+    return null
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -409,8 +423,10 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                       </span>
                     )}
                   </div>
-                  <p className={`text-xs truncate mt-1 ${selectedStudent?.id === student.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                    {student.lastMessage?.content || "No messages"}
+                  <p className={`text-xs truncate mt-1 ${selectedStudent?.id === student.id ? "text-primary-foreground/80" : "text-muted-foreground"} ${student.lastMessage?.deleted_at ? "italic" : ""}`}>
+                    {student.lastMessage?.deleted_at
+                      ? "Message deleted"
+                      : student.lastMessage?.content || "No messages"}
                   </p>
                 </div>
               </button>
@@ -466,8 +482,22 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     </div>
                   )}
-                  {messages.map((msg) => (
-                    <div key={msg.id} className={`flex ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
+                  {messages.map((msg) => msg.deleted_at ? (
+                    <DeletedMessageBubble
+                      key={msg.id}
+                      isOwn={isFromAdmin(msg)}
+                      timestamp={formatTimestamp(msg.created_at)}
+                    />
+                  ) : (
+                    <div key={msg.id} className={`group flex items-center gap-1 ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
+                      {/* Delete sits outside the bubble, on the inner edge, so it
+                          never overlaps message text or attachments. */}
+                      {isFromAdmin(msg) && (
+                        <DeleteMessageButton
+                          preview={msg.content}
+                          onConfirm={() => handleDeleteMessage(msg.id)}
+                        />
+                      )}
                       <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
                         ? "bg-primary text-primary-foreground rounded-br-none"
                         : "bg-white border text-foreground rounded-bl-none"

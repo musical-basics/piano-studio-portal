@@ -11,6 +11,7 @@ import { Send, Music, Loader2, Paperclip } from "lucide-react"
 import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
+import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 
 interface MessagesPanelProps {
@@ -44,6 +45,7 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
     loadOlder,
     poll,
     appendLocal,
+    remove,
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
@@ -215,7 +217,7 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
   // Determine if message is from current student (studentId) or admin
   const isFromStudent = (message: Message) => message.sender_id === studentId
 
-  const unreadCount = messages.filter((m) => !m.is_read && !isFromStudent(m)).length
+  const unreadCount = messages.filter((m) => !m.is_read && !isFromStudent(m) && !m.deleted_at).length
 
   return (
     <Card className="flex flex-col h-[600px]">
@@ -253,8 +255,22 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             )}
-            {messages.map((message) => (
-            <div key={message.id} className={`flex ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
+            {messages.map((message) => message.deleted_at ? (
+              <DeletedMessageBubble
+                key={message.id}
+                isOwn={isFromStudent(message)}
+                timestamp={formatTimestamp(message.created_at)}
+              />
+            ) : (
+            <div key={message.id} className={`group flex items-center gap-1 ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
+              {/* Delete sits outside the bubble, on the inner edge, so it never
+                  overlaps message text or attachments. */}
+              {isFromStudent(message) && (
+                <DeleteMessageButton
+                  preview={message.content}
+                  onConfirm={() => remove(message.id)}
+                />
+              )}
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isFromStudent(message)
                   ? "bg-primary text-primary-foreground rounded-br-md"

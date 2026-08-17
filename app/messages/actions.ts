@@ -7,10 +7,13 @@ import {
     sendMessageCore,
     getConversationCore,
     getNewMessagesSinceCore,
+    getDeletedMessageIdsCore,
+    deleteMessageCore,
     markMessagesReadCore,
     listStudentsWithMessagesCore,
     CONVERSATION_PAGE_SIZE,
 } from '@/lib/core/messages'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getImpersonationTarget } from '@/app/actions/impersonate'
 
 /**
@@ -84,19 +87,54 @@ export async function getConversationPage(
 /**
  * Fetch only messages newer than `after` for the polling loop, so new messages
  * are appended without wiping older pages already loaded in the UI.
+ *
+ * Also returns the ids of every deleted message in the thread. The append-only
+ * cursor can't surface a deletion of an older message, so the client reconciles
+ * against this set to turn already-rendered bubbles into tombstones.
  */
 export async function getNewMessages(
     partnerId: string,
     after: string,
     asUserId?: string,
-): Promise<{ messages: Message[]; error?: string }> {
+): Promise<{ messages: Message[]; deletedIds: string[]; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { messages: [], error: 'Unauthorized' }
+    if (!user) return { messages: [], deletedIds: [], error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, asUserId)
 
-    return getNewMessagesSinceCore(supabase as any, selfId, partnerId, after)
+    const [fresh, deletedIds] = await Promise.all([
+        getNewMessagesSinceCore(supabase as any, selfId, partnerId, after),
+        getDeletedMessageIdsCore(supabase as any, selfId, partnerId),
+    ])
+
+    return { messages: fresh.messages, deletedIds, error: fresh.error }
+}
+
+/**
+ * Delete a message you sent.
+ *
+ * Soft delete: the row is kept for audit, but content and attachments are
+ * redacted on every read and the UI shows a "Message deleted" tombstone to both
+ * participants. Ownership is enforced in the core against the resolved self id,
+ * so passing someone else's message id fails.
+ *
+ * Note this does not unsend the email notification that went out when the
+ * message was first sent.
+ */
+export async function deleteMessage(
+    messageId: string,
+    asUserId?: string,
+): Promise<{ success?: true; message?: Message; error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    // Service-role client: the ownership check above is the authorization, and
+    // this avoids opening a client-writable UPDATE policy on `messages`.
+    return deleteMessageCore({ client: createAdminClient(), actorId: selfId, messageId })
 }
 
 export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], hasMore: boolean, error?: string }> {
@@ -168,6 +206,7 @@ export async function getUnreadCount(): Promise<number> {
         .select('*', { count: 'exact', head: true })
         .eq('recipient_id', user.id)
         .eq('is_read', false)
+        .is('deleted_at', null)
 
     return count || 0
 }

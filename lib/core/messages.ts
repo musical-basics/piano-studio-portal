@@ -140,6 +140,108 @@ export async function sendMessageCore({
     return { success: true, message: data as Message }
 }
 
+/**
+ * Strip the payload of a soft-deleted message.
+ *
+ * The row is retained in the database for audit, but content and attachments
+ * must never reach a client once the sender has deleted it. Every read path
+ * funnels through here so the UI only ever sees a tombstone.
+ */
+function redactDeleted(message: Message): Message {
+    if (!message?.deleted_at) return message
+    return { ...message, content: '', attachments: null }
+}
+
+function redactDeletedAll(messages: Message[]): Message[] {
+    return messages.map(redactDeleted)
+}
+
+export type DeleteMessageResult = { success: true; message: Message } | { error: string }
+
+/**
+ * Soft-delete a message. Only the sender may delete their own message.
+ *
+ * Ownership is checked here rather than via RLS: the update runs on a
+ * service-role client, so no client-facing write policy (which could not
+ * restrict *which* columns change) has to be opened on `messages`.
+ *
+ * Idempotent: deleting an already-deleted message succeeds without rewriting
+ * `deleted_at`, so the original deletion timestamp is preserved.
+ */
+export async function deleteMessageCore({
+    client,
+    actorId,
+    messageId,
+}: {
+    client: DbClient
+    actorId: string
+    messageId: string
+}): Promise<DeleteMessageResult> {
+    const { data: existing, error: fetchError } = await client
+        .from('messages')
+        .select('*')
+        .eq('id', messageId)
+        .single()
+
+    if (fetchError || !existing) {
+        return { error: 'Message not found' }
+    }
+    if (existing.sender_id !== actorId) {
+        return { error: 'You can only delete messages you sent' }
+    }
+    if (existing.deleted_at) {
+        return { success: true, message: redactDeleted(existing as Message) }
+    }
+
+    const { data, error } = await client
+        .from('messages')
+        .update({ deleted_at: new Date().toISOString(), deleted_by: actorId })
+        .eq('id', messageId)
+        .select()
+        .single()
+
+    if (error) {
+        console.error('deleteMessageCore error:', error)
+        return { error: error.message }
+    }
+
+    try {
+        revalidatePath('/student')
+        revalidatePath('/admin')
+    } catch (e) {
+        // Safe to ignore outside of Next.js server context (e.g. standalone test scripts)
+    }
+
+    return { success: true, message: redactDeleted(data as Message) }
+}
+
+/**
+ * Ids of every soft-deleted message in a conversation.
+ *
+ * The chat poll is append-only (it only asks for messages newer than the newest
+ * one loaded), so a deletion of an OLDER message would otherwise never reach the
+ * other participant's open tab. Returning the full deleted set each poll is
+ * self-healing and stays cheap: deletions are rare, the partial index on
+ * `deleted_at` covers the filter, and only ids come back over the wire.
+ */
+export async function getDeletedMessageIdsCore(
+    client: DbClient,
+    userA: string,
+    userB: string,
+): Promise<string[]> {
+    const { data, error } = await client
+        .from('messages')
+        .select('id')
+        .or(`and(sender_id.eq.${userA},recipient_id.eq.${userB}),and(sender_id.eq.${userB},recipient_id.eq.${userA})`)
+        .not('deleted_at', 'is', null)
+
+    if (error) {
+        console.error('getDeletedMessageIdsCore error:', error)
+        return []
+    }
+    return (data || []).map((row: any) => row.id as string)
+}
+
 /** Default number of messages loaded per page for the reverse-infinite-scroll chat. */
 export const CONVERSATION_PAGE_SIZE = 15
 
@@ -183,7 +285,7 @@ export async function getConversationCore(
             console.error('getConversationCore error:', error)
             return { messages: [], hasMore: false, error: error.message }
         }
-        return { messages: (data || []) as Message[], hasMore: false }
+        return { messages: redactDeletedAll((data || []) as Message[]), hasMore: false }
     }
 
     // Paginated path: grab the newest page (descending), fetching one extra row
@@ -210,7 +312,7 @@ export async function getConversationCore(
     const page = hasMore ? rows.slice(0, opts.limit) : rows
     // Reverse the descending page back to ascending (oldest -> newest) for the UI.
     page.reverse()
-    return { messages: page, hasMore }
+    return { messages: redactDeletedAll(page), hasMore }
 }
 
 /**
@@ -235,7 +337,7 @@ export async function getNewMessagesSinceCore(
         console.error('getNewMessagesSinceCore error:', error)
         return { messages: [], error: error.message }
     }
-    return { messages: (data || []) as Message[] }
+    return { messages: redactDeletedAll((data || []) as Message[]) }
 }
 
 export async function markMessagesReadCore(
@@ -282,6 +384,9 @@ export type ThreadSummary = {
 
 const PREVIEW_LEN = 140
 
+/** Sidebar/thread-list stand-in for a message whose sender deleted it. */
+export const DELETED_PREVIEW = 'Message deleted'
+
 /**
  * Admin-perspective thread summary, one row per student.
  *
@@ -298,7 +403,7 @@ export async function listThreadsCore(
 
     const threads: ThreadSummary[] = students.map((s: any) => {
         const last = s.lastMessage as
-            | { content: string | null; created_at: string; sender_id: string }
+            | { content: string | null; created_at: string; sender_id: string; deleted_at?: string | null }
             | null
 
         const lastFrom: 'student' | 'admin' | null = last
@@ -307,11 +412,13 @@ export async function listThreadsCore(
                 : 'admin'
             : null
 
-        const preview = last?.content
-            ? last.content.length > PREVIEW_LEN
-                ? last.content.slice(0, PREVIEW_LEN) + '…'
-                : last.content
-            : null
+        const preview = last?.deleted_at
+            ? DELETED_PREVIEW
+            : last?.content
+                ? last.content.length > PREVIEW_LEN
+                    ? last.content.slice(0, PREVIEW_LEN) + '…'
+                    : last.content
+                : null
 
         return {
             student_id: s.id,
@@ -354,16 +461,19 @@ export async function listStudentsWithMessagesCore(client: DbClient, adminId: st
                 .limit(1)
                 .single()
 
+            // A message the student deleted before it was opened must not keep
+            // the unread badge lit — there is nothing left to read.
             const { count: unreadCount } = await client
                 .from('messages')
                 .select('*', { count: 'exact', head: true })
                 .eq('sender_id', student.id)
                 .eq('recipient_id', adminId)
                 .eq('is_read', false)
+                .is('deleted_at', null)
 
             return {
                 ...student,
-                lastMessage: lastMessage || null,
+                lastMessage: lastMessage ? redactDeleted(lastMessage as Message) : null,
                 unreadCount: unreadCount || 0,
             }
         }),
