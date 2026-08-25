@@ -148,3 +148,27 @@
     @apply font-serif;
   }
 }
+
+/*
+ * Affordance that fades in when you hover its `group` (the chat delete button).
+ *
+ * Kept out of Tailwind's `opacity-0 group-hover:opacity-100` pair on purpose:
+ * in Tailwind v4 `hover:` is itself wrapped in `@media (hover: hover)`, so on a
+ * phone or tablet the reveal half never applies and the control stays at
+ * opacity 0 forever, invisible but still tappable. Here the hidden state is
+ * what's gated on hover support, so touch devices simply always see it.
+ */
+.reveal-on-hover {
+  transition: opacity 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reveal-on-hover {
+    opacity: 0;
+  }
+
+  .group:hover .reveal-on-hover,
+  .reveal-on-hover:focus-visible {
+    opacity: 1;
+  }
+}
