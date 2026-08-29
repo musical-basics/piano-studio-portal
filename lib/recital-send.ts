@@ -40,7 +40,7 @@ export type RecitalSendLog = {
     audience: AudienceMember[]
     /** Keyed by recipient key ('student:<id>', 'guest:<email>', 'audience:<email>'). */
     sent: Record<string, SentRecord>
-    /** Keyed by reminder key ('1h', '15m'). */
+    /** Keyed by reminder key ('2h', '15m'). */
     reminders: Record<string, ReminderRecord>
 }
 
@@ -218,11 +218,11 @@ Please join 5-10 minutes early. Everyone is muted on entry, and family and frien
     }
 }
 
-export function buildReminderDrafts(ctx: DraftContext): Record<'1h' | '15m', DraftEmail> {
+export function buildReminderDrafts(ctx: DraftContext): Record<'2h' | '15m', DraftEmail> {
     return {
-        '1h': {
-            subject: 'Recital starts in 1 hour (2pm PDT)',
-            body: `Quick reminder: the recital starts in 1 hour, at 2pm PDT (5pm EDT). Join here:
+        '2h': {
+            subject: 'Recital starts at 2pm PDT today',
+            body: `Quick reminder: the recital starts in 2 hours, at 2pm PDT (5pm EDT). Join here:
 
 ${ctx.zoomUrl}
 

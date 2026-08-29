@@ -274,7 +274,7 @@ export function RecitalSend({ event, students, initialLog }: {
     const [remOverride, setRemOverride] = useState<Record<string, { subject?: string; body?: string }>>({})
     const start = new Date(event.start_time).getTime()
     const reminderPlan = [
-        { key: '1h', label: '1 hour before', scheduledFor: new Date(start - 60 * 60 * 1000).toISOString() },
+        { key: '2h', label: '2 hours before', scheduledFor: new Date(start - 2 * 60 * 60 * 1000).toISOString() },
         { key: '15m', label: '15 minutes before', scheduledFor: new Date(start - 15 * 60 * 1000).toISOString() },
     ] as const
     const reminderRecipients = useMemo(() => {

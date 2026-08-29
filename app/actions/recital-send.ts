@@ -182,7 +182,7 @@ export async function sendRecitalEmails(eventId: string, items: RecitalSendItem[
 }
 
 export type RecitalReminderInput = {
-    key: string // '1h' | '15m'
+    key: string // '2h' | '15m'
     subject: string
     body: string
     /** ISO instant at which the email should be delivered. */
