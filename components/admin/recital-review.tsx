@@ -232,6 +232,9 @@ export function RecitalReview({ students, recitalEventId, engagement }: RecitalR
                             <p className="text-sm text-muted-foreground">How each family's invitation will be addressed</p>
                         </div>
                     </div>
+                    <Button variant="outline" size="sm" asChild className="ml-auto">
+                        <Link href="/admin/recital-send">Send console</Link>
+                    </Button>
                 </div>
             </header>
 
