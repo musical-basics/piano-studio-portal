@@ -32,6 +32,8 @@ export type ReminderRecord = {
     subject: string
     recipientCount: number
     resendIds: string[]
+    /** One scheduled email per recipient (never BCC); enables resume + per-person cancel. */
+    perRecipient?: { email: string; id: string }[]
     canceledAt?: string
 }
 

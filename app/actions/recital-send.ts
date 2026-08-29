@@ -189,10 +189,15 @@ export type RecitalReminderInput = {
     scheduledFor: string
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 /**
- * Schedule reminder emails via Resend scheduledAt. One email per reminder,
- * BCC'd to every recipient (no personalization needed for a short reminder),
- * so this stays a couple of API calls regardless of audience size.
+ * Schedule reminder emails via Resend scheduledAt: ONE individual email per
+ * recipient, never a BCC blast (studio rule; BCC hurts deliverability and
+ * arrives addressed to the wrong inbox). The batch endpoint doesn't support
+ * scheduledAt, so this loops with a delay under Resend's 2 req/sec limit.
+ * Per-recipient ids are logged as we go, so a partial failure is visible and
+ * a retry schedules only the recipients that are still missing.
  */
 export async function scheduleRecitalReminders(
     eventId: string,
@@ -212,7 +217,13 @@ export async function scheduleRecitalReminders(
     const results: Record<string, string> = {}
 
     for (const reminder of reminders) {
-        if (log.reminders[reminder.key] && !log.reminders[reminder.key].canceledAt) {
+        const existing = log.reminders[reminder.key]
+        const alreadyScheduled = new Set(
+            existing && !existing.canceledAt ? (existing.perRecipient || []).map(p => p.email) : []
+        )
+        // Fully covered already (or an old-style record with no per-recipient
+        // detail): don't schedule anything twice.
+        if (existing && !existing.canceledAt && (!existing.perRecipient || emails.every(e => alreadyScheduled.has(e)))) {
             results[reminder.key] = 'already scheduled, skipped'
             continue
         }
@@ -220,29 +231,41 @@ export async function scheduleRecitalReminders(
             results[reminder.key] = 'scheduled time is in the past, skipped'
             continue
         }
-        const ids: string[] = []
-        // BCC is capped well above our list size, but chunk defensively at 40.
-        for (let i = 0; i < emails.length; i += 40) {
-            const chunk = emails.slice(i, i + 40)
+
+        const perRecipient: { email: string; id: string }[] =
+            existing && !existing.canceledAt ? [...(existing.perRecipient || [])] : []
+        const pending = emails.filter(e => !alreadyScheduled.has(e))
+        let failure: string | null = null
+        for (const email of pending) {
             const { data, error } = await resend.emails.send({
                 from: FROM,
-                to: ['support@musicalbasics.com'],
-                bcc: chunk,
+                to: [email],
                 subject: reminder.subject,
                 html: renderBodyHtml(reminder.body),
                 scheduledAt: reminder.scheduledFor,
             })
-            if (error) return { error: `Resend error scheduling ${reminder.key}: ${error.message}`, log }
-            if (data?.id) ids.push(data.id)
+            if (error) {
+                failure = `${reminder.key}: scheduled ${perRecipient.length} of ${emails.length}, then Resend error: ${error.message}. Retry to schedule the rest.`
+                break
+            }
+            if (data?.id) perRecipient.push({ email, id: data.id })
+            await sleep(600)
         }
+
         log.reminders[reminder.key] = {
             scheduledAt: new Date().toISOString(),
             scheduledFor: reminder.scheduledFor,
             subject: reminder.subject,
-            recipientCount: emails.length,
-            resendIds: ids,
+            recipientCount: perRecipient.length,
+            resendIds: perRecipient.map(p => p.id),
+            perRecipient,
         }
-        results[reminder.key] = `scheduled for ${reminder.scheduledFor}`
+        if (failure) {
+            await writeLog(eventId, log)
+            revalidatePath('/admin/recital-send')
+            return { error: failure, log }
+        }
+        results[reminder.key] = `scheduled ${perRecipient.length} emails for ${reminder.scheduledFor}`
     }
 
     await writeLog(eventId, log)
@@ -259,13 +282,20 @@ export async function cancelRecitalReminder(eventId: string, key: string): Promi
     const record = log.reminders[key]
     if (!record || record.canceledAt) return { error: 'No active scheduled reminder to cancel', log }
 
+    // Cancel every scheduled email; tolerate individual failures (an email
+    // that already delivered can't be canceled) and report the count.
     const resend = new Resend(process.env.RESEND_API_KEY)
+    let failed = 0
     for (const id of record.resendIds) {
         const { error } = await resend.emails.cancel(id)
-        if (error) return { error: `Cancel failed: ${error.message}`, log }
+        if (error) failed++
     }
     record.canceledAt = new Date().toISOString()
     await writeLog(eventId, log)
     revalidatePath('/admin/recital-send')
-    return { success: true, log }
+    return {
+        success: true,
+        results: { [key]: failed === 0 ? 'all canceled' : `${record.resendIds.length - failed} canceled, ${failed} could not be (likely already delivered)` },
+        log,
+    }
 }

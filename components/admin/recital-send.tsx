@@ -218,15 +218,27 @@ export function RecitalSend({ event, students, initialLog }: {
     }
 
     const pendingIncluded = cards.filter(c => cardState(c).include && !cardState(c).sent)
+    const unscheduledReminderKeys = (fromLog: RecitalSendLog) => reminderPlan
+        .filter(r => new Date(r.scheduledFor) > new Date() && !(fromLog.reminders[r.key] && !fromLog.reminders[r.key].canceledAt))
+        .map(r => r.key)
     const handleSendAll = async () => {
         if (pendingIncluded.length === 0) return
-        if (!window.confirm(`Send ${pendingIncluded.length} emails now? Already-sent and excluded recipients are skipped.`)) return
+        const reminderNote = unscheduledReminderKeys(log).length > 0
+            ? ` The ${unscheduledReminderKeys(log).length} unscheduled reminder emails will be scheduled too.`
+            : ''
+        if (!window.confirm(`Send ${pendingIncluded.length} emails now? Already-sent and excluded recipients are skipped.${reminderNote}`)) return
         setBusyKey('all', true)
         const res = await sendRecitalEmails(event.id, pendingIncluded.map(toItem))
         setBusyKey('all', false)
         if (res.error) toast({ variant: 'destructive', title: 'Send failed', description: res.error })
         else toast({ title: 'Sent', description: `${res.sentCount} emails sent${res.skipped ? `, ${res.skipped} already sent were skipped` : ''}.` })
         if (res.log) setLog(res.log)
+        // Reminders are part of the send: schedule any that are still missing,
+        // so a forgotten Schedule click can't silently drop them.
+        if (!res.error) {
+            const keys = unscheduledReminderKeys(res.log ?? log)
+            if (keys.length > 0) await handleSchedule([...keys])
+        }
     }
 
     const handleSaveProgram = async () => {
@@ -309,7 +321,7 @@ export function RecitalSend({ event, students, initialLog }: {
         const res = await cancelRecitalReminder(event.id, key)
         setBusyKey('reminders', false)
         if (res.error) toast({ variant: 'destructive', title: 'Cancel failed', description: res.error })
-        else toast({ title: 'Reminder canceled' })
+        else toast({ title: 'Reminder canceled', description: res.results ? Object.values(res.results).join('; ') : undefined })
         if (res.log) setLog(res.log)
     }
 
@@ -340,6 +352,16 @@ export function RecitalSend({ event, students, initialLog }: {
             </header>
 
             <main className="container mx-auto px-4 py-8 space-y-8 max-w-5xl">
+                {unscheduledReminderKeys(log).length > 0 && (
+                    <div className="border border-warning bg-warning/10 rounded-lg p-4 flex items-center gap-2 text-sm">
+                        <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                        <span>
+                            Reminder emails are NOT scheduled yet. Use the Schedule buttons in the Reminders card,
+                            or Send all included, which schedules them for you.
+                        </span>
+                    </div>
+                )}
+
                 {/* Zoom */}
                 <Card>
                     <CardHeader className="pb-3">
@@ -430,8 +452,9 @@ export function RecitalSend({ event, students, initialLog }: {
                     <CardHeader className="pb-3">
                         <CardTitle className="flex items-center gap-2 text-lg"><Bell className="h-5 w-5" /> Reminders</CardTitle>
                         <CardDescription>
-                            Scheduled through Resend and delivered automatically. Each goes to all {reminderRecipients.length} included
-                            addresses above (BCC, one email). Schedule these AFTER you&apos;re happy with the include toggles.
+                            Scheduled through Resend and delivered automatically, one individual email per recipient (never BCC),
+                            to all {reminderRecipients.length} included addresses above. Schedule these AFTER you&apos;re happy with
+                            the include toggles; Send all included schedules any missing ones automatically.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">

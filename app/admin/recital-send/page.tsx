@@ -6,6 +6,9 @@ import { getRecitalSendLog } from "@/app/actions/recital-send"
 import { emptySendLog } from "@/lib/recital-send"
 
 export const dynamic = 'force-dynamic'
+// Reminder scheduling sends one Resend call per recipient at ~2/sec, so the
+// server actions invoked from this page need more than the default duration.
+export const maxDuration = 120
 
 // Day-of recital send console: review and send the Zoom-link emails (every
 // family, guest, and audience member individually), edit the program, post the
