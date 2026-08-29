@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Music, Plus, Video, MapPin, Calendar, Clock, CheckCircle2, HelpCircle, ArrowLeft } from "lucide-react"
+import { Music, Plus, Video, MapPin, Calendar, Clock, CheckCircle2, HelpCircle, ArrowLeft, Send as SendIcon } from "lucide-react"
 import Link from "next/link"
 import { getAdminEvents, type AdminEvent } from "@/app/actions/events"
 import { studioToday } from "@/lib/studio-timezone"
@@ -108,6 +108,15 @@ export default function EventsPage() {
                     <HelpCircle className="h-3 w-3" />
                     {pending} Pending
                   </Badge>
+                )}
+                {/* Day-of send console (Zoom links, program, reminders) for recitals */}
+                {event.title.toLowerCase().includes("recital") && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/admin/recital-send">
+                      <SendIcon className="h-3.5 w-3.5 mr-1.5" />
+                      Send console
+                    </Link>
+                  </Button>
                 )}
               </div>
             </div>
