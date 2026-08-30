@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, format } from 'date-fns'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -79,7 +80,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
 
         const { data: emailData, error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
-            to: lesson.student.email,
+            to: resolveNotificationEmail(lesson.student) as string,
             subject: subjects[variant],
             react: LessonReminderEmail({
                 studentName: lesson.student.name,

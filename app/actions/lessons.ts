@@ -12,7 +12,10 @@ import {
     scheduleLessonCore,
     rescheduleLessonCore,
     cancelLessonCore,
+    insertLessonWithOptionalHomework,
+    updateLessonWithOptionalHomework,
 } from '@/lib/core/lessons'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -35,7 +38,8 @@ export async function logLesson(
     lessonId: string,
     notes: string,
     videoUrl?: string,
-    sheetMusicUrl?: string
+    sheetMusicUrl?: string,
+    homework?: string
 ) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -58,6 +62,7 @@ export async function logLesson(
         adminId: user.id,
         lessonId,
         notes,
+        homework: homework ?? null,
         videoUrl,
         sheetMusicUrl,
         completedSource: 'admin_ui',
@@ -76,7 +81,8 @@ export async function logPastLesson(
     duration: number = 60,
     notes: string,
     videoUrl?: string,
-    sheetMusicUrl?: string
+    sheetMusicUrl?: string,
+    homework?: string
 ) {
     const supabase = await createClient()
 
@@ -104,20 +110,16 @@ export async function logPastLesson(
     }
 
     // Create the completed lesson
-    const { data: newLesson, error: createError } = await supabase
-        .from('lessons')
-        .insert({
-            student_id: studentId,
-            date,
-            time,
-            duration,
-            status: 'completed',
-            notes,
-            video_url: videoUrl || null,
-            sheet_music_url: sheetMusicUrl || null
-        })
-        .select()
-        .single()
+    const { data: newLesson, error: createError } = await insertLessonWithOptionalHomework(supabase as any, {
+        student_id: studentId,
+        date,
+        time,
+        duration,
+        status: 'completed',
+        notes,
+        video_url: videoUrl || null,
+        sheet_music_url: sheetMusicUrl || null,
+    }, homework ?? null)
 
     if (createError) {
         return { error: createError.message }
@@ -461,7 +463,8 @@ export async function updateLesson(
     lessonId: string,
     notes: string,
     videoUrl?: string,
-    sheetMusicUrl?: string
+    sheetMusicUrl?: string,
+    homework?: string
 ) {
     const supabase = await createClient()
 
@@ -493,14 +496,11 @@ export async function updateLesson(
     }
 
     // Update the lesson
-    const { error: lessonError } = await supabase
-        .from('lessons')
-        .update({
-            notes,
-            video_url: videoUrl || null,
-            sheet_music_url: sheetMusicUrl || null
-        })
-        .eq('id', lessonId)
+    const { error: lessonError } = await updateLessonWithOptionalHomework(supabase as any, lessonId, {
+        notes,
+        video_url: videoUrl || null,
+        sheet_music_url: sheetMusicUrl || null,
+    }, homework ?? null)
 
     if (lessonError) {
         return { error: lessonError.message }
@@ -519,11 +519,12 @@ export async function updateLesson(
                 // Fetch student details
                 const { data: student } = await supabase
                     .from('profiles')
-                    .select('name, email')
+                    .select('*')
                     .eq('id', lesson.student_id)
                     .single()
 
-                if (!student?.email) {
+                const studentEmail = resolveNotificationEmail(student)
+                if (!studentEmail) {
                     console.log('updateLesson: No student email, skipping notification')
                     return
                 }
@@ -556,7 +557,7 @@ export async function updateLesson(
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: student.email,
+                    to: studentEmail,
                     subject: `Lesson Notes Updated: ${formattedDate}`,
                     react: LessonLoggedEmail({
                         studentName: student.name || 'Student',
@@ -566,7 +567,7 @@ export async function updateLesson(
                         sheetMusicFileName
                     })
                 })
-                console.log('updateLesson: Email sent to', student.email)
+                console.log('updateLesson: Email sent to', studentEmail)
             } catch (emailError) {
                 console.error('updateLesson: Email failed (non-blocking):', emailError)
             }

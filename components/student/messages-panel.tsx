@@ -7,23 +7,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Send, Music, Loader2, Paperclip } from "lucide-react"
+import { Send, Music, Loader2, Paperclip, Upload } from "lucide-react"
 import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
 import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
+import { EditMessageButton, MessageEditor, EditedMarker } from "@/components/chat-message-edit"
+import { MessageContent } from "@/components/chat-message-content"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
+import { useChatFileDrop, screenChatFiles } from "@/hooks/use-chat-file-drop"
 
 interface MessagesPanelProps {
   studentId: string
   teacherName?: string
+  /** Fired once the teacher's messages have been marked read, to clear outside badges. */
+  onRead?: () => void
 }
 
-export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
+export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelProps) {
   const [newMessage, setNewMessage] = useState("")
   const [adminId, setAdminId] = useState<string | null>(null)
   const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
   const [isSending, setIsSending] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   // Attachment states
   const [pendingAttachments, setPendingAttachments] = useState<{ file: File; preview?: string; uploading?: boolean }[]>([])
@@ -46,9 +53,11 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
     poll,
     appendLocal,
     remove,
+    edit,
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
+    onRead,
   })
 
   const [isResolvingAdmin, setIsResolvingAdmin] = useState(true)
@@ -160,20 +169,33 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
     }
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const newAttachments = Array.from(files).map(file => {
-      const isImage = file.type.startsWith('image/')
-      return {
-        file,
-        preview: isImage ? URL.createObjectURL(file) : undefined,
-        uploading: false
-      }
-    })
-
+  /** Shared by the file picker and drag-and-drop so both behave identically. */
+  const addFiles = useCallback((files: File[]) => {
+    setAttachmentError(null)
+    const newAttachments = files.map(file => ({
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      uploading: false,
+    }))
     setPendingAttachments(prev => [...prev, ...newAttachments].slice(0, 5)) // Max 5
+  }, [])
+
+  const remainingSlots = 5 - pendingAttachments.length
+
+  const { isDragging, dropHandlers } = useChatFileDrop({
+    onFiles: addFiles,
+    onReject: setAttachmentError,
+    remainingSlots,
+    disabled: isSending || !adminId,
+  })
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const { accepted, error } = screenChatFiles(files, remainingSlots)
+    if (accepted.length > 0) addFiles(accepted)
+    setAttachmentError(error)
 
     // Reset input
     if (fileInputRef.current) {
@@ -220,7 +242,16 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
   const unreadCount = messages.filter((m) => !m.is_read && !isFromStudent(m) && !m.deleted_at).length
 
   return (
-    <Card className="flex flex-col h-[600px]">
+    <Card className="flex flex-col h-[600px] relative" {...dropHandlers}>
+      {/* Drop target overlay: files can be dropped anywhere on the conversation. */}
+      {isDragging && (
+        <div className="absolute inset-0 z-20 rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px] flex flex-col items-center justify-center pointer-events-none">
+          <Upload className="h-10 w-10 text-primary mb-2" />
+          <p className="font-semibold text-primary">Drop to attach</p>
+          <p className="text-xs text-muted-foreground mt-1">Images, PDF, Word or sheet music, up to 5 files</p>
+        </div>
+      )}
+
       <CardHeader className="border-b pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -263,13 +294,16 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
               />
             ) : (
             <div key={message.id} className={`group flex items-center gap-1 ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
-              {/* Delete sits outside the bubble, on the inner edge, so it never
-                  overlaps message text or attachments. */}
-              {isFromStudent(message) && (
-                <DeleteMessageButton
-                  preview={message.content}
-                  onConfirm={() => remove(message.id)}
-                />
+              {/* Edit and delete sit outside the bubble, on the inner edge, so they
+                  never overlap message text or attachments. */}
+              {isFromStudent(message) && editingId !== message.id && (
+                <>
+                  <EditMessageButton onClick={() => setEditingId(message.id)} />
+                  <DeleteMessageButton
+                    preview={message.content}
+                    onConfirm={() => remove(message.id)}
+                  />
+                </>
               )}
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isFromStudent(message)
@@ -277,21 +311,33 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
                   : "bg-muted rounded-bl-md"
                   }`}
               >
-                {message.content && message.content !== '📎 Attachment' && (
-                  <p className="text-sm leading-relaxed">{message.content}</p>
-                )}
+                {editingId === message.id ? (
+                  <MessageEditor
+                    initialValue={message.content}
+                    onSave={(content) => edit(message.id, content)}
+                    onCancel={() => setEditingId(null)}
+                    onDark={isFromStudent(message)}
+                  />
+                ) : (
+                  <>
+                    {message.content && message.content !== '📎 Attachment' && (
+                      <MessageContent content={message.content} onDark={isFromStudent(message)} />
+                    )}
 
-                {/* Attachments */}
-                {message.attachments && message.attachments.length > 0 && (
-                  <ChatAttachmentPreview attachments={message.attachments} compact />
-                )}
+                    {/* Attachments */}
+                    {message.attachments && message.attachments.length > 0 && (
+                      <ChatAttachmentPreview attachments={message.attachments} compact />
+                    )}
 
-                <p
-                  className={`text-xs mt-1 ${isFromStudent(message) ? "text-primary-foreground/70" : "text-muted-foreground"
-                    }`}
-                >
-                  {formatTimestamp(message.created_at)}
-                </p>
+                    <p
+                      className={`text-xs mt-1 ${isFromStudent(message) ? "text-primary-foreground/70" : "text-muted-foreground"
+                        }`}
+                    >
+                      {formatTimestamp(message.created_at)}
+                      {message.edited_at && <EditedMarker />}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
             ))}
@@ -307,6 +353,10 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
             attachments={pendingAttachments}
             onRemove={handleRemoveAttachment}
           />
+        )}
+
+        {attachmentError && (
+          <p className="px-4 pt-2 text-xs text-destructive">{attachmentError}</p>
         )}
 
         <div className="p-4 flex gap-2">
@@ -347,7 +397,9 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
             <span className="sr-only">Send message</span>
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground pb-4 text-center">Press Enter to send</p>
+        <p className="text-xs text-muted-foreground pb-4 text-center">
+          Press Enter to send · drag files in to attach
+        </p>
       </div>
     </Card>
   )

@@ -190,6 +190,7 @@ const ALLOWED_PROFILE_FIELDS = [
     'name',
     'phone',
     'parent_email',
+    'notification_email',
     'preferred_name',
     'parent_contact_name',
     'contact_salutation',
@@ -325,6 +326,23 @@ export async function updateStudentProfileCore(
                 return { error: 'parent_email must be a valid email address' }
             }
             update.parent_email = trimmed
+        }
+    }
+
+    // Delivery-only override for outbound notifications; the login identity is
+    // `email`, which this never touches.
+    if ('notification_email' in input) {
+        const raw = (input as any).notification_email
+        if (raw === null || raw === '') {
+            update.notification_email = null
+        } else if (typeof raw !== 'string') {
+            return { error: 'notification_email must be a string or null' }
+        } else {
+            const trimmed = raw.trim()
+            if (!EMAIL_REGEX.test(trimmed)) {
+                return { error: 'notification_email must be a valid email address' }
+            }
+            update.notification_email = trimmed
         }
     }
 

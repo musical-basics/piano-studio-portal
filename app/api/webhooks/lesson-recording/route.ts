@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import RecordingReadyEmail from '@/components/emails/recording-ready-email'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -94,11 +95,12 @@ async function notifyRecordingReady(
 
         const { data: student } = await supabase
             .from('profiles')
-            .select('name, email')
+            .select('*')
             .eq('id', studentId)
             .single()
 
-        if (!student?.email) {
+        const studentEmail = resolveNotificationEmail(student)
+        if (!studentEmail) {
             console.log(`[Webhook] Student ${studentId} has no email; skipping notification.`)
             return
         }
@@ -126,7 +128,7 @@ async function notifyRecordingReady(
 
         const { error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
-            to: student.email as string,
+            to: studentEmail,
             ...(admin?.email ? { replyTo: admin.email as string } : {}),
             subject: 'Your lesson recording is ready 🎹',
             react: RecordingReadyEmail({

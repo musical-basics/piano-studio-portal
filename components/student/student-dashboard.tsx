@@ -29,6 +29,7 @@ import {
     Loader2,
     Megaphone,
     Settings,
+    ClipboardList,
     RefreshCw,
     Play,
 } from "lucide-react"
@@ -41,6 +42,8 @@ import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
 import { createBalancePaymentSession } from "@/app/actions/stripe"
 import { MessagesPanel } from "./messages-panel"
+import { HomeworkTab } from "./homework-tab"
+import { getMyUnreadCount } from "@/app/messages/actions"
 import { ChatWidget } from "./chat-widget"
 import { logout } from "@/app/login/actions"
 import { cancelLesson, confirmAttendance } from "@/app/actions/lessons"
@@ -88,6 +91,8 @@ export interface StudentDashboardProps {
     events?: StudentEvent[]
     resources?: Resource[]
     latestAnnouncement?: { id: string; subject: string; body: string; created_at: string } | null
+    /** Unread messages from the teacher, counted on the server at render time. */
+    unreadCount?: number
 }
 
 // Category badge colors
@@ -99,7 +104,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0 }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -120,8 +125,41 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     // We use the nextLesson prop passed from the server which is already calculated correctly
     // The uiLessons array is sorted by date descending, so finding the first 'scheduled' one there would be wrong (it would be the latest one)
 
-    // Mock messages for now (will be replaced with real data later)
-    const unreadMessages = 1
+    // Real unread count, seeded from the server render. The badge used to be
+    // hardcoded to 1, so the portal claimed a new message forever.
+    const [activeTab, setActiveTab] = useState("lessons")
+    const [unreadMessages, setUnreadMessages] = useState(unreadCount)
+
+    // Adopt a fresher count whenever the server re-renders this page.
+    useEffect(() => {
+        setUnreadMessages(unreadCount)
+    }, [unreadCount])
+
+    // While the student is on another tab nothing is polling the thread, so the
+    // badge would go stale until a reload. The Messages tab does its own 5s poll
+    // and marks messages read, so this backs off entirely while it's open.
+    useEffect(() => {
+        if (activeTab === "messages") return
+
+        let cancelled = false
+        const tick = async () => {
+            try {
+                const count = await getMyUnreadCount(profile.id)
+                if (!cancelled) setUnreadMessages(count)
+            } catch (err) {
+                console.error("StudentDashboard: unread count poll failed", err)
+            }
+        }
+        const interval = setInterval(tick, 30000)
+        const onVisible = () => { if (document.visibilityState === "visible") tick() }
+        document.addEventListener("visibilitychange", onVisible)
+
+        return () => {
+            cancelled = true
+            clearInterval(interval)
+            document.removeEventListener("visibilitychange", onVisible)
+        }
+    }, [activeTab, profile.id])
 
     const [showMakeupScheduler, setShowMakeupScheduler] = useState(false)
     const [showCancellationModal, setShowCancellationModal] = useState(false)
@@ -714,11 +752,15 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 <div className="grid lg:grid-cols-3 gap-8">
                     {/* My Library */}
                     <div className="lg:col-span-2 space-y-6">
-                        <Tabs defaultValue="lessons" className="w-full">
-                            <TabsList className="grid w-full grid-cols-4 mb-6">
+                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                            <TabsList className="grid w-full grid-cols-5 mb-6">
                                 <TabsTrigger value="lessons" className="gap-2">
                                     <Music className="h-4 w-4" />
                                     <span className="hidden sm:inline">Lessons</span>
+                                </TabsTrigger>
+                                <TabsTrigger value="homework" className="gap-2">
+                                    <ClipboardList className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Homework</span>
                                 </TabsTrigger>
                                 <TabsTrigger value="downloads" className="gap-2">
                                     <FileText className="h-4 w-4" />
@@ -964,6 +1006,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 )}
                             </TabsContent>
 
+                            <TabsContent value="homework" className="space-y-4">
+                                <HomeworkTab lessons={completedLessons} studentId={profile.id} />
+                            </TabsContent>
+
                             <TabsContent value="downloads" className="space-y-4">
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-2xl font-serif font-semibold">Practice Materials</h2>
@@ -1040,7 +1086,11 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     <h2 className="text-2xl font-serif font-semibold">Messages</h2>
                                     {unreadMessages > 0 && <Badge variant="secondary">{unreadMessages} unread</Badge>}
                                 </div>
-                                <MessagesPanel studentId={profile.id} teacherName={teacherName} />
+                                <MessagesPanel
+                                    studentId={profile.id}
+                                    teacherName={teacherName}
+                                    onRead={() => setUnreadMessages(0)}
+                                />
                             </TabsContent>
                         </Tabs>
                     </div>

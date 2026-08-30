@@ -9,6 +9,8 @@ import {
     getNewMessagesSinceCore,
     getDeletedMessageIdsCore,
     deleteMessageCore,
+    editMessageCore,
+    getEditedMessagesCore,
     markMessagesReadCore,
     listStudentsWithMessagesCore,
     CONVERSATION_PAGE_SIZE,
@@ -104,19 +106,20 @@ export async function getNewMessages(
     partnerId: string,
     after: string,
     asUserId?: string,
-): Promise<{ messages: Message[]; deletedIds: string[]; error?: string }> {
+): Promise<{ messages: Message[]; deletedIds: string[]; edited: Message[]; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { messages: [], deletedIds: [], error: 'Unauthorized' }
+    if (!user) return { messages: [], deletedIds: [], edited: [], error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, asUserId)
 
-    const [fresh, deletedIds] = await Promise.all([
+    const [fresh, deletedIds, edited] = await Promise.all([
         getNewMessagesSinceCore(supabase as any, selfId, partnerId, after),
         getDeletedMessageIdsCore(supabase as any, selfId, partnerId),
+        getEditedMessagesCore(supabase as any, selfId, partnerId),
     ])
 
-    return { messages: fresh.messages, deletedIds, error: fresh.error }
+    return { messages: fresh.messages, deletedIds, edited, error: fresh.error }
 }
 
 /**
@@ -143,6 +146,31 @@ export async function deleteMessage(
     // Service-role client: the ownership check above is the authorization, and
     // this avoids opening a client-writable UPDATE policy on `messages`.
     return deleteMessageCore({ client: createAdminClient(), actorId: selfId, messageId })
+}
+
+/**
+ * Edit a message you sent.
+ *
+ * Ownership is enforced in the core against the resolved self id, so passing
+ * someone else's message id fails. Like a delete, this does not recall the email
+ * notification that went out when the message was first sent — that still quotes
+ * the original wording.
+ */
+export async function editMessage(
+    messageId: string,
+    content: string,
+    asUserId?: string,
+): Promise<{ success?: true; message?: Message; error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    // Service-role client for the same reason as deleteMessage: the ownership
+    // check above is the authorization, and this avoids opening a client-writable
+    // UPDATE policy on `messages.content`.
+    return editMessageCore({ client: createAdminClient(), actorId: selfId, messageId, content })
 }
 
 export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], hasMore: boolean, error?: string }> {
@@ -213,6 +241,28 @@ export async function getUnreadCount(): Promise<number> {
         .from('messages')
         .select('*', { count: 'exact', head: true })
         .eq('recipient_id', user.id)
+        .eq('is_read', false)
+        .is('deleted_at', null)
+
+    return count || 0
+}
+
+/**
+ * Unread count for the signed-in user (or the impersonated student), used by the
+ * student dashboard to keep the Messages tab badge honest while the student is
+ * looking at another tab.
+ */
+export async function getMyUnreadCount(asUserId?: string): Promise<number> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return 0
+
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('recipient_id', selfId)
         .eq('is_read', false)
         .is('deleted_at', null)
 

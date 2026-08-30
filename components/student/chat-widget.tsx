@@ -5,11 +5,15 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { MessageCircle, X, Send, Music, Minimize2, Loader2, Paperclip } from "lucide-react"
+import { MessageCircle, X, Send, Music, Minimize2, Loader2, Paperclip, Upload } from "lucide-react"
 import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
+import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
+import { EditMessageButton, MessageEditor, EditedMarker } from "@/components/chat-message-edit"
+import { MessageContent } from "@/components/chat-message-content"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
+import { useChatFileDrop, screenChatFiles } from "@/hooks/use-chat-file-drop"
 
 interface ChatWidgetProps {
   studentId: string
@@ -24,6 +28,8 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
   const [currentTeacherName, setCurrentTeacherName] = useState(teacherName)
   const [isSending, setIsSending] = useState(false)
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   // Attachment states
   const [pendingAttachments, setPendingAttachments] = useState<{ file: File; preview?: string; uploading?: boolean }[]>([])
@@ -45,11 +51,20 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
     loadOlder,
     poll,
     appendLocal,
+    remove,
+    edit,
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
     onInitialLoaded: () => setUnreadCount(0),
   })
+
+  // The dashboard re-renders this with a fresh count as messages arrive while
+  // the widget is closed; adopt it unless the widget is already open (in which
+  // case the thread is being read right now and the badge should stay clear).
+  useEffect(() => {
+    if (!isOpen) setUnreadCount(initialUnreadCount)
+  }, [initialUnreadCount, isOpen])
 
   const isLoading = isLoadingInitial
 
@@ -158,20 +173,33 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
     }
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const newAttachments = Array.from(files).map(file => {
-      const isImage = file.type.startsWith('image/')
-      return {
-        file,
-        preview: isImage ? URL.createObjectURL(file) : undefined,
-        uploading: false
-      }
-    })
-
+  /** Shared by the file picker and drag-and-drop so both behave identically. */
+  const addFiles = useCallback((files: File[]) => {
+    setAttachmentError(null)
+    const newAttachments = files.map(file => ({
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      uploading: false,
+    }))
     setPendingAttachments(prev => [...prev, ...newAttachments].slice(0, 5)) // Max 5
+  }, [])
+
+  const remainingSlots = 5 - pendingAttachments.length
+
+  const { isDragging, dropHandlers } = useChatFileDrop({
+    onFiles: addFiles,
+    onReject: setAttachmentError,
+    remainingSlots,
+    disabled: isSending || !adminId,
+  })
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const { accepted, error } = screenChatFiles(files, remainingSlots)
+    if (accepted.length > 0) addFiles(accepted)
+    setAttachmentError(error)
 
     // Reset input
     if (fileInputRef.current) {
@@ -241,7 +269,18 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
 
       {/* Chat Window Overlay */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-[380px] h-[500px] bg-card border-2 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
+        <div
+          className="fixed bottom-24 right-6 z-50 w-[380px] h-[500px] bg-card border-2 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-200"
+          {...dropHandlers}
+        >
+          {/* Drop target overlay: files can be dropped anywhere on the window. */}
+          {isDragging && (
+            <div className="absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px] flex flex-col items-center justify-center pointer-events-none">
+              <Upload className="h-8 w-8 text-primary mb-2" />
+              <p className="font-semibold text-primary text-sm">Drop to attach</p>
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b bg-primary text-primary-foreground">
             <div className="flex items-center gap-3">
@@ -283,32 +322,59 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   </div>
                 )}
-                {messages.map((message) => (
+                {messages.map((message) => message.deleted_at ? (
+                  <DeletedMessageBubble
+                    key={message.id}
+                    isOwn={isFromStudent(message)}
+                    timestamp={formatTimestamp(message.created_at)}
+                  />
+                ) : (
                 <div
                   key={message.id}
-                  className={`flex ${isFromStudent(message) ? "justify-end" : "justify-start"}`}
+                  className={`group flex items-center gap-1 ${isFromStudent(message) ? "justify-end" : "justify-start"}`}
                 >
+                  {isFromStudent(message) && editingId !== message.id && (
+                    <>
+                      <EditMessageButton onClick={() => setEditingId(message.id)} />
+                      <DeleteMessageButton
+                        preview={message.content}
+                        onConfirm={() => remove(message.id)}
+                      />
+                    </>
+                  )}
                   <div
                     className={`max-w-[80%] rounded-2xl px-3 py-2 ${isFromStudent(message)
                       ? "bg-primary text-primary-foreground rounded-br-sm"
                       : "bg-muted rounded-bl-sm"
                       }`}
                   >
-                    {message.content && message.content !== '📎 Attachment' && (
-                      <p className="text-sm leading-relaxed">{message.content}</p>
-                    )}
+                    {editingId === message.id ? (
+                      <MessageEditor
+                        initialValue={message.content}
+                        onSave={(content) => edit(message.id, content)}
+                        onCancel={() => setEditingId(null)}
+                        onDark={isFromStudent(message)}
+                      />
+                    ) : (
+                      <>
+                        {message.content && message.content !== '📎 Attachment' && (
+                          <MessageContent content={message.content} onDark={isFromStudent(message)} />
+                        )}
 
-                    {/* Attachments */}
-                    {message.attachments && message.attachments.length > 0 && (
-                      <ChatAttachmentPreview attachments={message.attachments} compact />
-                    )}
+                        {/* Attachments */}
+                        {message.attachments && message.attachments.length > 0 && (
+                          <ChatAttachmentPreview attachments={message.attachments} compact />
+                        )}
 
-                    <p
-                      className={`text-[10px] mt-1 ${isFromStudent(message) ? "text-primary-foreground/60" : "text-muted-foreground"
-                        }`}
-                    >
-                      {formatTimestamp(message.created_at)}
-                    </p>
+                        <p
+                          className={`text-[10px] mt-1 ${isFromStudent(message) ? "text-primary-foreground/60" : "text-muted-foreground"
+                            }`}
+                        >
+                          {formatTimestamp(message.created_at)}
+                          {message.edited_at && <EditedMarker />}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
                 ))}
@@ -325,6 +391,10 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                 attachments={pendingAttachments}
                 onRemove={handleRemoveAttachment}
               />
+            )}
+
+            {attachmentError && (
+              <p className="px-3 pt-2 text-[11px] text-destructive">{attachmentError}</p>
             )}
 
             <div className="p-3 flex gap-2">

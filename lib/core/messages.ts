@@ -4,6 +4,7 @@ import { MessageNotification } from '@/components/emails/message-notification'
 import type { DbClient } from '@/lib/supabase/admin'
 import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
 import { resolveSalutation } from '@/lib/core/students'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -55,21 +56,28 @@ export async function sendMessageCore({
             .eq('id', senderId)
             .single()
 
+        // Selected with `*` rather than a column list: the notification-email
+        // override is a newer column, and a stale schema must not turn a missing
+        // column into a failed send.
         const { data: recipientProfile } = await client
             .from('profiles')
-            .select('name, email, role')
+            .select('*')
             .eq('id', recipientId)
             .single()
 
+        // Students can redirect their own notifications (e.g. off a parent's
+        // inbox onto their own) without changing the login identity.
+        const recipientEmail = resolveNotificationEmail(recipientProfile)
+
         // 1. Resend Email Notification
-        if (resend && recipientProfile?.email) {
+        if (resend && recipientEmail) {
             try {
                 const rawSender = senderProfile?.name || 'Lionel Yu Piano Studio'
                 const finalSenderName = rawSender === 'Professor Lionel' ? 'Professor Lionel Yu' : rawSender
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: recipientProfile.email,
+                    to: recipientEmail,
                     subject: `New message from ${finalSenderName}`,
                     react: MessageNotification({
                         senderName: finalSenderName,
@@ -213,6 +221,124 @@ export async function deleteMessageCore({
     }
 
     return { success: true, message: redactDeleted(data as Message) }
+}
+
+export type EditMessageResult = { success: true; message: Message } | { error: string }
+
+/** Longest a message body may be after an edit. Matches what the composer accepts. */
+export const MAX_MESSAGE_LENGTH = 5000
+
+/**
+ * Edit a message you sent.
+ *
+ * Ownership is checked here rather than via RLS, for the same reason as the
+ * delete path: the update runs on a service-role client, so no client-facing
+ * write policy on `content` has to be opened.
+ *
+ * `edited_at` is stamped so both participants see an "edited" marker. Attachments
+ * are untouched — an edit rewrites the text only. A deleted message can't be
+ * edited back into existence.
+ *
+ * The email notification that went out when the message was first sent still
+ * quotes the original text; nothing recalls it.
+ */
+export async function editMessageCore({
+    client,
+    actorId,
+    messageId,
+    content,
+}: {
+    client: DbClient
+    actorId: string
+    messageId: string
+    content: string
+}): Promise<EditMessageResult> {
+    const trimmed = content.trim()
+
+    const { data: existing, error: fetchError } = await client
+        .from('messages')
+        .select('*')
+        .eq('id', messageId)
+        .single()
+
+    if (fetchError || !existing) {
+        return { error: 'Message not found' }
+    }
+    if (existing.sender_id !== actorId) {
+        return { error: 'You can only edit messages you sent' }
+    }
+    if (existing.deleted_at) {
+        return { error: 'This message was deleted' }
+    }
+
+    // An empty body is only meaningful when attachments carry the message; a
+    // text-only message edited down to nothing should be deleted instead.
+    const hasAttachments = Array.isArray(existing.attachments) && existing.attachments.length > 0
+    if (!trimmed && !hasAttachments) {
+        return { error: 'Message cannot be empty. Delete it instead.' }
+    }
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+        return { error: `Message must be under ${MAX_MESSAGE_LENGTH} characters` }
+    }
+    if (trimmed === existing.content) {
+        return { success: true, message: existing as Message }
+    }
+
+    const { data, error } = await client
+        .from('messages')
+        .update({ content: trimmed, edited_at: new Date().toISOString() })
+        .eq('id', messageId)
+        .select()
+        .single()
+
+    if (error) {
+        console.error('editMessageCore error:', error)
+        return { error: error.message }
+    }
+
+    try {
+        revalidatePath('/student')
+        revalidatePath('/admin')
+    } catch (e) {
+        // Safe to ignore outside of Next.js server context (e.g. standalone test scripts)
+    }
+
+    return { success: true, message: data as Message }
+}
+
+/** How many recently-edited messages the poll reconciles against per tick. */
+const EDIT_RECONCILE_LIMIT = 25
+
+/**
+ * The most recently edited messages in a conversation.
+ *
+ * Same problem as deletions: the poll cursor is append-only, so an edit to a
+ * message already scrolled into view would never reach the other participant.
+ * Rather than trusting a client clock to say "edited since when", this returns
+ * the newest edits in the thread and lets the client keep whichever rows differ
+ * from what it already has. Edits are rare and the partial index on `edited_at`
+ * covers the filter.
+ */
+export async function getEditedMessagesCore(
+    client: DbClient,
+    userA: string,
+    userB: string,
+): Promise<Message[]> {
+    const { data, error } = await client
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${userA},recipient_id.eq.${userB}),and(sender_id.eq.${userB},recipient_id.eq.${userA})`)
+        .not('edited_at', 'is', null)
+        .order('edited_at', { ascending: false })
+        .limit(EDIT_RECONCILE_LIMIT)
+
+    if (error) {
+        // Also the path taken when the `edited_at` column hasn't been migrated
+        // yet: degrade to "no edits" rather than breaking the whole poll.
+        console.error('getEditedMessagesCore error:', error)
+        return []
+    }
+    return redactDeletedAll((data || []) as Message[])
 }
 
 /**

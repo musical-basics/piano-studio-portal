@@ -36,6 +36,7 @@ export interface Database {
                     timezone: string | null
                     studio_name: string | null
                     parent_email: string | null
+                    notification_email: string | null
                     public_id: string | null
                     status: 'active' | 'inactive' | 'prospective' | 'other' | null
                     dropbox_recording_folder: string | null
@@ -60,6 +61,8 @@ export interface Database {
                     available_hours?: Json | null
                     timezone?: string | null
                     studio_name?: string | null
+                    parent_email?: string | null
+                    notification_email?: string | null
                     public_id?: string | null
                     status?: 'active' | 'inactive' | 'prospective' | 'other' | null
                     dropbox_recording_folder?: string | null
@@ -80,6 +83,8 @@ export interface Database {
                     available_hours?: Json | null
                     timezone?: string | null
                     studio_name?: string | null
+                    parent_email?: string | null
+                    notification_email?: string | null
                     public_id?: string | null
                     status?: 'active' | 'inactive' | 'prospective' | 'other' | null
                     dropbox_recording_folder?: string | null
@@ -95,6 +100,7 @@ export interface Database {
                     time: string
                     status: 'scheduled' | 'completed' | 'cancelled'
                     notes: string | null
+                    homework: string | null
                     video_url: string | null
                     sheet_music_url: string | null
                     duration: number
@@ -112,6 +118,7 @@ export interface Database {
                     time: string
                     status?: 'scheduled' | 'completed' | 'cancelled'
                     notes?: string | null
+                    homework?: string | null
                     video_url?: string | null
                     sheet_music_url?: string | null
                     duration?: number
@@ -129,6 +136,7 @@ export interface Database {
                     time?: string
                     status?: 'scheduled' | 'completed' | 'cancelled'
                     notes?: string | null
+                    homework?: string | null
                     video_url?: string | null
                     sheet_music_url?: string | null
                     duration?: number
@@ -151,6 +159,7 @@ export interface Database {
                     created_at: string
                     deleted_at: string | null
                     deleted_by: string | null
+                    edited_at: string | null
                 }
                 Insert: {
                     id?: string
@@ -162,6 +171,7 @@ export interface Database {
                     created_at?: string
                     deleted_at?: string | null
                     deleted_by?: string | null
+                    edited_at?: string | null
                 }
                 Update: {
                     id?: string
@@ -173,6 +183,7 @@ export interface Database {
                     created_at?: string
                     deleted_at?: string | null
                     deleted_by?: string | null
+                    edited_at?: string | null
                 }
             }
             pricing_tiers: {
@@ -260,6 +271,5 @@ export type StudentProfile = Profile & {
 export type LessonWithDetails = Lesson & {
     duration?: number
     teacher_notes?: string
-    homework?: string
 }
 

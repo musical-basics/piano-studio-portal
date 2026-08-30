@@ -102,6 +102,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const [selectedStudent, setSelectedStudent] = useState<StudentRoster | null>(null)
     const [selectedStudentForLog, setSelectedStudentForLog] = useState<StudentRoster | null>(null)
     const [lessonNotes, setLessonNotes] = useState("")
+    // Kept separate from notes so the student portal can surface "what do I
+    // practice this week" on its own Homework tab.
+    const [lessonHomework, setLessonHomework] = useState("")
     const [videoUrl, setVideoUrl] = useState("")
     const [sheetMusicUrl, setSheetMusicUrl] = useState("")
     const [scheduleDate, setScheduleDate] = useState("")
@@ -160,6 +163,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setVideoUrl(lesson.video_url || '')
         setSheetMusicUrl(lesson.sheet_music_url || '')
         setLessonNotes(lesson.notes || '')
+        setLessonHomework((lesson as any).homework || '')
         setShowLogLessonModal(true)
     }
 
@@ -171,6 +175,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setLogDate(today)
         setLogTime("12:00")
         setLogDuration(60)
+        setLessonHomework("")
         setShowLogLessonModal(true)
     }
 
@@ -189,7 +194,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     selectedLesson.id,
                     lessonNotes,
                     videoUrl || undefined,
-                    sheetMusicUrl || undefined
+                    sheetMusicUrl || undefined,
+                    lessonHomework
                 )
             } else if (selectedStudentForLog) {
                 console.log('Calling logPastLesson', selectedStudentForLog.id)
@@ -202,7 +208,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     logDuration,
                     lessonNotes,
                     videoUrl || undefined,
-                    sheetMusicUrl || undefined
+                    sheetMusicUrl || undefined,
+                    lessonHomework
                 )
             }
         } catch (e) {
@@ -249,6 +256,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
+            setLessonHomework("")
             setVideoUrl("")
             setSheetMusicUrl("")
             setSelectedLesson(null)
@@ -440,6 +448,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const handleEditLesson = (lesson: LessonWithStudent) => {
         setEditingLesson(lesson)
         setLessonNotes(lesson.notes || '')
+        setLessonHomework((lesson as any).homework || '')
         setVideoUrl(lesson.video_url || '')
         setSheetMusicUrl(lesson.sheet_music_url || '')
         setShowEditModal(true)
@@ -453,7 +462,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             editingLesson.id,
             lessonNotes,
             videoUrl,
-            sheetMusicUrl
+            sheetMusicUrl,
+            lessonHomework
         )
         setIsLoading(false)
 
@@ -471,6 +481,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             setShowEditModal(false)
             setEditingLesson(null)
             setLessonNotes('')
+            setLessonHomework('')
             setVideoUrl('')
             setSheetMusicUrl('')
             setCalendarVersion(v => v + 1)
@@ -964,12 +975,29 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             </Label>
                             <Textarea
                                 id="notes"
-                                placeholder="Enter your lesson notes, progress observations, and homework assignments..."
+                                placeholder="Enter your lesson notes and progress observations..."
                                 value={lessonNotes}
                                 onChange={(e) => setLessonNotes(e.target.value)}
                                 rows={6}
                                 className="resize-none"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="homework" className="text-base">
+                                Homework
+                            </Label>
+                            <Textarea
+                                id="homework"
+                                placeholder="What should they practice before the next lesson? One item per line."
+                                value={lessonHomework}
+                                onChange={(e) => setLessonHomework(e.target.value)}
+                                rows={4}
+                                className="resize-none"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Shown on its own Homework tab in the student portal. One item per line becomes a checklist.
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -1211,12 +1239,29 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             </Label>
                             <Textarea
                                 id="edit-notes"
-                                placeholder="Enter your lesson notes, progress observations, and homework assignments..."
+                                placeholder="Enter your lesson notes and progress observations..."
                                 value={lessonNotes}
                                 onChange={(e) => setLessonNotes(e.target.value)}
                                 rows={6}
                                 className="resize-none"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-homework" className="text-base">
+                                Homework
+                            </Label>
+                            <Textarea
+                                id="edit-homework"
+                                placeholder="What should they practice before the next lesson? One item per line."
+                                value={lessonHomework}
+                                onChange={(e) => setLessonHomework(e.target.value)}
+                                rows={4}
+                                className="resize-none"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Shown on its own Homework tab in the student portal. One item per line becomes a checklist.
+                            </p>
                         </div>
 
                         <div className="space-y-2">

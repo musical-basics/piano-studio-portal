@@ -11,6 +11,7 @@ import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendMessageCore } from '@/lib/core/messages'
 import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -72,13 +73,16 @@ async function sendAutoScheduledLessonEmail({
     if (!resend) return
 
     try {
+        // `*` rather than a column list so the notification-email override is
+        // picked up, and a schema that predates it can't break the send.
         const { data: student } = await client
             .from('profiles')
-            .select('name, email')
+            .select('*')
             .eq('id', studentId)
             .single()
 
-        if (!student?.email) return
+        const studentEmail = resolveNotificationEmail(student)
+        if (!studentEmail) return
 
         const { data: adminData } = await client
             .from('profiles')
@@ -97,7 +101,7 @@ async function sendAutoScheduledLessonEmail({
 
         await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
-            to: student.email,
+            to: studentEmail,
             subject: emailSubject,
             react: LessonScheduledEmail({
                 studentName: student.name || 'Student',
@@ -149,11 +153,12 @@ async function sendLessonLoggedEmail({
     try {
         const { data: student } = await client
             .from('profiles')
-            .select('name, email')
+            .select('*')
             .eq('id', studentId)
             .single()
 
-        if (!student?.email) {
+        const studentEmail = resolveNotificationEmail(student)
+        if (!studentEmail) {
             console.log('sendLessonLoggedEmail: No student email, skipping notification')
             return
         }
@@ -162,7 +167,7 @@ async function sendLessonLoggedEmail({
 
         await resend.emails.send({
             from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-            to: student.email,
+            to: studentEmail,
             subject: `Lesson Notes: ${formattedDate}`,
             react: LessonLoggedEmail({
                 studentName: student.name || 'Student',
@@ -264,11 +269,80 @@ export async function listLessonsCore(
     }
 }
 
+/**
+ * Postgres's "column does not exist" code. `lessons.homework` ships with a
+ * migration, and migrations here are applied to production separately from the
+ * deploy, so there is a window where the code knows about the column and the
+ * database does not.
+ */
+const UNDEFINED_COLUMN = '42703'
+
+/**
+ * Write a lesson update that may carry `homework`, degrading to the same update
+ * without it if the column hasn't been migrated yet.
+ *
+ * Losing the homework text on an un-migrated database is a far better failure
+ * than losing the whole "log this lesson" write, which also deducts a credit.
+ */
+export async function updateLessonWithOptionalHomework(
+    client: DbClient,
+    lessonId: string,
+    fields: Record<string, any>,
+    homework?: string | null,
+): Promise<{ data: any; error: any }> {
+    if (homework === undefined) {
+        return await client.from('lessons').update(fields).eq('id', lessonId).select().single()
+    }
+
+    const withHomework = { ...fields, homework: homework || null }
+    const first = await client.from('lessons').update(withHomework).eq('id', lessonId).select().single()
+
+    if (first.error?.code === UNDEFINED_COLUMN) {
+        console.warn(
+            'lessons.homework column is missing; saving the lesson without it. Run supabase/migrations/20260830000000_student_portal_upgrades.sql.',
+        )
+        return await client.from('lessons').update(fields).eq('id', lessonId).select().single()
+    }
+
+    return first
+}
+
+/**
+ * Insert a lesson row that may carry `homework`, with the same degradation as
+ * the update helper above.
+ */
+export async function insertLessonWithOptionalHomework(
+    client: DbClient,
+    fields: Record<string, any>,
+    homework?: string | null,
+): Promise<{ data: any; error: any }> {
+    if (homework === undefined) {
+        return await client.from('lessons').insert(fields).select().single()
+    }
+
+    const first = await client
+        .from('lessons')
+        .insert({ ...fields, homework: homework || null })
+        .select()
+        .single()
+
+    if (first.error?.code === UNDEFINED_COLUMN) {
+        console.warn(
+            'lessons.homework column is missing; saving the lesson without it. Run supabase/migrations/20260830000000_student_portal_upgrades.sql.',
+        )
+        return await client.from('lessons').insert(fields).select().single()
+    }
+
+    return first
+}
+
 export type LogLessonArgs = {
     client: DbClient
     adminId: string
     lessonId: string
     notes: string
+    /** What the student should practice before the next lesson. Undefined leaves it untouched. */
+    homework?: string | null
     videoUrl?: string
     sheetMusicUrl?: string
     awaitNotifications?: boolean
@@ -280,6 +354,7 @@ export async function logLessonCore({
     adminId,
     lessonId,
     notes,
+    homework,
     videoUrl,
     sheetMusicUrl,
     awaitNotifications = false,
@@ -314,18 +389,18 @@ export async function logLessonCore({
         lesson.credit_snapshot !== null
     const needsCredit = !isAlreadyCompleted || (isAlreadyCompleted && !hasSnapshots)
 
-    const { data: loggedLesson, error: lessonError } = await client
-        .from('lessons')
-        .update({
+    const { data: loggedLesson, error: lessonError } = await updateLessonWithOptionalHomework(
+        client,
+        lessonId,
+        {
             status: 'completed',
             notes,
             video_url: videoUrl || null,
             sheet_music_url: sheetMusicUrl || null,
             completed_source: completedSource,
-        })
-        .eq('id', lessonId)
-        .select()
-        .single()
+        },
+        homework,
+    )
 
     if (lessonError) {
         console.error('logLessonCore: update failed', lessonError)
@@ -489,7 +564,7 @@ export async function scheduleLessonCore({
 }: ScheduleLessonArgs) {
     const { data: student, error: studentError } = await client
         .from('profiles')
-        .select('id, name, email, parent_email')
+        .select('*')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -543,7 +618,11 @@ export async function scheduleLessonCore({
     try {
         const { createZoomMeeting } = await import('@/lib/zoom')
         const startDateTime = `${date}T${time}:00`
-        const inviteeEmails = [student.email, (student as any).parent_email].filter(Boolean) as string[]
+        // The Zoom invite goes to wherever the student reads mail plus the parent
+        // on file, de-duplicated in case they're the same address.
+        const inviteeEmails = Array.from(new Set(
+            [resolveNotificationEmail(student), (student as any).parent_email].filter(Boolean) as string[],
+        ))
         const zoomData = await createZoomMeeting(
             `${student.name} - Piano Lesson`,
             startDateTime,
@@ -609,7 +688,8 @@ export async function scheduleLessonCore({
         lesson = lessonData
     }
 
-    if (resend && student.email) {
+    const scheduledStudentEmail = resolveNotificationEmail(student)
+    if (resend && scheduledStudentEmail) {
         try {
             const { data: adminProfile } = await client
                 .from('profiles')
@@ -627,7 +707,7 @@ export async function scheduleLessonCore({
 
             await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                to: student.email,
+                to: scheduledStudentEmail,
                 subject: emailSubject,
                 react: LessonScheduledEmail({
                     studentName: student.name || 'Student',
@@ -772,11 +852,12 @@ export async function rescheduleLessonCore({
         try {
             const { data: student } = await client
                 .from('profiles')
-                .select('name, email')
+                .select('*')
                 .eq('id', lesson.student_id)
                 .single()
 
-            if (student?.email) {
+            const studentEmail = resolveNotificationEmail(student)
+            if (studentEmail) {
                 const { data: adminProfile } = await client
                     .from('profiles')
                     .select('name, studio_name')
@@ -791,7 +872,7 @@ export async function rescheduleLessonCore({
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to: student.email,
+                    to: studentEmail,
                     subject: `Lesson Rescheduled: ${newDateStr} at ${newTimeStr}`,
                     react: LessonRescheduledEmail({
                         studentName: student.name || 'Student',
@@ -889,11 +970,12 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
         try {
             const { data: student } = await client
                 .from('profiles')
-                .select('name, email')
+                .select('*')
                 .eq('id', lesson.student_id)
                 .single()
 
-            if (student?.email) {
+            const studentEmail = resolveNotificationEmail(student)
+            if (studentEmail) {
                 const { data: adminProfile } = await client
                     .from('profiles')
                     .select('name, studio_name')
@@ -906,7 +988,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to: student.email,
+                    to: studentEmail,
                     subject: `Lesson Canceled: ${formattedDate} at ${formattedTime}`,
                     react: LessonCanceledEmail({
                         studentName: student.name || 'Student',

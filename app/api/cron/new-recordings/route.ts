@@ -4,6 +4,7 @@ import { Dropbox } from 'dropbox'
 import { Resend } from 'resend'
 import NewRecordingEmail from '@/components/emails/new-recording-email'
 import { formatRecordingName } from '@/lib/format-recording-name'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +39,8 @@ export async function GET(request: Request) {
     // 1. Fetch all active students that have a dropbox folder configured
     const { data: students, error: studentsError } = await supabase
         .from('profiles')
-        .select('id, name, email, dropbox_recording_folder, last_recording_notified_at')
+        // Whole row so the student's notification-email override is available.
+        .select('*')
         .eq('role', 'student')
         .not('dropbox_recording_folder', 'is', null)
         .not('email', 'is', null)
@@ -126,7 +128,7 @@ export async function GET(request: Request) {
             // Send email
             const { error: emailError } = await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                to: student.email,
+                to: resolveNotificationEmail(student) as string,
                 subject:
                     newFiles.length === 1
                         ? 'New lesson recording available 🎹'

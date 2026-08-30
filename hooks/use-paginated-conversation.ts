@@ -3,7 +3,7 @@
 import type React from "react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import type { Message } from "@/lib/supabase/database.types"
-import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage } from "@/app/messages/actions"
+import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage, editMessage } from "@/app/messages/actions"
 
 /**
  * Reverse-infinite-scroll chat state.
@@ -45,6 +45,12 @@ export interface UsePaginatedConversationResult {
      * error string on failure, or null on success.
      */
     remove: (messageId: string) => Promise<string | null>
+    /**
+     * Rewrite the text of a message the current user sent, applying it
+     * optimistically and rolling back if the server rejects it. Resolves to an
+     * error string on failure, or null on success.
+     */
+    edit: (messageId: string, content: string) => Promise<string | null>
     /** Reset all state (e.g. when switching conversations). */
     reset: () => void
 }
@@ -72,17 +78,25 @@ interface Options {
      * Scrolling to the bottom is handled internally; don't scroll here.
      */
     onInitialLoaded?: () => void
+    /**
+     * Called once the partner's messages have actually been marked read on the
+     * server. Use this to clear an unread badge that lives outside the chat.
+     */
+    onRead?: () => void
     /** Whether to mark the partner's messages as read after loading. Defaults to true. */
     markRead?: boolean
 }
 
 export function usePaginatedConversation(options: Options): UsePaginatedConversationResult {
-    const { partnerId, asUserId, onInitialLoaded, markRead = true } = options
+    const { partnerId, asUserId, onInitialLoaded, onRead, markRead = true } = options
 
     // Keep the latest onInitialLoaded in a ref so loadInitial stays identity-stable
     // even when callers pass an inline arrow (avoids re-running load effects each render).
     const onInitialLoadedRef = useRef(onInitialLoaded)
     onInitialLoadedRef.current = onInitialLoaded
+
+    const onReadRef = useRef(onRead)
+    onReadRef.current = onRead
 
     const [messages, setMessages] = useState<Message[]>([])
     const [isLoadingInitial, setIsLoadingInitial] = useState(false)
@@ -150,6 +164,26 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         }
     }, [messages, hasMore])
 
+    /**
+     * Mirror the server-side read flip in local state.
+     *
+     * The rows currently held were fetched before markMessagesAsRead ran, so
+     * without this every unread count derived from them (the panel header badge,
+     * the tab dot) would stay lit until the next full refetch.
+     */
+    const applyReadLocally = useCallback((partner: string) => {
+        setMessages((prev) => {
+            let changed = false
+            const next = prev.map((m) => {
+                if (m.sender_id !== partner || m.is_read) return m
+                changed = true
+                return { ...m, is_read: true }
+            })
+            return changed ? next : prev
+        })
+        onReadRef.current?.()
+    }, [])
+
     const reset = useCallback(() => {
         setMessages([])
         setHasMore(false)
@@ -183,14 +217,17 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
             setIsLoadingInitial(false)
             loadingRef.current = false
             onInitialLoadedRef.current?.()
-            if (markRead) await markMessagesAsRead(partnerId, asUserId)
+            if (markRead) {
+                await markMessagesAsRead(partnerId, asUserId)
+                applyReadLocally(partnerId)
+            }
         } catch (err) {
             console.error("usePaginatedConversation: loadInitial failed", err)
         } finally {
             setIsLoadingInitial(false)
             loadingRef.current = false
         }
-    }, [partnerId, asUserId, markRead])
+    }, [partnerId, asUserId, markRead, applyReadLocally])
 
     const loadOlder = useCallback(async () => {
         if (!partnerId || !hasMoreRef.current || loadingRef.current) return
@@ -251,12 +288,29 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
                     added = true
                 }
             } else {
-                const { messages: fresh, deletedIds } = await getNewMessages(partnerId, newest.created_at, asUserId)
+                const { messages: fresh, deletedIds, edited } = await getNewMessages(partnerId, newest.created_at, asUserId)
                 if (fresh && fresh.length > 0) {
                     setMessages((prev) => {
                         const merged = mergeAppend(prev, fresh)
                         if (merged !== prev) added = true
                         return merged
+                    })
+                }
+                // Reconcile edits the append-only cursor can't see: an edited
+                // message may sit anywhere in history. Only rows whose edit
+                // stamp differs from what we hold are swapped in, so this is a
+                // no-op on the vast majority of ticks.
+                if (edited && edited.length > 0) {
+                    const byId = new Map(edited.map((m) => [m.id, m]))
+                    setMessages((prev) => {
+                        let changed = false
+                        const next = prev.map((m) => {
+                            const fresher = byId.get(m.id)
+                            if (!fresher || m.deleted_at || fresher.edited_at === m.edited_at) return m
+                            changed = true
+                            return fresher
+                        })
+                        return changed ? next : prev
                     })
                 }
                 // Reconcile deletions the append-only cursor can't see: a message
@@ -274,13 +328,16 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
                     })
                 }
             }
-            if (added && markRead) await markMessagesAsRead(partnerId, asUserId)
+            if (added && markRead) {
+                await markMessagesAsRead(partnerId, asUserId)
+                applyReadLocally(partnerId)
+            }
             return added
         } catch (err) {
             console.error("usePaginatedConversation: poll failed", err)
             return false
         }
-    }, [partnerId, asUserId, markRead])
+    }, [partnerId, asUserId, markRead, applyReadLocally])
 
     const appendLocal = useCallback((message: Message) => {
         setMessages((prev) => mergeAppend(prev, [message]))
@@ -310,6 +367,35 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         }
     }, [asUserId])
 
+    const edit = useCallback(async (messageId: string, content: string): Promise<string | null> => {
+        const original = messagesRef.current.find((m) => m.id === messageId)
+        if (!original || original.deleted_at) return null
+
+        const trimmed = content.trim()
+        if (trimmed === original.content) return null
+
+        // Optimistic: show the new text now, restore the original if the server says no.
+        setMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, content: trimmed, edited_at: new Date().toISOString() } : m)),
+        )
+
+        try {
+            const result = await editMessage(messageId, trimmed, asUserId)
+            if (result.error) {
+                setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)))
+                return result.error
+            }
+            if (result.message) {
+                setMessages((prev) => prev.map((m) => (m.id === messageId ? result.message! : m)))
+            }
+            return null
+        } catch (err) {
+            console.error("usePaginatedConversation: edit failed", err)
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)))
+            return err instanceof Error ? err.message : "Failed to edit message"
+        }
+    }, [asUserId])
+
     return {
         messages,
         isLoadingInitial,
@@ -321,6 +407,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         poll,
         appendLocal,
         remove,
+        edit,
         reset,
     }
 }

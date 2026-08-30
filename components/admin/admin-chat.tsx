@@ -4,12 +4,15 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder } from "lucide-react"
+import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder, Upload } from "lucide-react"
 import { sendMessage, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
 import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
+import { EditMessageButton, MessageEditor, EditedMarker } from "@/components/chat-message-edit"
+import { MessageContent } from "@/components/chat-message-content"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
+import { useChatFileDrop, screenChatFiles } from "@/hooks/use-chat-file-drop"
 import { LibraryFileSelector } from "@/components/admin/library-file-selector"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -83,6 +86,8 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
   // Attachment states - Modified to support both File objects and Library resources
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -105,6 +110,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     poll,
     appendLocal,
     remove,
+    edit,
   } = usePaginatedConversation({
     partnerId: selectedStudent?.id ?? null,
   })
@@ -250,21 +256,46 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     return null
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+  const handleEditMessage = async (messageId: string, content: string): Promise<string | null> => {
+    const err = await edit(messageId, content)
+    if (err) return err
+    // Keep the sidebar preview honest if the edited message was the thread's latest.
+    setStudents(prev => prev.map(s =>
+      s.lastMessage?.id === messageId
+        ? { ...s, lastMessage: { ...s.lastMessage, content: content.trim() } as Message }
+        : s
+    ))
+    return null
+  }
 
-    const newAttachments: PendingAttachment[] = Array.from(files).map(file => {
-      const isImage = file.type.startsWith('image/')
-      return {
-        id: Math.random().toString(36).substring(7),
-        file,
-        preview: isImage ? URL.createObjectURL(file) : undefined,
-        uploading: false
-      }
-    })
-
+  /** Shared by the file picker and drag-and-drop so both behave identically. */
+  const addFiles = useCallback((files: File[]) => {
+    setAttachmentError(null)
+    const newAttachments: PendingAttachment[] = files.map(file => ({
+      id: Math.random().toString(36).substring(7),
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      uploading: false,
+    }))
     setPendingAttachments(prev => [...prev, ...newAttachments].slice(0, 5)) // Max 5
+  }, [])
+
+  const remainingSlots = 5 - pendingAttachments.length
+
+  const { isDragging, dropHandlers } = useChatFileDrop({
+    onFiles: addFiles,
+    onReject: setAttachmentError,
+    remainingSlots,
+    disabled: isSending || !selectedStudent,
+  })
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const { accepted, error } = screenChatFiles(files, remainingSlots)
+    if (accepted.length > 0) addFiles(accepted)
+    setAttachmentError(error)
 
     // Reset input
     if (fileInputRef.current) {
@@ -463,8 +494,23 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
               </div>
             </div>
 
-            {/* Messages List - This is the flexible scrolling area */}
-            <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 bg-muted/5 space-y-6">
+            {/* Messages List - This is the flexible scrolling area.
+                The wrapper (not the scroller) anchors the drop overlay, so the
+                overlay stays pinned to the viewport instead of scrolling away
+                with the thread's content. */}
+            <div className="flex-1 min-h-0 relative flex flex-col" {...dropHandlers}>
+              {isDragging && (
+                <div className="absolute inset-0 z-20 border-2 border-dashed border-primary bg-primary/10 flex flex-col items-center justify-center pointer-events-none">
+                  <Upload className="h-10 w-10 text-primary mb-2" />
+                  <p className="font-semibold text-primary">Drop to attach</p>
+                  <p className="text-xs text-muted-foreground mt-1">Images, PDF, Word or sheet music, up to 5 files</p>
+                </div>
+              )}
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto p-4 bg-muted/5 space-y-6"
+            >
               {isLoadingMessages ? (
                 <div className="h-full flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -492,20 +538,30 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                     <div key={msg.id} className={`group flex items-center gap-1 ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
                       {/* Delete sits outside the bubble, on the inner edge, so it
                           never overlaps message text or attachments. */}
-                      {isFromAdmin(msg) && (
-                        <DeleteMessageButton
-                          preview={msg.content}
-                          onConfirm={() => handleDeleteMessage(msg.id)}
-                        />
+                      {isFromAdmin(msg) && editingId !== msg.id && (
+                        <>
+                          <EditMessageButton onClick={() => setEditingId(msg.id)} />
+                          <DeleteMessageButton
+                            preview={msg.content}
+                            onConfirm={() => handleDeleteMessage(msg.id)}
+                          />
+                        </>
                       )}
                       <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
                         ? "bg-primary text-primary-foreground rounded-br-none"
                         : "bg-white border text-foreground rounded-bl-none"
                         }`}>
                         {/* The Message Text */}
-                        {msg.content && msg.content !== '📎 Attachment' && (
-                          <p className="text-sm leading-relaxed">{msg.content}</p>
-                        )}
+                        {editingId === msg.id ? (
+                          <MessageEditor
+                            initialValue={msg.content}
+                            onSave={(content) => handleEditMessage(msg.id, content)}
+                            onCancel={() => setEditingId(null)}
+                            onDark={isFromAdmin(msg)}
+                          />
+                        ) : msg.content && msg.content !== '📎 Attachment' ? (
+                          <MessageContent content={msg.content} onDark={isFromAdmin(msg)} />
+                        ) : null}
 
                         {/* Attachments */}
                         {msg.attachments && msg.attachments.length > 0 && (
@@ -543,6 +599,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                         <p className={`text-[10px] text-right mt-1 ${isFromAdmin(msg) ? "text-primary-foreground/70" : "text-muted-foreground"
                           }`}>
                           {formatTimestamp(msg.created_at)}
+                          {msg.edited_at && <EditedMarker />}
                         </p>
                       </div>
                     </div>
@@ -550,6 +607,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   <div ref={messagesEndRef} />
                 </>
               )}
+            </div>
             </div>
 
             {/* Input Area - Pinned to bottom */}
@@ -560,6 +618,10 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   attachments={pendingAttachments}
                   onRemove={handleRemoveAttachment}
                 />
+              )}
+
+              {attachmentError && (
+                <p className="px-4 pt-2 text-xs text-destructive">{attachmentError}</p>
               )}
 
               <div className="p-4 flex gap-2 items-center">

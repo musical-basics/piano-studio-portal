@@ -184,6 +184,21 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="notificationEmail">Notification Email (Optional)</Label>
+                        <Input
+                            id="notificationEmail"
+                            name="notificationEmail"
+                            type="email"
+                            defaultValue={(student as any).notification_email || ''}
+                            placeholder="Leave blank to use the login email above"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Where notifications are delivered. Students can set this themselves in Account Settings,
+                            typically to move mail off a parent&apos;s inbox. Sign-in still uses the email above.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
                         <Label htmlFor="parentContactName">Parent / Contact Name</Label>
                         <Input
                             id="parentContactName"

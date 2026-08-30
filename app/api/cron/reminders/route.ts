@@ -4,6 +4,7 @@ import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, addDays, format } from 'date-fns'
 import { dueNotice, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
 
     const { data: lessons, error } = await supabase
         .from('lessons')
-        .select('*, profiles(email, name, public_id)')
+        // Whole profile row so the student's notification-email override is available.
+        .select('*, profiles(*)')
         .gte('date', todayStr)
         .lte('date', horizonStr)
         .neq('status', 'cancelled') // Don't remind cancelled lessons
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
 
     if (lessons) {
         for (const lesson of lessons) {
-            if (!lesson.profiles?.email) continue
+            if (!resolveNotificationEmail(lesson.profiles)) continue
 
             // Construct Lesson Wall Clock Time
             const lessonTime = new Date(`${lesson.date}T${lesson.time}`)
@@ -82,10 +84,16 @@ export async function GET(request: Request) {
                 '15m': 'Lesson Starting Soon!',
             }
 
-            console.log(`[Cron] Sending ${notice} notice (${confirmNudge ? 'unconfirmed' : 'confirmed'}) to ${lesson.profiles.email} (Diff: ${diffMinutes}m)`)
+            const recipientEmail = resolveNotificationEmail(lesson.profiles)
+            if (!recipientEmail) {
+                console.log(`[Cron] Skipping ${notice} notice: no email on file for ${lesson.profiles?.name || lesson.student_id}`)
+                continue
+            }
+
+            console.log(`[Cron] Sending ${notice} notice (${confirmNudge ? 'unconfirmed' : 'confirmed'}) to ${recipientEmail} (Diff: ${diffMinutes}m)`)
             const { error: emailError } = await resend.emails.send({
                 from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                to: lesson.profiles.email,
+                to: recipientEmail,
                 subject: subjects[notice],
                 react: LessonReminderEmail({
                     studentName: lesson.profiles.name || 'Student',

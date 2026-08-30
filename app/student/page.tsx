@@ -93,6 +93,15 @@ export default async function StudentPage() {
   // Determine Zoom link: lesson-specific > student's profile > teacher's default
   const zoomLink = nextScheduledLesson?.zoom_link || profile.zoom_link || teacher?.zoom_link || null
 
+  // Unread messages addressed to this student. The dashboard used to hardcode
+  // this to 1, so the Messages tab always claimed a notification.
+  const { count: unreadCount } = await supabase
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("recipient_id", effectiveUserId)
+    .eq("is_read", false)
+    .is("deleted_at", null)
+
   // Fetch events & resources scoped to the effective user
   const { upcoming: upcomingEvents } = await getStudentEvents()
   const { resources } = await getStudentResources()
@@ -114,6 +123,7 @@ export default async function StudentPage() {
         events={upcomingEvents}
         resources={resources}
         latestAnnouncement={latestAnnouncement}
+        unreadCount={unreadCount || 0}
       />
     </>
   )

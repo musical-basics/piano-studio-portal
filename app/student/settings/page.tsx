@@ -2,8 +2,11 @@ import { StudentSettingsForm } from "@/components/student/settings-form"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { getNotificationEmail } from "@/app/actions/account"
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+    const { loginEmail, notificationEmail } = await getNotificationEmail()
+
     return (
         <div className="min-h-screen bg-background p-4 md:p-8">
             <div className="max-w-2xl mx-auto space-y-6">
@@ -17,7 +20,7 @@ export default function SettingsPage() {
                     <h1 className="text-3xl font-serif font-bold mt-2">Account Settings</h1>
                 </div>
 
-                <StudentSettingsForm />
+                <StudentSettingsForm loginEmail={loginEmail} notificationEmail={notificationEmail} />
             </div>
         </div>
     )

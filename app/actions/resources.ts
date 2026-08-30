@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -390,7 +391,7 @@ export async function updateAssignmentNote(
     if (resend && notes.trim()) {
         try {
             const [studentRes, teacherRes, resourceRes] = await Promise.all([
-                supabase.from('profiles').select('name, email').eq('id', studentId).single(),
+                supabase.from('profiles').select('*').eq('id', studentId).single(),
                 supabase.from('profiles').select('name, studio_name').eq('id', user.id).single(),
                 supabase.from('resources').select('title').eq('id', resourceId).single()
             ])
@@ -404,7 +405,7 @@ export async function updateAssignmentNote(
 
                 await resend.emails.send({
                     from: `${teacher?.studio_name || 'Piano Studio'} <notifications@updates.musicalbasics.com>`,
-                    to: student.email,
+                    to: resolveNotificationEmail(student) as string,
                     subject: `New practice instructions: ${resource.title}`,
                     react: AssignmentNoteEmail({
                         studentName: student.name || 'Student',

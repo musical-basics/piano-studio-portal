@@ -141,6 +141,8 @@ export async function updateStudent(formData: FormData) {
     const name = formData.get('name') as string
     const email = formData.get('email') as string
     const parentEmail = formData.get('parentEmail') as string | null
+    // Delivery-only override; the login identity stays `email` above.
+    const notificationEmail = ((formData.get('notificationEmail') as string | null) || '').trim() || null
     const lessonDuration = parseInt(formData.get('lessonDuration') as string) || 30
     const lessonDay = formData.get('lessonDay') as string || null
     const lessonTime = formData.get('lessonTime') as string || null
@@ -219,6 +221,7 @@ export async function updateStudent(formData: FormData) {
                 name,
                 email,
                 parent_email: parentEmail || null,
+                notification_email: notificationEmail,
                 lesson_duration: lessonDuration,
                 lesson_day: lessonDay,
                 lesson_time: lessonTime,
