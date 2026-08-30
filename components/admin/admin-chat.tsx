@@ -568,7 +568,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileSelect}
-                  accept="image/*,.pdf,.doc,.docx"
+                  accept="image/*,.pdf,.doc,.docx,.musicxml,.mxl,.xml"
                   multiple
                   className="hidden"
                 />

@@ -333,7 +333,7 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileSelect}
-                accept="image/*,.pdf,.doc,.docx"
+                accept="image/*,.pdf,.doc,.docx,.musicxml,.mxl,.xml"
                 multiple
                 className="hidden"
               />

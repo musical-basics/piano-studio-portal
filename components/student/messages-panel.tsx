@@ -315,7 +315,7 @@ export function MessagesPanel({ studentId, teacherName }: MessagesPanelProps) {
             type="file"
             ref={fileInputRef}
             onChange={handleFileSelect}
-            accept="image/*,.pdf,.doc,.docx"
+            accept="image/*,.pdf,.doc,.docx,.musicxml,.mxl,.xml"
             multiple
             className="hidden"
           />

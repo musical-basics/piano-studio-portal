@@ -35,6 +35,14 @@ async function resolveSelfId(realUserId: string, asUserId?: string): Promise<str
 // Allowed file types and size limits for chat attachments
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 const ALLOWED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+// Sheet music. Browsers report these inconsistently (usually '' or
+// application/octet-stream), so they are matched on extension instead of MIME
+// type and given an explicit content type when uploaded.
+const SHEET_MUSIC_CONTENT_TYPES: Record<string, string> = {
+    '.musicxml': 'application/vnd.recordare.musicxml+xml',
+    '.mxl': 'application/vnd.recordare.musicxml',
+    '.xml': 'text/xml',
+}
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export type MessageWithProfile = Message & {
@@ -235,11 +243,13 @@ export async function uploadChatAttachment(formData: FormData): Promise<{ attach
     }
 
     // Determine file type category
+    const extension = (file.name.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase()
+    const sheetMusicType = SHEET_MUSIC_CONTENT_TYPES[extension]
     const isImage = ALLOWED_IMAGE_TYPES.includes(file.type)
-    const isDocument = ALLOWED_FILE_TYPES.includes(file.type)
+    const isDocument = ALLOWED_FILE_TYPES.includes(file.type) || Boolean(sheetMusicType)
 
     if (!isImage && !isDocument) {
-        return { error: 'Invalid file type. Allowed: images (JPEG, PNG, GIF, WebP) and documents (PDF, Word)' }
+        return { error: 'Invalid file type. Allowed: images (JPEG, PNG, GIF, WebP), documents (PDF, Word) and sheet music (MusicXML, MXL)' }
     }
 
     // Generate unique filename
@@ -268,7 +278,7 @@ export async function uploadChatAttachment(formData: FormData): Promise<{ attach
             .upload(filePath, file, {
                 cacheControl: '3600',
                 upsert: false,
-                contentType: file.type // Explicitly set content type
+                contentType: sheetMusicType || file.type || 'application/octet-stream' // Explicitly set content type
             })
 
         if (error) {
