@@ -1,7 +1,11 @@
 name: Trigger Reminders
 on:
   schedule:
-    - cron: '*/10 * * * *' # Run every 10 minutes
+    # GitHub treats scheduled workflows as best-effort and drops high-frequency
+    # ones under runner load: this ran ~6 times/day instead of 144 through
+    # Aug 2026. Vercel Cron (vercel.json) is the primary trigger; this is the
+    # backup, so keep it but do not rely on it alone.
+    - cron: '*/10 * * * *'
   workflow_dispatch: # Enable manual trigger
 jobs:
   ping-api:
@@ -9,4 +13,7 @@ jobs:
     steps:
       - name: Call API Route
         run: |
-          curl "https://lessons.musicalbasics.com/api/cron/reminders?key=${{ secrets.CRON_SECRET }}"
+          # --fail-with-body so an auth or server error fails the job (and mails
+          # the repo owner) instead of exiting 0 on a 401 body.
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            "https://lessons.musicalbasics.com/api/cron/reminders?key=${{ secrets.CRON_SECRET }}"

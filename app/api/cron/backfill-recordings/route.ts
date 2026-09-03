@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { backfillMissingRecordings } from '@/lib/backfill-recordings'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 // Recordings can be ~50-300MB; allow time for download + chunked Dropbox upload.
@@ -10,8 +11,7 @@ export const maxDuration = 300
 // cloud recording into Dropbox. Idempotent: a lesson with video_url already set
 // is excluded by the query, so re-runs are safe.
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
-    if (searchParams.get('key') !== process.env.CRON_SECRET) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

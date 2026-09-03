@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { organizeZBackupRecordings } from '@/lib/organize-recordings'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 // Server-side Dropbox moves are fast (no download), but allow headroom for
@@ -10,8 +11,7 @@ export const maxDuration = 300
 // attaches them to the matching lesson. Dedupes by date, so it never duplicates
 // a recording already placed by another path. Safe to run repeatedly.
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
-    if (searchParams.get('key') !== process.env.CRON_SECRET) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

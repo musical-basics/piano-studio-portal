@@ -37,3 +37,32 @@ export function dueNotice(diffMinutes: number, isConfirmed: boolean, sent: SentF
     }
     return null
 }
+
+/**
+ * Notices whose window closed unserved between two cron ticks.
+ *
+ * A window is only reachable while a tick lands inside it, and a lesson's flag
+ * is never retried once the window passes. So when ticks get dropped, notices
+ * are lost silently. Given the previous tick time and the current one (both on
+ * the studio wall-clock axis, same as `lessonTime`), this reports the windows
+ * that ended during that gap with their flag still false.
+ *
+ * Each window ends exactly once, so a given miss is reported on one run only.
+ */
+export function closedWindows(
+    lessonTime: Date,
+    previousNow: Date,
+    now: Date,
+    isConfirmed: boolean,
+    sent: SentFlags,
+): NoticeKey[] {
+    const missed: NoticeKey[] = []
+    for (const w of WINDOWS) {
+        if (isConfirmed && !w.whenConfirmed) continue
+        if (sent[w.key]) continue
+        // The window is open until `w.min` minutes before the lesson.
+        const closesAt = new Date(lessonTime.getTime() - w.min * 60000)
+        if (closesAt > previousNow && closesAt <= now) missed.push(w.key)
+    }
+    return missed
+}

@@ -95,8 +95,8 @@ export default function LessonReminderEmail({
                             </Section>
                         )}
 
-                        {/* Only show Zoom link prominently for the 15m warning */}
-                        {variant === '15m' && zoomLink ? (
+                        {/* Show the Zoom link prominently for the imminent-start notices */}
+                        {(variant === '15m' || variant === 'exact') && zoomLink ? (
                             <Button style={joinButton} href={zoomLink}>
                                 {text.btnText}
                             </Button>

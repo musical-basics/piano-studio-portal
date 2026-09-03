@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, addDays, format } from 'date-fns'
-import { dueNotice, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
+import { dueNotice, closedWindows, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { isAuthorizedCron } from '@/lib/cron-auth'
+import { readHeartbeat, writeHeartbeat, sendCronAlert, ALERT_COOLDOWN_MINUTES } from '@/lib/cron-alerts'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,9 +17,14 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export const dynamic = 'force-dynamic' // Ensure this route is not cached
 
+// Scheduled every 10 minutes. Anything beyond this is a dropped tick, and since
+// notice windows are only 25-60 minutes wide, dropped ticks silently lose
+// reminders. Alert rather than let it go unnoticed.
+const EXPECTED_INTERVAL_MINUTES = 10
+const LATE_THRESHOLD_MINUTES = 45
+
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
-    if (searchParams.get('key') !== process.env.CRON_SECRET) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -27,6 +34,14 @@ export async function GET(request: Request) {
     const now = new Date(nowInStudioTimeStr)
 
     console.log(`[Cron] Checking reminders at ${now.toISOString()} (Studio Time)`)
+
+    // How long since the previous tick? Measured on real UTC instants, then
+    // projected onto the wall-clock axis so it can be compared with lesson times.
+    const heartbeat = await readHeartbeat(supabase, 'reminders')
+    const gapMinutes = heartbeat.lastRunAt
+        ? Math.round((Date.now() - heartbeat.lastRunAt.getTime()) / 60000)
+        : null
+    const previousNow = gapMinutes === null ? null : new Date(now.getTime() - gapMinutes * 60000)
 
     // 2. Fetch Relevant Lessons (today through +2 days, to cover the 48h notice)
     const todayStr = format(now, 'yyyy-MM-dd')
@@ -42,6 +57,11 @@ export async function GET(request: Request) {
 
     if (error) {
         console.error('[Cron] Error fetching lessons:', error)
+        await sendCronAlert(supabase, {
+            subject: '⚠️ Lesson reminders failed: could not read lessons',
+            lines: [`Supabase error: ${error.message}`, 'No reminders were sent on this run.'],
+        })
+        await writeHeartbeat(supabase, 'reminders', true)
         return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -51,6 +71,8 @@ export async function GET(request: Request) {
     //   unconfirmed lessons -> 48h, 24h, 12h, 15m (each asks the student to confirm)
     //   confirmed lessons   -> 24h, 15m
     const sentCounts: Record<NoticeKey, number> = { '48h': 0, '24h': 0, '12h': 0, '15m': 0 }
+    const missedNotices: string[] = []
+    const sendFailures: string[] = []
 
     if (lessons) {
         for (const lesson of lessons) {
@@ -61,18 +83,31 @@ export async function GET(request: Request) {
             const diffMinutes = differenceInMinutes(lessonTime, now)
 
             const isConfirmed = Boolean(lesson.is_confirmed)
-            const notice = dueNotice(diffMinutes, isConfirmed, {
+            const sentFlags = {
                 '48h': Boolean(lesson.reminder_48h_sent),
                 '24h': Boolean(lesson.reminder_24h_sent),
                 '12h': Boolean(lesson.reminder_12h_sent),
                 '15m': Boolean(lesson.reminder_15m_sent),
-            })
-            if (!notice) continue
+            }
 
             const timeLabel = lessonTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
             const dayLabel = new Date(`${lesson.date}T00:00:00`).toLocaleDateString('en-US', {
                 weekday: 'long', month: 'long', day: 'numeric',
             })
+            const who = lesson.profiles?.name || lesson.student_id
+
+            // Any window that closed unserved during the gap since the last tick.
+            // Each window closes exactly once, so this reports a given lesson's
+            // missed notice a single time rather than on every subsequent run.
+            if (previousNow) {
+                for (const key of closedWindows(lessonTime, previousNow, now, isConfirmed, sentFlags)) {
+                    missedNotices.push(`${who} — ${dayLabel} at ${timeLabel} — ${key} notice never sent`)
+                }
+            }
+
+            const notice = dueNotice(diffMinutes, isConfirmed, sentFlags)
+            if (!notice) continue
+
             const confirmNudge = !isConfirmed
             const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
             const classroomLink = lesson.profiles.public_id ? `${classroomBase}/${lesson.profiles.public_id}` : null
@@ -86,7 +121,7 @@ export async function GET(request: Request) {
 
             const recipientEmail = resolveNotificationEmail(lesson.profiles)
             if (!recipientEmail) {
-                console.log(`[Cron] Skipping ${notice} notice: no email on file for ${lesson.profiles?.name || lesson.student_id}`)
+                console.log(`[Cron] Skipping ${notice} notice: no email on file for ${who}`)
                 continue
             }
 
@@ -111,14 +146,54 @@ export async function GET(request: Request) {
                 sentCounts[notice]++
             } else {
                 console.error(`[Cron] Failed to send ${notice} email:`, emailError)
+                sendFailures.push(`${who} — ${dayLabel} at ${timeLabel} — ${notice} notice rejected: ${emailError.message}`)
             }
         }
     }
 
-    console.log(`[Cron] Finished. Sent: 48h(${sentCounts['48h']}), 24h(${sentCounts['24h']}), 12h(${sentCounts['12h']}), 15m(${sentCounts['15m']})`)
+    // Raise anything that means a student did not get told about their lesson.
+    // Discrete events (a missed window, a rejected send) always alert; a merely
+    // late tick is rate-limited so sustained throttling doesn't flood the inbox.
+    const isLate = gapMinutes !== null && gapMinutes > LATE_THRESHOLD_MINUTES
+    const cooledDown = !heartbeat.lastAlertAt ||
+        (Date.now() - heartbeat.lastAlertAt.getTime()) / 60000 >= ALERT_COOLDOWN_MINUTES
+    const hasEvents = missedNotices.length > 0 || sendFailures.length > 0
+
+    let alerted = false
+    if (hasEvents || (isLate && cooledDown)) {
+        const lines: string[] = []
+        if (isLate) {
+            lines.push(
+                `The reminder cron last ran <strong>${gapMinutes} minutes ago</strong> ` +
+                `(scheduled every ${EXPECTED_INTERVAL_MINUTES}). Notice windows are only ` +
+                `25-60 minutes wide, so gaps this size drop reminders.`
+            )
+        }
+        if (missedNotices.length) {
+            lines.push(`<strong>${missedNotices.length} notice(s) missed their window:</strong>`)
+            lines.push(...missedNotices)
+        }
+        if (sendFailures.length) {
+            lines.push(`<strong>${sendFailures.length} email(s) rejected by Resend:</strong>`)
+            lines.push(...sendFailures)
+        }
+        const subject = sendFailures.length
+            ? `⚠️ ${sendFailures.length} lesson reminder(s) failed to send`
+            : missedNotices.length
+                ? `⚠️ ${missedNotices.length} lesson reminder(s) missed their window`
+                : `⚠️ Lesson reminder cron is running late (${gapMinutes}m gap)`
+        alerted = await sendCronAlert(supabase, { subject, lines })
+    }
+
+    await writeHeartbeat(supabase, 'reminders', alerted)
+
+    console.log(`[Cron] Finished. Sent: 48h(${sentCounts['48h']}), 24h(${sentCounts['24h']}), 12h(${sentCounts['12h']}), 15m(${sentCounts['15m']}); gap=${gapMinutes ?? 'n/a'}m, missed=${missedNotices.length}, failed=${sendFailures.length}`)
     return NextResponse.json({
         success: true,
         checked: now.toISOString(),
         stats: sentCounts,
+        gapMinutes,
+        missed: missedNotices.length,
+        failed: sendFailures.length,
     })
 }

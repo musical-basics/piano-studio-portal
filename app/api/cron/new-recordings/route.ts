@@ -5,6 +5,7 @@ import { Resend } from 'resend'
 import NewRecordingEmail from '@/components/emails/new-recording-email'
 import { formatRecordingName } from '@/lib/format-recording-name'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,8 +29,7 @@ function getDropboxClient() {
 }
 
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
-    if (searchParams.get('key') !== process.env.CRON_SECRET) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
