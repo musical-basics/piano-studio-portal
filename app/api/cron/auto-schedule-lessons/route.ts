@@ -28,7 +28,9 @@ const REMINDERS_STALE_AFTER_MINUTES = 120
 
 async function checkRemindersHeartbeat(client: DbClient): Promise<void> {
     try {
-        const { lastRunAt, lastAlertAt } = await readHeartbeat(client, 'reminders')
+        const { lastRunAt, lastAlertAt, available } = await readHeartbeat(client, 'reminders')
+        // Can't tell a dead cron from an unmigrated table, so stay quiet.
+        if (!available) return
         const staleMinutes = lastRunAt
             ? Math.round((Date.now() - lastRunAt.getTime()) / 60000)
             : null

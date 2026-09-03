@@ -27,7 +27,13 @@ const FALLBACK_TO = 'support@musicalbasics.com'
 /** Don't re-alert about an ongoing scheduler problem more than once per window. */
 export const ALERT_COOLDOWN_MINUTES = 360
 
-export type Heartbeat = { lastRunAt: Date | null; lastAlertAt: Date | null }
+/**
+ * `available` is false when the heartbeat table itself could not be read (most
+ * likely the migration hasn't been run against this environment). Callers must
+ * check it before treating a null `lastRunAt` as "the job never ran", otherwise
+ * a missing table looks identical to a dead cron and raises a false alarm.
+ */
+export type Heartbeat = { lastRunAt: Date | null; lastAlertAt: Date | null; available: boolean }
 
 export async function readHeartbeat(client: DbClient, job: string): Promise<Heartbeat> {
     try {
@@ -36,14 +42,20 @@ export async function readHeartbeat(client: DbClient, job: string): Promise<Hear
             .select('last_run_at, last_alert_at')
             .eq('job', job)
             .maybeSingle()
-        if (error || !data) return { lastRunAt: null, lastAlertAt: null }
+        if (error) {
+            console.error(`[CronHealth] heartbeat read failed for "${job}" (non-blocking):`, error.message)
+            return { lastRunAt: null, lastAlertAt: null, available: false }
+        }
+        if (!data) return { lastRunAt: null, lastAlertAt: null, available: true }
         return {
             lastRunAt: data.last_run_at ? new Date(data.last_run_at) : null,
             lastAlertAt: data.last_alert_at ? new Date(data.last_alert_at) : null,
+            available: true,
         }
-    } catch {
-        // Table not migrated yet: degrade to "no history" rather than failing the run.
-        return { lastRunAt: null, lastAlertAt: null }
+    } catch (e) {
+        // Table not migrated yet: degrade to "unknown" rather than failing the run.
+        console.error(`[CronHealth] heartbeat read threw for "${job}" (non-blocking):`, e)
+        return { lastRunAt: null, lastAlertAt: null, available: false }
     }
 }
 
