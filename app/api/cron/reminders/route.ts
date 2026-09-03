@@ -162,7 +162,10 @@ export async function GET(request: Request) {
                     variant,
                     dayLabel,
                     confirmNudge,
-                    whenPhrase: phrase,
+                    // The imminent notice's own copy tells them to check audio
+                    // and click through, which is worth more than restating the
+                    // time. Everything else gets the accurate phrasing.
+                    whenPhrase: diffMinutes <= 25 ? undefined : phrase,
                 }),
             })
 
