@@ -3,7 +3,7 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { autoScheduleStandingLessonsCore } from '@/lib/core/lessons'
 import { studioToday } from '@/lib/studio-timezone'
 import { isAuthorizedCron } from '@/lib/cron-auth'
-import { readHeartbeat, sendCronAlert, writeHeartbeat, ALERT_COOLDOWN_MINUTES } from '@/lib/cron-alerts'
+import { readHeartbeat, sendCronAlert, writeHeartbeat, sourceJob, ALERT_COOLDOWN_MINUTES } from '@/lib/cron-alerts'
 
 export const dynamic = 'force-dynamic'
 // Each booking creates a Google Calendar event + Zoom meeting + email; allow
@@ -50,9 +50,55 @@ async function checkRemindersHeartbeat(client: DbClient): Promise<void> {
                 'Lesson reminders are almost certainly not reaching students right now.',
             ],
         })
-        if (alerted) await writeHeartbeat(client, 'reminders-watchdog', true)
+        if (alerted) await writeHeartbeat(client, 'reminders-watchdog', { alerted: true })
     } catch (e) {
         console.error('[Cron/auto-schedule-lessons] heartbeat watchdog failed (non-blocking):', e)
+    }
+}
+
+// A silent trigger while the other still works is the exact fault that hid for
+// eight months: the job looks healthy because SOMETHING is invoking it. Vercel
+// is the reliable one and should never be quiet for long. GitHub Actions drops
+// scheduled runs by design, so it gets a much looser bound and is only worth
+// reporting when it has effectively stopped.
+const TRIGGER_STALE_AFTER_MINUTES: Record<string, number> = {
+    vercel: 120,
+    github: 1440,
+}
+
+async function checkTriggerHealth(client: DbClient): Promise<void> {
+    try {
+        const dead: string[] = []
+        for (const [source, limit] of Object.entries(TRIGGER_STALE_AFTER_MINUTES)) {
+            const { lastRunAt, available } = await readHeartbeat(client, sourceJob('reminders', source as 'vercel' | 'github'))
+            if (!available) return
+            // No row yet means that trigger has never once reached us.
+            if (!lastRunAt) {
+                dead.push(`<strong>${source}</strong> has never successfully triggered the reminder cron.`)
+                continue
+            }
+            const quietFor = Math.round((Date.now() - lastRunAt.getTime()) / 60000)
+            if (quietFor > limit) {
+                dead.push(`<strong>${source}</strong> last triggered the reminder cron ${quietFor} minutes ago (expected within ${limit}).`)
+            }
+        }
+        if (!dead.length) return
+
+        const { lastAlertAt } = await readHeartbeat(client, 'reminders-triggers')
+        const cooledDown = !lastAlertAt || (Date.now() - lastAlertAt.getTime()) / 60000 >= ALERT_COOLDOWN_MINUTES
+        if (!cooledDown) return
+
+        const alerted = await sendCronAlert(client, {
+            subject: '⚠️ A lesson reminder trigger has gone silent',
+            lines: [
+                ...dead,
+                'Reminders may still appear to work because the other trigger is covering, which is how the last outage stayed hidden for eight months.',
+                'Vercel Cron is configured in vercel.json; GitHub Actions in .github/workflows/cron.yml.',
+            ],
+        })
+        if (alerted) await writeHeartbeat(client, 'reminders-triggers', { alerted: true })
+    } catch (e) {
+        console.error('[Cron/auto-schedule-lessons] trigger health check failed (non-blocking):', e)
     }
 }
 
@@ -75,6 +121,7 @@ export async function GET(request: Request) {
     // Watchdog: a dead reminders cron cannot report itself, so this daily run
     // (a separate trigger) checks its heartbeat and raises the alarm.
     await checkRemindersHeartbeat(client)
+    await checkTriggerHealth(client)
 
     const today = studioToday()
     const fromDate = shiftDateStr(today, 1)

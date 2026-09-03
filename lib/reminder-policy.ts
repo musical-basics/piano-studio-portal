@@ -1,24 +1,37 @@
-// Which reminder notice (if any) is due for a lesson, given how far away it is
-// and whether the student has confirmed attendance.
+// Which reminder notice (if any) a lesson is owed, given how far away it is and
+// whether the student has confirmed attendance.
 //
 // Unconfirmed lessons: 48h, 24h, 12h and 15m notices, each asking the student
 // to confirm. Confirmed lessons: just the 24h and 15m reminders.
 //
-// Pure function so the cron's decision logic is testable outside Next.js.
+// SELF-HEALING. Notices used to fire only inside narrow windows (a 24h notice
+// was reachable only between 24h and 25h before the lesson). A cron tick that
+// missed the window lost that notice permanently, so a throttled scheduler in
+// Aug 2026 silently stopped reminding students for a week.
+//
+// A notice is now simply DUE from its trigger point until the lesson starts, so
+// a late tick still delivers it. When several are due at once (the scheduler was
+// down, or the lesson was booked at short notice) only the most urgent is sent
+// and the rest are marked superseded, so a student never gets a burst of four
+// emails and never gets told "see you tomorrow" about a lesson starting in an
+// hour. Callers pick the wording from the ACTUAL time remaining, not from the
+// notice key, since a late notice's key no longer describes reality.
+//
+// Pure functions so the cron's decision logic is testable outside Next.js.
 
 export type NoticeKey = '48h' | '24h' | '12h' | '15m'
 
 export type SentFlags = Record<NoticeKey, boolean>
 
-// Each window is one hour wide ([min, max) minutes before the lesson) except
-// the 15m notice, which is widened to [0, 25) to catch late cron ticks. The
-// every-10-minutes cron lands in each window several times; the sent flag
-// makes delivery exactly-once.
-const WINDOWS: Array<{ key: NoticeKey; min: number; max: number; whenConfirmed: boolean }> = [
-    { key: '15m', min: 0, max: 25, whenConfirmed: true },
-    { key: '12h', min: 720, max: 780, whenConfirmed: false },
-    { key: '24h', min: 1440, max: 1500, whenConfirmed: true },
-    { key: '48h', min: 2880, max: 2940, whenConfirmed: false },
+// Minutes before the lesson at which each notice becomes due. Ordered MOST
+// URGENT FIRST: `dueNotice` relies on that ordering to pick the winner.
+// The 15m notice triggers at 25 minutes so a 10-minute cron reliably has a
+// chance at it before the lesson starts.
+const NOTICES: Array<{ key: NoticeKey; dueAt: number; whenConfirmed: boolean }> = [
+    { key: '15m', dueAt: 25, whenConfirmed: true },
+    { key: '12h', dueAt: 720, whenConfirmed: false },
+    { key: '24h', dueAt: 1440, whenConfirmed: true },
+    { key: '48h', dueAt: 2880, whenConfirmed: false },
 ]
 
 export const NOTICE_FLAG_COLUMNS: Record<NoticeKey, string> = {
@@ -28,41 +41,55 @@ export const NOTICE_FLAG_COLUMNS: Record<NoticeKey, string> = {
     '15m': 'reminder_15m_sent',
 }
 
-export function dueNotice(diffMinutes: number, isConfirmed: boolean, sent: SentFlags): NoticeKey | null {
-    for (const w of WINDOWS) {
-        if (diffMinutes < w.min || diffMinutes >= w.max) continue
-        if (isConfirmed && !w.whenConfirmed) continue
-        if (sent[w.key]) continue
-        return w.key
+export const ALL_NOTICES: NoticeKey[] = ['48h', '24h', '12h', '15m']
+
+export type NoticeDecision = {
+    /** The notice to send now. */
+    notice: NoticeKey
+    /**
+     * Notices that came due but were overtaken by a more urgent one. Flag these
+     * sent alongside the delivered notice so they don't fire later out of order.
+     */
+    superseded: NoticeKey[]
+    /**
+     * Minutes past this notice's intended trigger point. Small values are normal
+     * (the cron only ticks every 10 minutes); large values mean the scheduler
+     * was down and the notice is being recovered rather than delivered on time.
+     */
+    lateByMinutes: number
+}
+
+export function dueNotice(
+    diffMinutes: number,
+    isConfirmed: boolean,
+    sent: SentFlags,
+): NoticeDecision | null {
+    // The lesson has started. Nothing left to warn anyone about.
+    if (diffMinutes <= 0) return null
+
+    const due = NOTICES.filter(n =>
+        (n.whenConfirmed || !isConfirmed) &&
+        !sent[n.key] &&
+        diffMinutes <= n.dueAt
+    )
+    if (due.length === 0) return null
+
+    // NOTICES is ordered most urgent first, and filter preserves order.
+    const [chosen, ...overtaken] = due
+    return {
+        notice: chosen.key,
+        superseded: overtaken.map(n => n.key),
+        lateByMinutes: Math.max(0, Math.round(chosen.dueAt - diffMinutes)),
     }
-    return null
 }
 
 /**
- * Notices whose window closed unserved between two cron ticks.
+ * True when a lesson has begun without the student ever having been told.
  *
- * A window is only reachable while a tick lands inside it, and a lesson's flag
- * is never retried once the window passes. So when ticks get dropped, notices
- * are lost silently. Given the previous tick time and the current one (both on
- * the studio wall-clock axis, same as `lessonTime`), this reports the windows
- * that ended during that gap with their flag still false.
- *
- * Each window ends exactly once, so a given miss is reported on one run only.
+ * With self-healing notices this is the only remaining way a reminder can be
+ * genuinely lost: the scheduler was down for the lesson's entire lead time. It
+ * is the condition worth waking someone up for.
  */
-export function closedWindows(
-    lessonTime: Date,
-    previousNow: Date,
-    now: Date,
-    isConfirmed: boolean,
-    sent: SentFlags,
-): NoticeKey[] {
-    const missed: NoticeKey[] = []
-    for (const w of WINDOWS) {
-        if (isConfirmed && !w.whenConfirmed) continue
-        if (sent[w.key]) continue
-        // The window is open until `w.min` minutes before the lesson.
-        const closesAt = new Date(lessonTime.getTime() - w.min * 60000)
-        if (closesAt > previousNow && closesAt <= now) missed.push(w.key)
-    }
-    return missed
+export function neverNotified(sent: SentFlags): boolean {
+    return ALL_NOTICES.every(key => !sent[key])
 }

@@ -14,6 +14,16 @@ interface LessonReminderEmailProps {
     dayLabel?: string
     /** Student has not confirmed attendance: show the confirm warning + button. */
     confirmNudge?: boolean
+    /**
+     * When the lesson actually is, e.g. "today at 4:45 PM". Overrides the
+     * variant's built-in phrasing.
+     *
+     * Notices are self-healing (lib/reminder-policy.ts): one can be recovered
+     * long after its nominal trigger point, so the variant name no longer
+     * describes the time remaining. Without this a notice delivered four hours
+     * before a lesson would still read "see you tomorrow".
+     */
+    whenPhrase?: string
 }
 
 export default function LessonReminderEmail({
@@ -25,6 +35,7 @@ export default function LessonReminderEmail({
     exactDuration,
     dayLabel,
     confirmNudge = false,
+    whenPhrase,
 }: LessonReminderEmailProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
@@ -68,7 +79,11 @@ export default function LessonReminderEmail({
         }
     }
 
-    const text = variant === 'exact' ? content['exact'] : content[variant]
+    const base = variant === 'exact' ? content['exact'] : content[variant]
+    // Always describe the real time remaining when the caller knows it.
+    const text = whenPhrase
+        ? { ...base, body: `Your piano lesson is ${whenPhrase}.` }
+        : base
 
     return (
         <Html>

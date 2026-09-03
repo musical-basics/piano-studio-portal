@@ -1,10 +1,11 @@
 /**
  * Out-of-band lesson reminder send.
  *
- * The scheduled cron only fires inside narrow windows (see lib/reminder-policy.ts),
- * so when ticks get dropped a lesson can slip past its window and never get a
- * notice. This sends "your lesson starts in X" to every remaining lesson on a
- * given day, right now, regardless of window.
+ * Notices are self-healing now (lib/reminder-policy.ts), so the cron recovers a
+ * late reminder on its own. This stays for the cases it can't reach: a lesson
+ * that already began unannounced, or when you simply want everyone on a given
+ * day re-told right now. It sends "your lesson starts in X" immediately,
+ * ignoring what the schedule thinks is due.
  *
  *   npx tsx scripts/send_reminders_now.ts                 # dry run, studio today
  *   npx tsx scripts/send_reminders_now.ts --date=2026-09-03 --send

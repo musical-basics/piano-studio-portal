@@ -1,20 +1,24 @@
 /**
  * Cron health: heartbeats and failure alerts to the studio inbox.
  *
- * Reminders are window-based (lib/reminder-policy.ts): a notice only goes out
- * if a cron tick lands inside its 25-60 minute window, and a missed window is
- * never retried. That made a scheduler outage completely silent. In Aug 2026
- * GitHub Actions throttled the every-10-minutes workflow down to ~6 runs/day
- * and nobody noticed for a week.
+ * In Aug 2026 lesson reminders stopped reaching students for a week and nothing
+ * said so. Two causes, and this module exists to make both loud:
  *
- * So every reminder run records a heartbeat, and anything that would cause a
- * student not to get their notice raises an email:
+ *   - Vercel Cron had been 401ing since Dec 2025 because the route only read
+ *     `?key=`. Two triggers were configured, so the setup LOOKED redundant, but
+ *     one had never worked and nothing checked.
+ *   - GitHub Actions then throttled the surviving trigger to ~6 runs/day.
+ *
+ * So every reminder run records a heartbeat, both overall and PER TRIGGER, and
+ * anything that would cause a student not to get their notice raises an email:
  *
  *   1. late      - the gap since the previous tick is far longer than scheduled
- *   2. missed    - a notice window elapsed with its sent flag still false
+ *   2. unnotified- a lesson began having never been announced at all
  *   3. failed    - Resend rejected an individual reminder
  *   4. stalled   - the daily auto-schedule cron sees a stale reminders heartbeat
  *                  (catches a total outage, which a dead cron cannot self-report)
+ *   5. trigger   - one of the two triggers has gone quiet while the other still
+ *                  works, which is exactly the fault that hid for eight months
  *
  * All of it is best-effort and non-blocking: if the heartbeat table or the mail
  * send fails, the reminder run itself still completes normally.
@@ -33,6 +37,25 @@ export const ALERT_COOLDOWN_MINUTES = 360
  * check it before treating a null `lastRunAt` as "the job never ran", otherwise
  * a missing table looks identical to a dead cron and raises a false alarm.
  */
+/**
+ * Which scheduler invoked us. Vercel Cron sends a Bearer header, the GitHub
+ * Actions workflow sends `?key=`. Recorded separately so a single dead trigger
+ * is visible even while the other keeps the job nominally healthy.
+ */
+export type CronSource = 'vercel' | 'github' | 'manual'
+
+export function cronSource(request: Request): CronSource {
+    const secret = process.env.CRON_SECRET
+    if (secret && new URL(request.url).searchParams.get('key') === secret) return 'github'
+    if (secret && request.headers.get('authorization') === `Bearer ${secret}`) return 'vercel'
+    return 'manual'
+}
+
+/** Heartbeat row name for one job's individual trigger. */
+export function sourceJob(job: string, source: CronSource): string {
+    return `${job}:${source}`
+}
+
 export type Heartbeat = { lastRunAt: Date | null; lastAlertAt: Date | null; available: boolean }
 
 export async function readHeartbeat(client: DbClient, job: string): Promise<Heartbeat> {
@@ -59,11 +82,19 @@ export async function readHeartbeat(client: DbClient, job: string): Promise<Hear
     }
 }
 
-export async function writeHeartbeat(client: DbClient, job: string, alerted = false): Promise<void> {
+export async function writeHeartbeat(
+    client: DbClient,
+    job: string,
+    { alerted = false, source }: { alerted?: boolean; source?: CronSource } = {},
+): Promise<void> {
     try {
-        const row: Record<string, string> = { job, last_run_at: new Date().toISOString() }
-        if (alerted) row.last_alert_at = new Date().toISOString()
-        const { error } = await client.from('cron_heartbeats').upsert(row, { onConflict: 'job' })
+        const now = new Date().toISOString()
+        const rows: Record<string, string>[] = [{ job, last_run_at: now }]
+        if (alerted) rows[0].last_alert_at = now
+        // A per-trigger row as well, so "Vercel has been silent for a day" is
+        // answerable even though GitHub keeps the combined heartbeat fresh.
+        if (source && source !== 'manual') rows.push({ job: sourceJob(job, source), last_run_at: now })
+        const { error } = await client.from('cron_heartbeats').upsert(rows, { onConflict: 'job' })
         // Most likely cause is the migration not having been run against prod yet.
         // Gap/miss detection stays off until then; send-failure alerts still work.
         if (error) console.error(`[CronHealth] heartbeat write failed for "${job}" (non-blocking):`, error.message)
@@ -126,5 +157,33 @@ export async function sendCronAlert(
     } catch (e) {
         console.error('[CronHealth] alert send threw (non-blocking):', e)
         return false
+    }
+}
+
+/**
+ * Pings an external dead-man's-switch service (healthchecks.io or similar).
+ *
+ * Every other alarm in this file lives INSIDE the system it watches: the
+ * watchdog is itself a Vercel cron, and the alert email goes through Resend. If
+ * Vercel stops running crons altogether, or the Resend key is revoked, all of it
+ * goes quiet, and quiet is indistinguishable from healthy. An outside service
+ * that expects a ping every 10 minutes and complains when one doesn't arrive is
+ * the only monitor that survives the app being the broken thing.
+ *
+ * Set HEALTHCHECK_PING_URL to the check's ping URL. Unset (e.g. locally) is a
+ * no-op. Never throws and never blocks the run: a monitoring outage must not
+ * become a reminders outage.
+ */
+export async function pingDeadManSwitch(ok: boolean): Promise<void> {
+    const url = process.env.HEALTHCHECK_PING_URL
+    if (!url) return
+    try {
+        const target = ok ? url : `${url.replace(/\/$/, '')}/fail`
+        await fetch(target, {
+            method: 'POST',
+            signal: AbortSignal.timeout(5000),
+        })
+    } catch (e) {
+        console.error('[CronHealth] dead-man ping failed (non-blocking):', e)
     }
 }
