@@ -13,3 +13,8 @@ scripts/test-connection.ts
 piano-studio-scheduler-*.json
 repomix-output.xml
 studio-repomix-output.xml
+
+# Downloaded lesson/recital recordings (large media, never commit)
+*.mp4
+*.m4a
+*.mov
