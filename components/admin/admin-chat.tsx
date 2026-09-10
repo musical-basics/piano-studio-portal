@@ -122,21 +122,55 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     }
   }, [hasMore, isLoadingOlder, loadOlder])
 
-  // 1. Load students on mount
-  useEffect(() => {
-    async function loadStudents() {
-      setIsLoadingStudents(true)
-      try {
-        const { students: studentData } = await getStudentsWithMessages()
-        setStudents(studentData || [])
-      } catch (error) {
-        console.error("Failed to load students", error)
-      } finally {
-        setIsLoadingStudents(false)
-      }
+  // Read inside the sidebar refresh so the polling loop doesn't restart on every selection.
+  const selectedStudentIdRef = useRef<string | null>(null)
+  selectedStudentIdRef.current = selectedStudent?.id ?? null
+
+  /**
+   * Re-fetch every thread's latest message and unread count. Without this the
+   * sidebar is a snapshot from page load: replies from students, and messages
+   * sent from another device or the agent API, never show up in the previews.
+   */
+  const refreshStudents = useCallback(async () => {
+    try {
+      const { students: studentData } = await getStudentsWithMessages()
+      if (!studentData) return
+      setStudents(prev => {
+        const prevById = new Map(prev.map(s => [s.id, s]))
+        return studentData.map((fresh: StudentWithMessages) => {
+          const local = prevById.get(fresh.id)
+          // Keep an optimistic send that landed after this fetch started.
+          const localIsNewer = local?.lastMessage && (!fresh.lastMessage ||
+            new Date(local.lastMessage.created_at) > new Date(fresh.lastMessage.created_at))
+          return {
+            ...fresh,
+            lastMessage: localIsNewer ? local!.lastMessage : fresh.lastMessage,
+            // The open thread is marked read by its own poll; don't flash a badge in between.
+            unreadCount: fresh.id === selectedStudentIdRef.current ? 0 : fresh.unreadCount,
+          }
+        })
+      })
+    } catch (error) {
+      console.error("Failed to refresh students", error)
     }
-    loadStudents()
   }, [])
+
+  // 1. Load students on mount, then keep the sidebar fresh.
+  useEffect(() => {
+    refreshStudents().finally(() => setIsLoadingStudents(false))
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refreshStudents()
+    }, 15000)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshStudents()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [refreshStudents])
 
   // Handle initialStudentId logic
   useEffect(() => {
@@ -168,6 +202,25 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     const interval = setInterval(() => { poll() }, 5000)
     return () => clearInterval(interval)
   }, [selectedStudent, poll])
+
+  // Mirror the open thread's newest message into its sidebar preview, so sends,
+  // polled replies, edits and deletes show up there without waiting for a refresh.
+  useEffect(() => {
+    const newest = messages[messages.length - 1]
+    const studentId = selectedStudent?.id
+    // Right after switching, `messages` can still hold the previous thread.
+    if (!newest || !studentId || (newest.sender_id !== studentId && newest.recipient_id !== studentId)) return
+    setStudents(prev => {
+      let changed = false
+      const next = prev.map(s => {
+        if (s.id !== studentId || s.lastMessage === newest) return s
+        if (s.lastMessage && new Date(s.lastMessage.created_at) > new Date(newest.created_at)) return s
+        changed = true
+        return { ...s, lastMessage: newest }
+      })
+      return changed ? next : prev
+    })
+  }, [messages, selectedStudent])
 
   const handleSendMessage = async () => {
     if ((!newMessage.trim() && pendingAttachments.length === 0) || !selectedStudent) return
@@ -222,11 +275,6 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
       if (result.success && result.message) {
         appendLocal(result.message)
-        setStudents(prev => prev.map(s =>
-          s.id === selectedStudent.id
-            ? { ...s, lastMessage: result.message! }
-            : s
-        ))
         // Scroll to newly sent message
         scrollToBottom()
       } else {
@@ -244,29 +292,9 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     }
   }
 
-  const handleDeleteMessage = async (messageId: string): Promise<string | null> => {
-    const err = await remove(messageId)
-    if (err) return err
-    // Keep the sidebar preview honest if the deleted message was the thread's latest.
-    setStudents(prev => prev.map(s =>
-      s.lastMessage?.id === messageId
-        ? { ...s, lastMessage: { ...s.lastMessage, content: "", attachments: null, deleted_at: new Date().toISOString() } as Message }
-        : s
-    ))
-    return null
-  }
-
-  const handleEditMessage = async (messageId: string, content: string): Promise<string | null> => {
-    const err = await edit(messageId, content)
-    if (err) return err
-    // Keep the sidebar preview honest if the edited message was the thread's latest.
-    setStudents(prev => prev.map(s =>
-      s.lastMessage?.id === messageId
-        ? { ...s, lastMessage: { ...s.lastMessage, content: content.trim() } as Message }
-        : s
-    ))
-    return null
-  }
+  // The sidebar preview follows these through the newest-message sync effect.
+  const handleDeleteMessage = (messageId: string) => remove(messageId)
+  const handleEditMessage = (messageId: string, content: string) => edit(messageId, content)
 
   /** Shared by the file picker and drag-and-drop so both behave identically. */
   const addFiles = useCallback((files: File[]) => {
@@ -343,11 +371,19 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   const totalUnread = students.reduce((acc, s) => acc + s.unreadCount, 0)
   const isFromAdmin = (message: Message) => selectedStudent ? message.sender_id !== selectedStudent.id : false
 
+  // Calendar days between the message and today (0 = today, 1 = yesterday).
+  // Elapsed 24h would label last night's 8pm message as "today".
+  const calendarDaysAgo = (date: Date) => {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    return Math.round((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
   // Format Date Logic
   const formatSidebarDate = (timestamp: string) => {
     const date = new Date(timestamp)
-    const now = new Date()
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+    const diffDays = calendarDaysAgo(date)
 
     if (diffDays === 0) {
       // Today: Show Time only
@@ -365,8 +401,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp)
-    const now = new Date()
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+    const diffDays = calendarDaysAgo(date)
 
     // Time options
     const timeOpts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" }
