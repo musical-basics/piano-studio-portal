@@ -22,6 +22,10 @@
  *
  * All of it is best-effort and non-blocking: if the heartbeat table or the mail
  * send fails, the reminder run itself still completes normally.
+ *
+ * `withRetry` is here for the opposite reason: to keep a blip from becoming an
+ * alert at all. Supabase's REST gateway returns the occasional 504, and a read
+ * that fails once is not a reminders outage.
  */
 import type { DbClient } from '@/lib/supabase/admin'
 
@@ -30,6 +34,48 @@ const FALLBACK_TO = 'support@musicalbasics.com'
 
 /** Don't re-alert about an ongoing scheduler problem more than once per window. */
 export const ALERT_COOLDOWN_MINUTES = 360
+
+/** Shape of a Supabase query result, narrowed to what the retry needs. */
+type QueryResult<T> = { data: T | null; error: { message: string } | null }
+
+/**
+ * Runs a Supabase query, retrying a failed attempt a couple of times.
+ *
+ * Supabase's REST gateway intermittently answers 504 Gateway Timeout under no
+ * particular load. supabase-js surfaces that as an `error` rather than throwing,
+ * so a caller that checks `if (error)` treats one unlucky millisecond exactly
+ * like a dead database. For the reminder cron that meant abandoning the tick,
+ * emailing the studio and returning 500 (which in turn fails the GitHub Actions
+ * trigger and mails the repo owner too) over something the very next attempt
+ * would have answered in 120ms.
+ *
+ * Retries are short and few: the caller is a cron with its own 10-minute
+ * cadence, and notices self-heal, so the fallback for "still failing" is simply
+ * the next tick rather than anything a longer backoff would buy.
+ */
+export async function withRetry<T>(
+    label: string,
+    run: () => PromiseLike<QueryResult<T>>,
+    { attempts = 3, baseDelayMs = 400 }: { attempts?: number; baseDelayMs?: number } = {},
+): Promise<QueryResult<T> & { attemptsUsed: number }> {
+    let last: QueryResult<T> = { data: null, error: { message: 'never ran' } }
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            last = await run()
+        } catch (e) {
+            // supabase-js normally returns errors, but a fetch-level fault can
+            // still throw. Same handling either way.
+            last = { data: null, error: { message: e instanceof Error ? e.message : String(e) } }
+        }
+        if (!last.error) return { ...last, attemptsUsed: attempt }
+        if (attempt < attempts) {
+            console.warn(`[CronHealth] ${label} failed (attempt ${attempt}/${attempts}), retrying: ${last.error.message}`)
+            await new Promise(resolve => setTimeout(resolve, baseDelayMs * attempt))
+        }
+    }
+    console.error(`[CronHealth] ${label} failed after ${attempts} attempts: ${last.error?.message}`)
+    return { ...last, attemptsUsed: attempts }
+}
 
 /**
  * `available` is false when the heartbeat table itself could not be read (most

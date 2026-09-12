@@ -8,7 +8,7 @@ import { resolveNotificationEmail } from '@/lib/notification-email'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import {
     readHeartbeat, writeHeartbeat, sendCronAlert, pingDeadManSwitch,
-    cronSource, ALERT_COOLDOWN_MINUTES,
+    cronSource, withRetry, ALERT_COOLDOWN_MINUTES,
 } from '@/lib/cron-alerts'
 
 const supabase = createClient(
@@ -58,27 +58,46 @@ export async function GET(request: Request) {
         : null
     const previousNow = gapMinutes === null ? null : new Date(now.getTime() - gapMinutes * 60000)
 
+    // Every alert this run might raise is rate-limited by the same window, so
+    // an ongoing fault emails the studio once per cooldown rather than on all
+    // 144 of the day's ticks.
+    const cooledDown = !heartbeat.lastAlertAt ||
+        (Date.now() - heartbeat.lastAlertAt.getTime()) / 60000 >= ALERT_COOLDOWN_MINUTES
+
     // 2. Fetch Relevant Lessons (today through +2 days, to cover the 48h notice)
     const todayStr = format(now, 'yyyy-MM-dd')
     const horizonStr = format(addDays(now, 2), 'yyyy-MM-dd')
 
-    const { data: lessons, error } = await supabase
-        .from('lessons')
-        // Whole profile row so the student's notification-email override is available.
-        .select('*, profiles(*)')
-        .gte('date', todayStr)
-        .lte('date', horizonStr)
-        .neq('status', 'cancelled') // Don't remind cancelled lessons
+    // Retried: a single 504 from Supabase's REST gateway is not an outage, and
+    // without this it cost the whole tick plus an alert email.
+    const { data: lessons, error, attemptsUsed } = await withRetry('lessons read', () =>
+        supabase
+            .from('lessons')
+            // Whole profile row so the student's notification-email override is available.
+            .select('*, profiles(*)')
+            .gte('date', todayStr)
+            .lte('date', horizonStr)
+            .neq('status', 'cancelled') // Don't remind cancelled lessons
+    )
 
     if (error) {
-        console.error('[Cron] Error fetching lessons:', error)
-        await sendCronAlert(supabase, {
+        console.error(`[Cron] Error fetching lessons after ${attemptsUsed} attempts:`, error)
+        const alerted = cooledDown && await sendCronAlert(supabase, {
             subject: '⚠️ Lesson reminders failed: could not read lessons',
-            lines: [`Supabase error: ${error.message}`, 'No reminders were sent on this run.'],
+            lines: [
+                `Supabase error (${attemptsUsed} attempts): ${error.message}`,
+                'No reminders were sent on this run.',
+                'Notices self-heal, so the next tick (within 10 minutes) recovers anything due. ' +
+                'Only worry if this repeats.',
+            ],
         })
-        await writeHeartbeat(supabase, 'reminders', { alerted: true, source })
+        await writeHeartbeat(supabase, 'reminders', { alerted, source })
         await pingDeadManSwitch(false)
         return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (attemptsUsed > 1) {
+        console.log(`[Cron] Lessons read succeeded on attempt ${attemptsUsed} after a transient failure.`)
     }
 
     console.log(`[Cron] Found ${lessons?.length || 0} active lessons for ${todayStr} .. ${horizonStr}`)
@@ -191,8 +210,6 @@ export async function GET(request: Request) {
     // Discrete events (a lesson that began unannounced, a rejected send) always
     // alert; a merely late tick is rate-limited so throttling can't flood.
     const isLate = gapMinutes !== null && gapMinutes > LATE_THRESHOLD_MINUTES
-    const cooledDown = !heartbeat.lastAlertAt ||
-        (Date.now() - heartbeat.lastAlertAt.getTime()) / 60000 >= ALERT_COOLDOWN_MINUTES
     const hasEvents = unnotified.length > 0 || sendFailures.length > 0
 
     let alerted = false
