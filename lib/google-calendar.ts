@@ -8,6 +8,29 @@ const auth = new google.auth.JWT({
 
 const calendar = google.calendar({ version: 'v3', auth })
 
+// Google needs both ends as studio wall-clock strings to pair with timeZone
+// America/Los_Angeles. Going through a Date and toISOString() would hand it the
+// UTC instant instead, which then gets re-read as Pacific and stretches the
+// event by the whole UTC offset -- so add the minutes to the wall clock directly.
+export function addMinutesToWallClock(date: string, time: string, minutes: number) {
+    const [h, m] = time.split(':').map(Number)
+    const total = h * 60 + m + minutes
+    const dayOffset = Math.floor(total / 1440)
+    const mins = ((total % 1440) + 1440) % 1440
+
+    let endDate = date
+    if (dayOffset !== 0) {
+        // Midnight rollover: shift the calendar date without touching the clock.
+        const d = new Date(`${date}T12:00:00Z`)
+        d.setUTCDate(d.getUTCDate() + dayOffset)
+        endDate = d.toISOString().slice(0, 10)
+    }
+
+    const hh = String(Math.floor(mins / 60)).padStart(2, '0')
+    const mm = String(mins % 60).padStart(2, '0')
+    return `${endDate}T${hh}:${mm}:00`
+}
+
 export async function createGoogleCalendarEvent(
     studentName: string,
     date: string, // YYYY-MM-DD
@@ -15,10 +38,9 @@ export async function createGoogleCalendarEvent(
     durationMinutes: number
 ) {
     try {
-        // 2. Format Dates for Google (ISO format)
+        // 2. Format Dates for Google (naive studio wall-clock, paired with timeZone below)
         const startDateTime = `${date}T${time}:00`
-        const startDate = new Date(startDateTime)
-        const endDate = new Date(startDate.getTime() + durationMinutes * 60000)
+        const endDateTime = addMinutesToWallClock(date, time, durationMinutes)
 
         const event = {
             summary: `${studentName} - Piano Lesson`,
@@ -28,7 +50,7 @@ export async function createGoogleCalendarEvent(
                 timeZone: 'America/Los_Angeles', // ⚠️ Check this matches your studio's timezone
             },
             end: {
-                dateTime: endDate.toISOString().replace('.000Z', ''),
+                dateTime: endDateTime,
                 timeZone: 'America/Los_Angeles',
             },
             colorId: '11', // 11 = Red (Tomato)
