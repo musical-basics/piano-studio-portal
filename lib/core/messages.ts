@@ -2,7 +2,9 @@ import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { MessageNotification } from '@/components/emails/message-notification'
 import type { DbClient } from '@/lib/supabase/admin'
-import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
+import type { Message, MessageAttachment, MessageReplyContext } from '@/lib/supabase/database.types'
+import { isReactionEmoji, REACTION_EMOJIS } from '@/lib/chat-reactions'
+import type { ReactionMap, ReactionSummary } from '@/lib/chat-reactions'
 import { resolveSalutation } from '@/lib/core/students'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 
@@ -16,6 +18,8 @@ export type SendMessageArgs = {
     recipientId: string
     content: string
     attachments?: MessageAttachment[] | null
+    /** Id of the message being replied to, when this send quotes an earlier one. */
+    replyToId?: string | null
 }
 
 export type SendMessageResult = { success?: true; message?: Message; error?: string }
@@ -26,9 +30,29 @@ export async function sendMessageCore({
     recipientId,
     content,
     attachments,
+    replyToId,
 }: SendMessageArgs): Promise<SendMessageResult> {
     if (attachments && attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
         return { error: `Maximum ${MAX_ATTACHMENTS_PER_MESSAGE} attachments allowed per message` }
+    }
+
+    // Only a message from this same conversation may be quoted, so a reply can't
+    // be used to pull a snippet of an unrelated thread into view.
+    let parentId: string | null = null
+    if (replyToId) {
+        const { data: parent } = await client
+            .from('messages')
+            .select('id, sender_id, recipient_id')
+            .eq('id', replyToId)
+            .single()
+
+        const between =
+            (parent?.sender_id === senderId && parent?.recipient_id === recipientId) ||
+            (parent?.sender_id === recipientId && parent?.recipient_id === senderId)
+        if (!parent || !between) {
+            return { error: 'You can only reply to a message in this conversation' }
+        }
+        parentId = parent.id
     }
 
     const { data, error } = await client
@@ -39,6 +63,7 @@ export async function sendMessageCore({
             content,
             is_read: false,
             attachments: attachments && attachments.length > 0 ? attachments : null,
+            ...(parentId ? { reply_to_id: parentId } : {}),
         })
         .select()
         .single()
@@ -145,7 +170,8 @@ export async function sendMessageCore({
         // Safe to ignore outside of Next.js server context (e.g. standalone test scripts)
     }
 
-    return { success: true, message: data as Message }
+    const [hydrated] = await attachReplyContext(client, [data as Message])
+    return { success: true, message: hydrated }
 }
 
 /**
@@ -162,6 +188,177 @@ function redactDeleted(message: Message): Message {
 
 function redactDeletedAll(messages: Message[]): Message[] {
     return messages.map(redactDeleted)
+}
+
+/** Longest quoted excerpt shown above a reply before it is cut off. */
+const REPLY_EXCERPT_LENGTH = 140
+
+/**
+ * Resolve the parent of every reply in a page of messages.
+ *
+ * The excerpt is looked up rather than copied at send time, which costs one
+ * extra query per page but keeps a quote honest: editing the original rewrites
+ * every quote of it, and deleting it turns the quote into "Message deleted"
+ * instead of preserving text the sender took back.
+ *
+ * Degrades to "no quotes" if the lookup fails (including before the reply_to_id
+ * migration has been applied) rather than failing the whole read.
+ */
+async function attachReplyContext(client: DbClient, messages: Message[]): Promise<Message[]> {
+    const parentIds = Array.from(
+        new Set(messages.map((m) => m.reply_to_id).filter((id): id is string => Boolean(id))),
+    )
+    if (parentIds.length === 0) return messages
+
+    const { data, error } = await client
+        .from('messages')
+        .select('id, sender_id, content, attachments, deleted_at')
+        .in('id', parentIds)
+
+    if (error) {
+        console.error('attachReplyContext error:', error)
+        return messages
+    }
+
+    const byId = new Map<string, MessageReplyContext>()
+    for (const row of (data || []) as any[]) {
+        const deleted = Boolean(row.deleted_at)
+        const content: string = deleted ? '' : row.content || ''
+        byId.set(row.id, {
+            id: row.id,
+            sender_id: row.sender_id,
+            excerpt:
+                content.length > REPLY_EXCERPT_LENGTH
+                    ? content.slice(0, REPLY_EXCERPT_LENGTH) + '…'
+                    : content,
+            deleted,
+            has_attachments: !deleted && Array.isArray(row.attachments) && row.attachments.length > 0,
+        })
+    }
+
+    return messages.map((m) =>
+        m.reply_to_id ? { ...m, reply_to: byId.get(m.reply_to_id) ?? null } : m,
+    )
+}
+
+/**
+ * Reactions for a set of messages, summarized per emoji from `selfId`'s view.
+ *
+ * Returned as a map keyed by message id rather than folded into the message
+ * rows: the chat poll swaps reaction state in on its own cadence, and keeping it
+ * out of the row means a reaction never looks like an edit to the message body.
+ *
+ * Degrades to "no reactions" on error (including before this feature's migration
+ * has been applied) so a chat still loads.
+ */
+export async function getReactionsForMessagesCore(
+    client: DbClient,
+    messageIds: string[],
+    selfId: string,
+): Promise<ReactionMap> {
+    if (messageIds.length === 0) return {}
+
+    const { data, error } = await client
+        .from('message_reactions')
+        .select('message_id, user_id, emoji')
+        .in('message_id', messageIds)
+
+    if (error) {
+        console.error('getReactionsForMessagesCore error:', error)
+        return {}
+    }
+
+    const order = REACTION_EMOJIS as readonly string[]
+    const map: ReactionMap = {}
+
+    for (const row of (data || []) as any[]) {
+        const list = (map[row.message_id] ||= [])
+        const existing = list.find((r) => r.emoji === row.emoji)
+        if (existing) {
+            existing.count += 1
+            existing.mine = existing.mine || row.user_id === selfId
+        } else {
+            list.push({ emoji: row.emoji, count: 1, mine: row.user_id === selfId })
+        }
+    }
+
+    for (const list of Object.values(map)) {
+        list.sort((a, b) => order.indexOf(a.emoji) - order.indexOf(b.emoji))
+    }
+
+    return map
+}
+
+export type ToggleReactionResult = { success: true; reactions: ReactionSummary[] } | { error: string }
+
+/**
+ * Add or remove one of your reactions on a message.
+ *
+ * Either participant may react to either side of the conversation — unlike edit
+ * and delete, which are the sender's alone. Participation is checked here rather
+ * than via RLS because the write runs on the service-role client (so an admin
+ * previewing a student's view reacts as that student).
+ *
+ * The emoji must be one the UI offers; the database deliberately doesn't
+ * constrain the set, so this is the gate.
+ */
+export async function toggleReactionCore({
+    client,
+    actorId,
+    messageId,
+    emoji,
+}: {
+    client: DbClient
+    actorId: string
+    messageId: string
+    emoji: string
+}): Promise<ToggleReactionResult> {
+    if (!isReactionEmoji(emoji)) {
+        return { error: 'Unsupported reaction' }
+    }
+
+    const { data: message, error: fetchError } = await client
+        .from('messages')
+        .select('id, sender_id, recipient_id, deleted_at')
+        .eq('id', messageId)
+        .single()
+
+    if (fetchError || !message) {
+        return { error: 'Message not found' }
+    }
+    if (message.sender_id !== actorId && message.recipient_id !== actorId) {
+        return { error: 'You can only react to messages in your own conversations' }
+    }
+    if (message.deleted_at) {
+        return { error: 'This message was deleted' }
+    }
+
+    const { data: existing } = await client
+        .from('message_reactions')
+        .select('id')
+        .eq('message_id', messageId)
+        .eq('user_id', actorId)
+        .eq('emoji', emoji)
+        .maybeSingle()
+
+    if (existing) {
+        const { error } = await client.from('message_reactions').delete().eq('id', existing.id)
+        if (error) {
+            console.error('toggleReactionCore delete error:', error)
+            return { error: error.message }
+        }
+    } else {
+        const { error } = await client
+            .from('message_reactions')
+            .insert({ message_id: messageId, user_id: actorId, emoji })
+        if (error) {
+            console.error('toggleReactionCore insert error:', error)
+            return { error: error.message }
+        }
+    }
+
+    const map = await getReactionsForMessagesCore(client, [messageId], actorId)
+    return { success: true, reactions: map[messageId] || [] }
 }
 
 export type DeleteMessageResult = { success: true; message: Message } | { error: string }
@@ -338,7 +535,7 @@ export async function getEditedMessagesCore(
         console.error('getEditedMessagesCore error:', error)
         return []
     }
-    return redactDeletedAll((data || []) as Message[])
+    return attachReplyContext(client, redactDeletedAll((data || []) as Message[]))
 }
 
 /**
@@ -396,7 +593,7 @@ export async function getConversationCore(
     userA: string,
     userB: string,
     opts: GetConversationOptions = {},
-): Promise<{ messages: Message[]; hasMore: boolean; error?: string }> {
+): Promise<{ messages: Message[]; hasMore: boolean; reactions: ReactionMap; error?: string }> {
     const between = `and(sender_id.eq.${userA},recipient_id.eq.${userB}),and(sender_id.eq.${userB},recipient_id.eq.${userA})`
 
     // Legacy path: no pagination requested -> fetch everything ascending.
@@ -409,9 +606,9 @@ export async function getConversationCore(
 
         if (error) {
             console.error('getConversationCore error:', error)
-            return { messages: [], hasMore: false, error: error.message }
+            return { messages: [], hasMore: false, reactions: {}, error: error.message }
         }
-        return { messages: redactDeletedAll((data || []) as Message[]), hasMore: false }
+        return { ...(await hydrate(client, redactDeletedAll((data || []) as Message[]), userA)), hasMore: false }
     }
 
     // Paginated path: grab the newest page (descending), fetching one extra row
@@ -430,7 +627,7 @@ export async function getConversationCore(
 
     if (error) {
         console.error('getConversationCore error:', error)
-        return { messages: [], hasMore: false, error: error.message }
+        return { messages: [], hasMore: false, reactions: {}, error: error.message }
     }
 
     const rows = (data || []) as Message[]
@@ -438,7 +635,23 @@ export async function getConversationCore(
     const page = hasMore ? rows.slice(0, opts.limit) : rows
     // Reverse the descending page back to ascending (oldest -> newest) for the UI.
     page.reverse()
-    return { messages: redactDeletedAll(page), hasMore }
+    return { ...(await hydrate(client, redactDeletedAll(page), userA)), hasMore }
+}
+
+/**
+ * Round out a page of raw rows with the two things a bubble needs beyond its own
+ * columns: the message it quotes, and the reactions sitting under it.
+ */
+async function hydrate(
+    client: DbClient,
+    rows: Message[],
+    selfId: string,
+): Promise<{ messages: Message[]; reactions: ReactionMap }> {
+    const [messages, reactions] = await Promise.all([
+        attachReplyContext(client, rows),
+        getReactionsForMessagesCore(client, rows.map((m) => m.id), selfId),
+    ])
+    return { messages, reactions }
 }
 
 /**
@@ -463,7 +676,7 @@ export async function getNewMessagesSinceCore(
         console.error('getNewMessagesSinceCore error:', error)
         return { messages: [], error: error.message }
     }
-    return { messages: redactDeletedAll((data || []) as Message[]) }
+    return { messages: await attachReplyContext(client, redactDeletedAll((data || []) as Message[])) }
 }
 
 export async function markMessagesReadCore(

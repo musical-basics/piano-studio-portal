@@ -3,7 +3,8 @@
 import type React from "react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import type { Message } from "@/lib/supabase/database.types"
-import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage, editMessage } from "@/app/messages/actions"
+import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage, editMessage, toggleMessageReaction } from "@/app/messages/actions"
+import { applyToggle, type ReactionMap, type ReactionSummary } from "@/lib/chat-reactions"
 
 /**
  * Reverse-infinite-scroll chat state.
@@ -26,6 +27,8 @@ import { getConversationPage, getNewMessages, markMessagesAsRead, deleteMessage,
 
 export interface UsePaginatedConversationResult {
     messages: Message[]
+    /** Emoji reactions for the loaded messages, keyed by message id. */
+    reactions: ReactionMap
     isLoadingInitial: boolean
     isLoadingOlder: boolean
     hasMore: boolean
@@ -51,8 +54,52 @@ export interface UsePaginatedConversationResult {
      * error string on failure, or null on success.
      */
     edit: (messageId: string, content: string) => Promise<string | null>
+    /**
+     * Add or remove one of your reactions on a message, applying it
+     * optimistically and rolling back if the server rejects it. Resolves to an
+     * error string on failure, or null on success.
+     */
+    toggleReaction: (messageId: string, emoji: string) => Promise<string | null>
     /** Reset all state (e.g. when switching conversations). */
     reset: () => void
+}
+
+/** How many of the newest loaded messages the poll re-checks reactions for. */
+const REACTION_POLL_WINDOW = 80
+
+function sameReactions(a: ReactionSummary[] | undefined, b: ReactionSummary[]): boolean {
+    if (!a || a.length !== b.length) return false
+    return a.every((r, i) => r.emoji === b[i].emoji && r.count === b[i].count && r.mine === b[i].mine)
+}
+
+/**
+ * Fold a poll's reaction answer into local state.
+ *
+ * The answer covers exactly the ids the client asked about, so an id that comes
+ * back with nothing has had its last reaction removed — that has to clear the
+ * chips rather than leave the stale ones up. Returns the previous object
+ * unchanged when nothing moved, so a quiet tick costs no re-render.
+ */
+function applyReactionUpdate(prev: ReactionMap, incoming: ReactionMap, coveredIds: string[]): ReactionMap {
+    const next = { ...prev }
+    let changed = false
+
+    for (const id of coveredIds) {
+        const list = incoming[id]
+        if (!list || list.length === 0) {
+            if (prev[id]?.length) {
+                delete next[id]
+                changed = true
+            }
+            continue
+        }
+        if (!sameReactions(prev[id], list)) {
+            next[id] = list
+            changed = true
+        }
+    }
+
+    return changed ? next : prev
 }
 
 /** Local stand-in for the redaction the server applies to a deleted message. */
@@ -99,6 +146,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
     onReadRef.current = onRead
 
     const [messages, setMessages] = useState<Message[]>([])
+    const [reactions, setReactions] = useState<ReactionMap>({})
     const [isLoadingInitial, setIsLoadingInitial] = useState(false)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
     const [hasMore, setHasMore] = useState(false)
@@ -108,6 +156,9 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
     // (important for the setInterval polling loop).
     const messagesRef = useRef<Message[]>([])
     messagesRef.current = messages
+
+    const reactionsRef = useRef<ReactionMap>({})
+    reactionsRef.current = reactions
 
     const hasMoreRef = useRef(false)
     hasMoreRef.current = hasMore
@@ -186,6 +237,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
 
     const reset = useCallback(() => {
         setMessages([])
+        setReactions({})
         setHasMore(false)
         setIsLoadingOlder(false)
         loadingRef.current = false
@@ -202,10 +254,11 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         // flash, and so an interleaved poll can't append against the old cursor.
         messagesRef.current = []
         setMessages([])
+        setReactions({})
         setHasMore(false)
         initialPositionedRef.current = false
         try {
-            const { messages: page, hasMore: more } = await getConversationPage(partnerId, { asUserId })
+            const { messages: page, hasMore: more, reactions: pageReactions } = await getConversationPage(partnerId, { asUserId })
             // These state updates must land in ONE commit: callers hide the list
             // behind a spinner while isLoadingInitial is true, so if the loading
             // flag cleared in a later render than the messages, the bottom-pin
@@ -213,6 +266,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
             // would then appear scrolled to the top.
             pendingInitialScroll.current = true
             setMessages(page || [])
+            setReactions(pageReactions || {})
             setHasMore(more)
             setIsLoadingInitial(false)
             loadingRef.current = false
@@ -245,10 +299,13 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         if (el) pendingScrollAdjust.current = el.scrollHeight
 
         try {
-            const { messages: older, hasMore: more } = await getConversationPage(partnerId, {
+            const { messages: older, hasMore: more, reactions: olderReactions } = await getConversationPage(partnerId, {
                 before: oldest.created_at,
                 asUserId,
             })
+            if (olderReactions && Object.keys(olderReactions).length > 0) {
+                setReactions((prev) => ({ ...olderReactions, ...prev }))
+            }
             if (older && older.length > 0) {
                 setMessages((prev) => {
                     const seen = new Set(prev.map((m) => m.id))
@@ -280,15 +337,26 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
             const current = messagesRef.current
             const newest = current[current.length - 1]
             if (!newest) {
-                const { messages: page, hasMore: more } = await getConversationPage(partnerId, { asUserId })
+                const { messages: page, hasMore: more, reactions: pageReactions } = await getConversationPage(partnerId, { asUserId })
                 if (page && page.length > 0) {
                     pendingInitialScroll.current = true
                     setMessages(page)
+                    setReactions(pageReactions || {})
                     setHasMore(more)
                     added = true
                 }
             } else {
-                const { messages: fresh, deletedIds, edited } = await getNewMessages(partnerId, newest.created_at, asUserId)
+                // Reaction reconciliation asks about the messages on screen. Capped
+                // so a long scroll-back doesn't grow the 5s poll's query without
+                // bound; older bubbles keep the chips they were loaded with until
+                // the thread is reopened.
+                const loadedIds = current.slice(-REACTION_POLL_WINDOW).map((m) => m.id)
+                const { messages: fresh, deletedIds, edited, reactions: polled } = await getNewMessages(
+                    partnerId,
+                    newest.created_at,
+                    asUserId,
+                    loadedIds,
+                )
                 if (fresh && fresh.length > 0) {
                     setMessages((prev) => {
                         const merged = mergeAppend(prev, fresh)
@@ -326,6 +394,13 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
                         })
                         return changed ? next : prev
                     })
+                }
+                // Reactions, like edits, can land on a message anywhere in the
+                // loaded history, so the answer covers every id we asked about
+                // (not just the new arrivals) and replaces only what moved.
+                if (polled) {
+                    const covered = [...loadedIds, ...(fresh || []).map((m) => m.id)]
+                    setReactions((prev) => applyReactionUpdate(prev, polled, covered))
                 }
             }
             if (added && markRead) {
@@ -396,8 +471,31 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         }
     }, [asUserId])
 
+    const toggleReaction = useCallback(async (messageId: string, emoji: string): Promise<string | null> => {
+        const before = reactionsRef.current[messageId] || []
+
+        // Optimistic: the chip reacts to the tap immediately; a rejection puts
+        // the previous set back rather than leaving a phantom reaction up.
+        setReactions((prev) => ({ ...prev, [messageId]: applyToggle(before, emoji) }))
+
+        try {
+            const result = await toggleMessageReaction(messageId, emoji, asUserId)
+            if (result.error) {
+                setReactions((prev) => ({ ...prev, [messageId]: before }))
+                return result.error
+            }
+            setReactions((prev) => ({ ...prev, [messageId]: result.reactions || [] }))
+            return null
+        } catch (err) {
+            console.error("usePaginatedConversation: toggleReaction failed", err)
+            setReactions((prev) => ({ ...prev, [messageId]: before }))
+            return err instanceof Error ? err.message : "Failed to react"
+        }
+    }, [asUserId])
+
     return {
         messages,
+        reactions,
         isLoadingInitial,
         isLoadingOlder,
         hasMore,
@@ -408,6 +506,7 @@ export function usePaginatedConversation(options: Options): UsePaginatedConversa
         appendLocal,
         remove,
         edit,
+        toggleReaction,
         reset,
     }
 }

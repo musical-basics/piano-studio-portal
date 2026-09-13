@@ -11,10 +11,13 @@ import {
     deleteMessageCore,
     editMessageCore,
     getEditedMessagesCore,
+    getReactionsForMessagesCore,
+    toggleReactionCore,
     markMessagesReadCore,
     listStudentsWithMessagesCore,
     CONVERSATION_PAGE_SIZE,
 } from '@/lib/core/messages'
+import type { ReactionMap, ReactionSummary } from '@/lib/chat-reactions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getImpersonationTarget } from '@/app/actions/impersonate'
 
@@ -54,7 +57,13 @@ export type MessageWithProfile = Message & {
     }
 }
 
-export async function sendMessage(recipientId: string, content: string, attachments?: MessageAttachment[], asUserId?: string) {
+export async function sendMessage(
+    recipientId: string,
+    content: string,
+    attachments?: MessageAttachment[],
+    asUserId?: string,
+    replyToId?: string | null,
+) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Unauthorized' }
@@ -67,7 +76,32 @@ export async function sendMessage(recipientId: string, content: string, attachme
         recipientId,
         content,
         attachments,
+        replyToId,
     })
+}
+
+/**
+ * Add or remove one of your reactions on a message in your own conversation.
+ *
+ * Either participant may react to either side, so this is not limited to the
+ * sender the way editing and deleting are. Returns the message's full reaction
+ * set afterwards, which the client uses to settle its optimistic update.
+ */
+export async function toggleMessageReaction(
+    messageId: string,
+    emoji: string,
+    asUserId?: string,
+): Promise<{ success?: true; reactions?: ReactionSummary[]; error?: string }> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const selfId = await resolveSelfId(user.id, asUserId)
+
+    // Service-role client, like the delete and edit paths: participation is
+    // verified in the core against the resolved self id, and this keeps the
+    // admin's student-preview reacting as the student rather than as themselves.
+    return toggleReactionCore({ client: createAdminClient(), actorId: selfId, messageId, emoji })
 }
 
 /**
@@ -81,10 +115,10 @@ export async function sendMessage(recipientId: string, content: string, attachme
 export async function getConversationPage(
     partnerId: string,
     opts: { before?: string; limit?: number; asUserId?: string } = {},
-): Promise<{ messages: Message[]; hasMore: boolean; error?: string }> {
+): Promise<{ messages: Message[]; hasMore: boolean; reactions: ReactionMap; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { messages: [], hasMore: false, error: 'Unauthorized' }
+    if (!user) return { messages: [], hasMore: false, reactions: {}, error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, opts.asUserId)
 
@@ -106,10 +140,11 @@ export async function getNewMessages(
     partnerId: string,
     after: string,
     asUserId?: string,
-): Promise<{ messages: Message[]; deletedIds: string[]; edited: Message[]; error?: string }> {
+    loadedIds: string[] = [],
+): Promise<{ messages: Message[]; deletedIds: string[]; edited: Message[]; reactions: ReactionMap; error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { messages: [], deletedIds: [], edited: [], error: 'Unauthorized' }
+    if (!user) return { messages: [], deletedIds: [], edited: [], reactions: {}, error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, asUserId)
 
@@ -119,7 +154,14 @@ export async function getNewMessages(
         getEditedMessagesCore(supabase as any, selfId, partnerId),
     ])
 
-    return { messages: fresh.messages, deletedIds, edited, error: fresh.error }
+    // Reactions ride along on the poll rather than in a request of their own.
+    // The client sends the ids it currently has on screen (bounded by what has
+    // been scrolled into view), plus whatever just arrived, and RLS still limits
+    // the answer to messages in the caller's own threads.
+    const reactionIds = Array.from(new Set([...loadedIds, ...fresh.messages.map(m => m.id)]))
+    const reactions = await getReactionsForMessagesCore(supabase as any, reactionIds, selfId)
+
+    return { messages: fresh.messages, deletedIds, edited, reactions, error: fresh.error }
 }
 
 /**
@@ -173,10 +215,10 @@ export async function editMessage(
     return editMessageCore({ client: createAdminClient(), actorId: selfId, messageId, content })
 }
 
-export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], hasMore: boolean, error?: string }> {
+export async function getConversation(partnerId: string, asUserId?: string): Promise<{ messages: Message[], hasMore: boolean, reactions: ReactionMap, error?: string }> {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { messages: [], hasMore: false, error: 'Unauthorized' }
+    if (!user) return { messages: [], hasMore: false, reactions: {}, error: 'Unauthorized' }
 
     const selfId = await resolveSelfId(user.id, asUserId)
 

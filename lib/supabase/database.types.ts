@@ -160,6 +160,7 @@ export interface Database {
                     deleted_at: string | null
                     deleted_by: string | null
                     edited_at: string | null
+                    reply_to_id: string | null
                 }
                 Insert: {
                     id?: string
@@ -172,6 +173,7 @@ export interface Database {
                     deleted_at?: string | null
                     deleted_by?: string | null
                     edited_at?: string | null
+                    reply_to_id?: string | null
                 }
                 Update: {
                     id?: string
@@ -184,6 +186,30 @@ export interface Database {
                     deleted_at?: string | null
                     deleted_by?: string | null
                     edited_at?: string | null
+                    reply_to_id?: string | null
+                }
+            }
+            message_reactions: {
+                Row: {
+                    id: string
+                    message_id: string
+                    user_id: string
+                    emoji: string
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    message_id: string
+                    user_id: string
+                    emoji: string
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    message_id?: string
+                    user_id?: string
+                    emoji?: string
+                    created_at?: string
                 }
             }
             pricing_tiers: {
@@ -256,7 +282,26 @@ export type Profile = Database['public']['Tables']['profiles']['Row'] & {
     timezone?: string | null
 }
 export type Lesson = Database['public']['Tables']['lessons']['Row']
-export type Message = Database['public']['Tables']['messages']['Row']
+/**
+ * The parent of a reply, resolved on read rather than denormalized at send
+ * time, so an edit to the original updates every quote of it and a deleted
+ * original can't leak its text back through a quote.
+ */
+export type MessageReplyContext = {
+    id: string
+    sender_id: string
+    /** Trimmed body of the quoted message. Empty when it was deleted. */
+    excerpt: string
+    deleted: boolean
+    has_attachments: boolean
+}
+
+export type MessageReaction = Database['public']['Tables']['message_reactions']['Row']
+
+export type Message = Database['public']['Tables']['messages']['Row'] & {
+    /** Present only on replies whose parent still resolves. */
+    reply_to?: MessageReplyContext | null
+}
 export type PricingTier = Database['public']['Tables']['pricing_tiers']['Row']
 
 // Extended types for UI components (matching mock-data structure)

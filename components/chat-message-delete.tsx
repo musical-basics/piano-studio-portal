@@ -24,9 +24,18 @@ import {
  * Stand-in bubble for a message whose sender deleted it. Rendered for both
  * participants; the server never sends the original content once deleted.
  */
-export function DeletedMessageBubble({ isOwn, timestamp }: { isOwn: boolean; timestamp: string }) {
+export function DeletedMessageBubble({
+  isOwn,
+  timestamp,
+  messageId,
+}: {
+  isOwn: boolean
+  timestamp: string
+  /** Tagged so a reply quoting this message can still scroll to its tombstone. */
+  messageId?: string
+}) {
   return (
-    <div className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+    <div data-message-id={messageId} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-dashed bg-muted/40 text-muted-foreground">
         <p className="text-sm italic flex items-center gap-1.5">
           <Ban className="h-3.5 w-3.5 shrink-0" />

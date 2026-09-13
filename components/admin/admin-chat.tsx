@@ -8,9 +8,12 @@ import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder, Uploa
 import { sendMessage, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
-import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
-import { EditMessageButton, MessageEditor, EditedMarker } from "@/components/chat-message-edit"
+import { DeletedMessageBubble } from "@/components/chat-message-delete"
+import { MessageEditor, EditedMarker } from "@/components/chat-message-edit"
 import { MessageContent } from "@/components/chat-message-content"
+import { MessageActions } from "@/components/chat-message-actions"
+import { ReactionChips } from "@/components/chat-message-reactions"
+import { QuotedReply, ReplyingToBanner, jumpToMessage } from "@/components/chat-message-reply"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 import { useChatFileDrop, screenChatFiles } from "@/hooks/use-chat-file-drop"
 import { LibraryFileSelector } from "@/components/admin/library-file-selector"
@@ -101,6 +104,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
   const {
     messages,
+    reactions,
     isLoadingInitial: isLoadingMessages,
     isLoadingOlder,
     hasMore,
@@ -111,9 +115,17 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
     appendLocal,
     remove,
     edit,
+    toggleReaction,
   } = usePaginatedConversation({
     partnerId: selectedStudent?.id ?? null,
   })
+
+  /** The message the composer is currently answering, if any. */
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+
+  /** Whose words a quoted line belongs to, from the admin's side of the thread. */
+  const quoteAuthor = (senderId: string) =>
+    senderId === selectedStudent?.id ? (selectedStudent?.name || "Student") : "You"
 
   // Load older messages when scrolled near the top.
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -190,6 +202,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   useEffect(() => {
     if (!selectedStudent) return
     const studentId = selectedStudent.id
+    setReplyTo(null)
     loadInitial()
     setStudents(prev => prev.map(s =>
       s.id === studentId ? { ...s, unreadCount: 0 } : s
@@ -227,8 +240,10 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
     const tempMessage = newMessage
     const tempAttachments = [...pendingAttachments]
+    const tempReplyTo = replyTo
     setNewMessage("")
     setPendingAttachments([])
+    setReplyTo(null)
     setIsSending(true)
 
     try {
@@ -261,6 +276,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
             setIsSending(false)
             setNewMessage(tempMessage)
             setPendingAttachments(tempAttachments)
+            setReplyTo(tempReplyTo)
             return
           }
         }
@@ -270,7 +286,9 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
       const result = await sendMessage(
         selectedStudent.id,
         tempMessage.trim() || (uploadedAttachments.length > 0 ? '📎 Attachment' : ''),
-        uploadedAttachments.length > 0 ? uploadedAttachments : undefined
+        uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+        undefined,
+        tempReplyTo?.id ?? null
       )
 
       if (result.success && result.message) {
@@ -280,12 +298,14 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
       } else {
         setNewMessage(tempMessage)
         setPendingAttachments(tempAttachments)
+        setReplyTo(tempReplyTo)
         alert("Failed to send")
       }
     } catch (error) {
       console.error('Error sending message:', error)
       setNewMessage(tempMessage)
       setPendingAttachments(tempAttachments)
+      setReplyTo(tempReplyTo)
       alert("Failed to send message: " + (error instanceof Error ? error.message : "Unknown error"))
     } finally {
       setIsSending(false)
@@ -566,26 +586,42 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   {messages.map((msg) => msg.deleted_at ? (
                     <DeletedMessageBubble
                       key={msg.id}
+                      messageId={msg.id}
                       isOwn={isFromAdmin(msg)}
                       timestamp={formatTimestamp(msg.created_at)}
                     />
                   ) : (
-                    <div key={msg.id} className={`group flex items-center gap-1 ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}>
-                      {/* Delete sits outside the bubble, on the inner edge, so it
-                          never overlaps message text or attachments. */}
+                    <div
+                      key={msg.id}
+                      data-message-id={msg.id}
+                      className={`group flex items-end gap-1 ${isFromAdmin(msg) ? "justify-end" : "justify-start"}`}
+                    >
+                      {/* The action cluster sits outside the bubble, on its inner
+                          edge, so it never overlaps message text or attachments. */}
                       {isFromAdmin(msg) && editingId !== msg.id && (
-                        <>
-                          <EditMessageButton onClick={() => setEditingId(msg.id)} />
-                          <DeleteMessageButton
-                            preview={msg.content}
-                            onConfirm={() => handleDeleteMessage(msg.id)}
-                          />
-                        </>
+                        <MessageActions
+                          onReact={(emoji) => toggleReaction(msg.id, emoji)}
+                          onReply={() => setReplyTo(msg)}
+                          onEdit={() => setEditingId(msg.id)}
+                          onDelete={() => handleDeleteMessage(msg.id)}
+                          deletePreview={msg.content}
+                        />
                       )}
-                      <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
+                      <div className={`flex flex-col min-w-0 max-w-[80%] ${isFromAdmin(msg) ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-full px-4 py-2.5 rounded-2xl shadow-sm ${isFromAdmin(msg)
                         ? "bg-primary text-primary-foreground rounded-br-none"
                         : "bg-white border text-foreground rounded-bl-none"
                         }`}>
+                        {/* What this message is answering, resolved server-side. */}
+                        {msg.reply_to && (
+                          <QuotedReply
+                            reply={msg.reply_to}
+                            authorLabel={quoteAuthor(msg.reply_to.sender_id)}
+                            onDark={isFromAdmin(msg)}
+                            onJump={() => jumpToMessage(scrollContainerRef.current, msg.reply_to!.id)}
+                          />
+                        )}
+
                         {/* The Message Text */}
                         {editingId === msg.id ? (
                           <MessageEditor
@@ -637,6 +673,20 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                           {msg.edited_at && <EditedMarker />}
                         </p>
                       </div>
+
+                      <ReactionChips
+                        reactions={reactions[msg.id]}
+                        onToggle={(emoji) => toggleReaction(msg.id, emoji)}
+                        align={isFromAdmin(msg) ? "end" : "start"}
+                      />
+                      </div>
+
+                      {!isFromAdmin(msg) && (
+                        <MessageActions
+                          onReact={(emoji) => toggleReaction(msg.id, emoji)}
+                          onReply={() => setReplyTo(msg)}
+                        />
+                      )}
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
@@ -647,6 +697,14 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
             {/* Input Area - Pinned to bottom */}
             <div className="border-t bg-background shrink-0">
+              {replyTo && (
+                <ReplyingToBanner
+                  message={replyTo}
+                  authorLabel={quoteAuthor(replyTo.sender_id)}
+                  onCancel={() => setReplyTo(null)}
+                />
+              )}
+
               {/* Pending Attachments Preview */}
               {pendingAttachments.length > 0 && (
                 <ChatPendingAttachments

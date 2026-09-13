@@ -11,9 +11,12 @@ import { Send, Music, Loader2, Paperclip, Upload } from "lucide-react"
 import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
-import { DeleteMessageButton, DeletedMessageBubble } from "@/components/chat-message-delete"
-import { EditMessageButton, MessageEditor, EditedMarker } from "@/components/chat-message-edit"
+import { DeletedMessageBubble } from "@/components/chat-message-delete"
+import { MessageEditor, EditedMarker } from "@/components/chat-message-edit"
 import { MessageContent } from "@/components/chat-message-content"
+import { MessageActions } from "@/components/chat-message-actions"
+import { ReactionChips } from "@/components/chat-message-reactions"
+import { QuotedReply, ReplyingToBanner, jumpToMessage } from "@/components/chat-message-reply"
 import { usePaginatedConversation } from "@/hooks/use-paginated-conversation"
 import { useChatFileDrop, screenChatFiles } from "@/hooks/use-chat-file-drop"
 
@@ -44,6 +47,7 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
 
   const {
     messages,
+    reactions,
     isLoadingInitial,
     isLoadingOlder,
     hasMore,
@@ -54,11 +58,19 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
     appendLocal,
     remove,
     edit,
+    toggleReaction,
   } = usePaginatedConversation({
     partnerId: adminId,
     asUserId: studentId,
     onRead,
   })
+
+  /** The message the composer is currently answering, if any. */
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+
+  /** Whose words a quoted line belongs to, from the student's side of the thread. */
+  const quoteAuthor = (senderId: string) =>
+    senderId === studentId ? "You" : (currentTeacherName || "Your Instructor")
 
   const [isResolvingAdmin, setIsResolvingAdmin] = useState(true)
   const isLoading = isResolvingAdmin || isLoadingInitial
@@ -125,8 +137,10 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
 
     const tempMessage = newMessage
     const tempAttachments = [...pendingAttachments]
+    const tempReplyTo = replyTo
     setNewMessage("")
     setPendingAttachments([])
+    setReplyTo(null)
     setIsSending(true)
 
     try {
@@ -148,7 +162,8 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
         adminId,
         tempMessage.trim() || (uploadedAttachments.length > 0 ? '📎 Attachment' : ''),
         uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
-        studentId
+        studentId,
+        tempReplyTo?.id ?? null
       )
 
       if (result.success && result.message) {
@@ -159,11 +174,13 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
         alert(`Failed to send message: ${result.error}`)
         setNewMessage(tempMessage)
         setPendingAttachments(tempAttachments)
+        setReplyTo(tempReplyTo)
       }
     } catch (error) {
       console.error('Error sending message:', error)
       setNewMessage(tempMessage)
       setPendingAttachments(tempAttachments)
+      setReplyTo(tempReplyTo)
     } finally {
       setIsSending(false)
     }
@@ -289,28 +306,43 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
             {messages.map((message) => message.deleted_at ? (
               <DeletedMessageBubble
                 key={message.id}
+                messageId={message.id}
                 isOwn={isFromStudent(message)}
                 timestamp={formatTimestamp(message.created_at)}
               />
             ) : (
-            <div key={message.id} className={`group flex items-center gap-1 ${isFromStudent(message) ? "justify-end" : "justify-start"}`}>
-              {/* Edit and delete sit outside the bubble, on the inner edge, so they
-                  never overlap message text or attachments. */}
+            <div
+              key={message.id}
+              data-message-id={message.id}
+              className={`group flex items-end gap-1 ${isFromStudent(message) ? "justify-end" : "justify-start"}`}
+            >
+              {/* The action cluster sits outside the bubble, on its inner edge, so
+                  it never overlaps message text or attachments. */}
               {isFromStudent(message) && editingId !== message.id && (
-                <>
-                  <EditMessageButton onClick={() => setEditingId(message.id)} />
-                  <DeleteMessageButton
-                    preview={message.content}
-                    onConfirm={() => remove(message.id)}
-                  />
-                </>
+                <MessageActions
+                  onReact={(emoji) => toggleReaction(message.id, emoji)}
+                  onReply={() => setReplyTo(message)}
+                  onEdit={() => setEditingId(message.id)}
+                  onDelete={() => remove(message.id)}
+                  deletePreview={message.content}
+                />
               )}
+              <div className={`flex flex-col min-w-0 max-w-[80%] ${isFromStudent(message) ? "items-end" : "items-start"}`}>
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isFromStudent(message)
+                className={`max-w-full rounded-2xl px-4 py-2.5 ${isFromStudent(message)
                   ? "bg-primary text-primary-foreground rounded-br-md"
                   : "bg-muted rounded-bl-md"
                   }`}
               >
+                {message.reply_to && (
+                  <QuotedReply
+                    reply={message.reply_to}
+                    authorLabel={quoteAuthor(message.reply_to.sender_id)}
+                    onDark={isFromStudent(message)}
+                    onJump={() => jumpToMessage(scrollContainerRef.current, message.reply_to!.id)}
+                  />
+                )}
+
                 {editingId === message.id ? (
                   <MessageEditor
                     initialValue={message.content}
@@ -339,6 +371,20 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
                   </>
                 )}
               </div>
+
+              <ReactionChips
+                reactions={reactions[message.id]}
+                onToggle={(emoji) => toggleReaction(message.id, emoji)}
+                align={isFromStudent(message) ? "end" : "start"}
+              />
+              </div>
+
+              {!isFromStudent(message) && (
+                <MessageActions
+                  onReact={(emoji) => toggleReaction(message.id, emoji)}
+                  onReply={() => setReplyTo(message)}
+                />
+              )}
             </div>
             ))}
           </>
@@ -347,6 +393,14 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
       </CardContent>
 
       <div className="border-t">
+        {replyTo && (
+          <ReplyingToBanner
+            message={replyTo}
+            authorLabel={quoteAuthor(replyTo.sender_id)}
+            onCancel={() => setReplyTo(null)}
+          />
+        )}
+
         {/* Pending Attachments Preview */}
         {pendingAttachments.length > 0 && (
           <ChatPendingAttachments
