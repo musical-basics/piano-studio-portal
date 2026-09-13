@@ -32,6 +32,7 @@ import {
     ClipboardList,
     RefreshCw,
     Play,
+    Repeat,
 } from "lucide-react"
 import {
     mockEvents,
@@ -40,7 +41,8 @@ import { MakeupScheduler } from "./makeup-scheduler"
 import { CancellationModal } from "./cancellation-modal"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
-import { createBalancePaymentSession } from "@/app/actions/stripe"
+import { createBalancePaymentSession, getSubscriptionSummary } from "@/app/actions/stripe"
+import type { SubscriptionSummary } from "@/app/actions/stripe"
 import { MessagesPanel } from "./messages-panel"
 import { HomeworkTab } from "./homework-tab"
 import { getMyUnreadCount } from "@/app/messages/actions"
@@ -129,6 +131,24 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     // hardcoded to 1, so the portal claimed a new message forever.
     const [activeTab, setActiveTab] = useState("lessons")
     const [unreadMessages, setUnreadMessages] = useState(unreadCount)
+
+    // Subscription state drives the renewal banner. `undefined` means "not looked
+    // up yet" and is deliberately distinct from a resolved `active: false`: until
+    // Stripe answers we show no banner at all, so a student on autopay never sees
+    // a "Renew Package" prompt flash before it corrects itself.
+    const [subscription, setSubscription] = useState<SubscriptionSummary | undefined>(undefined)
+
+    useEffect(() => {
+        let cancelled = false
+        getSubscriptionSummary()
+            .then(summary => { if (!cancelled) setSubscription(summary) })
+            .catch(err => {
+                console.error("StudentDashboard: subscription lookup failed", err)
+                // Fall back to the credits-only prompt rather than hiding it forever.
+                if (!cancelled) setSubscription({ active: false, endingAt: null, nextPaymentAt: null, creditsPerCycle: null, amountCents: null })
+            })
+        return () => { cancelled = true }
+    }, [])
 
     // Adopt a fresher count whenever the server re-renders this page.
     useEffect(() => {
@@ -361,7 +381,29 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         window.open(resource.file_url, '_blank')
     }
 
-    const needsRenewal = profile.credits <= 1
+    // Credits alone do not mean the student needs to buy anything. On an installment
+    // plan they routinely sit at zero (or below) for a few days before the next
+    // charge lands, and createCheckoutSession refuses to sell a second subscription
+    // to someone who already has one running, so prompting a purchase there is a
+    // dead end. Only prompt once we know there is no subscription covering them.
+    const lowCredits = profile.credits <= 1
+    const needsRenewal = lowCredits && subscription?.active === false
+    // Autopay is live but the balance is low: reassure instead of alarming.
+    const autopayCovering = lowCredits && subscription?.active === true && Boolean(subscription.nextPaymentAt)
+    // Plan is capped and taking no further payments. Self-serve checkout is still
+    // blocked by the duplicate guard, so point them at the teacher, not a button
+    // that will only throw an error.
+    const planEnding = lowCredits && subscription?.active === true && Boolean(subscription.endingAt)
+
+    const formatBillingDate = (iso: string) =>
+        new Date(iso).toLocaleDateString(undefined, { month: "long", day: "numeric" })
+
+    // Credits go negative when a lesson is logged before the next payment lands.
+    // "You have -1 credits remaining" reads as a system error to a parent, so
+    // state what actually happened instead.
+    const creditsSentence = profile.credits < 0
+        ? `You are ${Math.abs(profile.credits)} lesson${Math.abs(profile.credits) === 1 ? "" : "s"} ahead of your credit balance.`
+        : `You have ${profile.credits} credit${profile.credits === 1 ? "" : "s"} remaining.`
 
     // Format time for display (HH:MM:SS -> h:mm AM/PM)
     const formatTime = (timeStr: string) => {
@@ -502,7 +544,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     </Card>
                 )}
 
-                {/* Renewal Banner */}
+                {/* Renewal Banner - only when nothing is already covering them */}
                 {needsRenewal && (
                     <Card className="border-warning bg-warning/5">
                         <CardContent className="flex items-center justify-between p-6">
@@ -511,13 +553,49 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 <div>
                                     <h3 className="font-semibold text-warning-foreground">Low Credits</h3>
                                     <p className="text-sm text-muted-foreground">
-                                        You have {profile.credits} credit{profile.credits === 1 ? "" : "s"} remaining.
-                                        Renew now to continue lessons.
+                                        {creditsSentence} Renew now to continue lessons.
                                     </p>
                                 </div>
                             </div>
                             <Button onClick={handleRenewPackage} className="bg-warning text-warning-foreground hover:bg-warning/90">
                                 Renew Package
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Autopay is live: say so, so nobody tries to buy a duplicate */}
+                {autopayCovering && (
+                    <Card className="border-green-600/40 bg-green-50/50">
+                        <CardContent className="flex items-center gap-3 p-6">
+                            <Repeat className="h-6 w-6 text-green-700 shrink-0" />
+                            <div>
+                                <h3 className="font-semibold text-green-900">Autopay is on, nothing to do</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    {creditsSentence} Your next payment on {formatBillingDate(subscription!.nextPaymentAt!)}
+                                    {subscription!.creditsPerCycle ? ` adds ${subscription!.creditsPerCycle} more credits` : " renews your plan"} automatically.
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Plan has taken its last payment: self-serve checkout is blocked, so route to the teacher */}
+                {planEnding && (
+                    <Card className="border-warning bg-warning/5">
+                        <CardContent className="flex items-center justify-between gap-3 p-6">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="h-6 w-6 text-warning shrink-0" />
+                                <div>
+                                    <h3 className="font-semibold text-warning-foreground">Your plan is finishing up</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {creditsSentence} Your plan ends on {formatBillingDate(subscription!.endingAt!)}.
+                                        Message your teacher to set up the next one.
+                                    </p>
+                                </div>
+                            </div>
+                            <Button variant="outline" onClick={() => setActiveTab("messages")}>
+                                Message Teacher
                             </Button>
                         </CardContent>
                     </Card>

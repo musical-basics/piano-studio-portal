@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { resolveEffectiveUserId } from '@/lib/impersonate'
 import Stripe from 'stripe'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -216,5 +217,85 @@ export async function createBalancePaymentSession() {
     } catch (err: any) {
         console.error('Stripe error:', err)
         return { error: err.message }
+    }
+}
+
+export type SubscriptionSummary = {
+    /** True while Stripe still considers a subscription running (same test the checkout guard uses). */
+    active: boolean
+    /** Set when the plan has been capped (e.g. the 3-installment quarterly plan) and will not bill again. */
+    endingAt: string | null
+    /** Next automatic charge, ISO. Null when the subscription is winding down. */
+    nextPaymentAt: string | null
+    creditsPerCycle: number | null
+    amountCents: number | null
+}
+
+/**
+ * Read-only summary of the student's running subscription.
+ *
+ * The dashboard needs this because credits alone are a bad renewal signal: a
+ * student on a monthly installment plan routinely dips to zero (or below) in the
+ * days before the next charge lands. Prompting them to "Renew Package" there sends
+ * them into createCheckoutSession, which correctly refuses to sell a second
+ * subscription, so the parent hits an error with no way forward.
+ *
+ * Deliberately never creates a Stripe customer: someone who has never checked out
+ * simply has no subscription. Any failure degrades to `active: false`, which
+ * restores the old low-credits prompt rather than suppressing a genuine one.
+ */
+export async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
+    const inactive: SubscriptionSummary = {
+        active: false, endingAt: null, nextPaymentAt: null, creditsPerCycle: null, amountCents: null,
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return inactive
+
+    const effectiveUserId = await resolveEffectiveUserId(supabase, user.id)
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('stripe_customer_id')
+        .eq('id', effectiveUserId)
+        .single()
+
+    if (!profile?.stripe_customer_id) return inactive
+
+    try {
+        const subs = await stripe.subscriptions.list({
+            customer: profile.stripe_customer_id,
+            status: 'all',
+            limit: 10,
+        })
+
+        // Match the checkout guard's definition of "running" exactly, so the banner
+        // and the guard can never disagree about whether a purchase is possible.
+        const running = subs.data.find(sub => ['active', 'trialing', 'past_due'].includes(sub.status))
+        if (!running) return inactive
+
+        // current_period_end lives on the subscription item in recent API versions,
+        // and on the subscription itself in older ones.
+        const item = running.items.data[0] as any
+        const periodEndUnix: number | undefined = item?.current_period_end ?? (running as any).current_period_end
+        const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null
+
+        // A capped plan (billing_cycles metadata) gets cancel_at_period_end set by the
+        // webhook once it has taken its last payment. It is still "active", so the
+        // guard still blocks self-serve checkout, but there is no next charge coming.
+        const windingDown = running.cancel_at_period_end || Boolean(running.cancel_at)
+        const cancelAt = running.cancel_at ? new Date(running.cancel_at * 1000).toISOString() : null
+
+        return {
+            active: true,
+            endingAt: windingDown ? (cancelAt ?? periodEnd) : null,
+            nextPaymentAt: windingDown ? null : periodEnd,
+            creditsPerCycle: Number(running.metadata?.credits) || null,
+            amountCents: item?.price?.unit_amount ?? null,
+        }
+    } catch (err: any) {
+        console.error('[getSubscriptionSummary] Stripe lookup failed:', err?.message)
+        return inactive
     }
 }
