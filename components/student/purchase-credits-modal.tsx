@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Check, CreditCard, Repeat, Loader2, Sparkles } from "lucide-react"
-import { createCheckoutSession } from "@/app/actions/stripe"
+import { createCheckoutSession, getSubscriptionSummary } from "@/app/actions/stripe"
 import { getStudentPricingPlan, type PricingPoint, type PricingPlan } from "@/app/actions/pricing"
 import { useToast } from "@/hooks/use-toast"
 
@@ -19,16 +19,29 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
   const [plan, setPlan] = useState<PricingPlan | null>(null)
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  // A running subscription makes every subscription option unbuyable, because
+  // createCheckoutSession refuses to sell a second one. Track it so we neither
+  // preselect nor offer an option that can only come back as an error.
+  const [hasSubscription, setHasSubscription] = useState(false)
 
   useEffect(() => {
     if (open) {
       setLoading(true)
-      getStudentPricingPlan().then(({ plan }) => {
+      Promise.all([
+        getStudentPricingPlan(),
+        // On failure fall through as "no subscription": the checkout guard is
+        // still there, so the worst case is the old error, not a double charge.
+        getSubscriptionSummary().catch(() => null),
+      ]).then(([{ plan }, summary]) => {
         setPlan(plan)
-        // Select the first subscription option by default, or the first option
+        const subscribed = summary?.active === true
+        setHasSubscription(subscribed)
+
         if (plan?.points?.length) {
-          const defaultOption = plan.points.find((p: PricingPoint) => p.type === 'subscription') || plan.points[0]
-          setSelectedPointId(defaultOption.id)
+          const buyable = plan.points.filter((p: PricingPoint) => !(subscribed && p.type === 'subscription'))
+          // Subscriptions are still the preferred default when one is allowed.
+          const defaultOption = buyable.find((p: PricingPoint) => p.type === 'subscription') || buyable[0]
+          setSelectedPointId(defaultOption?.id ?? null)
         }
         setLoading(false)
       })
@@ -67,32 +80,46 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
           <div className="py-8 text-center text-muted-foreground">No pricing options available. Please contact your teacher.</div>
         ) : (
           <div className="space-y-3 py-4">
-            {plan.points.map((point) => (
+            {plan.points.map((point) => {
+              // Already subscribed: this option cannot be purchased, so show it
+              // as settled rather than letting them click into a dead end.
+              const alreadyOnIt = hasSubscription && point.type === 'subscription'
+              return (
               <div key={point.id} className="relative">
-                {point.type === 'subscription' && (
+                {point.type === 'subscription' && !alreadyOnIt && (
                   <div className="absolute -top-2.5 left-4 bg-green-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full z-10 border border-white shadow-sm">
                     Recommended
                   </div>
                 )}
+                {alreadyOnIt && (
+                  <div className="absolute -top-2.5 left-4 bg-muted text-muted-foreground text-[10px] uppercase font-bold px-2 py-0.5 rounded-full z-10 border shadow-sm">
+                    Your current plan
+                  </div>
+                )}
                 <button
                   onClick={() => setSelectedPointId(point.id)}
-                  className={`w-full text-left p-4 rounded-lg border-2 transition-all relative overflow-hidden ${selectedPointId === point.id
-                    ? (point.type === 'subscription' ? "border-green-600 bg-green-50/50" : "border-primary bg-primary/5")
-                    : (point.type === 'subscription' ? "border-green-200 hover:border-green-600" : "border-border hover:border-primary/50")
+                  disabled={alreadyOnIt}
+                  className={`w-full text-left p-4 rounded-lg border-2 transition-all relative overflow-hidden ${alreadyOnIt
+                    ? "border-border bg-muted/30 opacity-70 cursor-default"
+                    : selectedPointId === point.id
+                      ? (point.type === 'subscription' ? "border-green-600 bg-green-50/50" : "border-primary bg-primary/5")
+                      : (point.type === 'subscription' ? "border-green-200 hover:border-green-600" : "border-border hover:border-primary/50")
                     }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="font-semibold text-lg flex flex-wrap items-center gap-2">
                         {point.label}
-                        {point.type === 'subscription' && (
+                        {point.type === 'subscription' && !alreadyOnIt && (
                           <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">
                             Autopay
                           </span>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {point.description || `${point.credits} Credits`}
+                        {alreadyOnIt
+                          ? "You are already on this plan, so it renews on its own. Message your teacher to change it."
+                          : (point.description || `${point.credits} Credits`)}
                       </p>
                     </div>
                     <div className="text-right">
@@ -102,7 +129,14 @@ export function PurchaseCreditsModal({ open, onOpenChange }: PurchaseCreditsModa
                   </div>
                 </button>
               </div>
-            ))}
+              )
+            })}
+
+            {!selectedPointId && (
+              <p className="text-sm text-center text-muted-foreground pt-1">
+                Your plan has no extra options to buy right now. Message your teacher if you need more lessons.
+              </p>
+            )}
           </div>
         )}
 
