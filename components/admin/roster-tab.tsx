@@ -434,7 +434,7 @@ function StudentTable({
                                             size="sm"
                                             variant="outline"
                                             onClick={() => setChargeStudent(student)}
-                                            title="Add Charge"
+                                            title="Add a charge or give a credit"
                                         >
                                             <DollarSign className="h-4 w-4" />
                                         </Button>

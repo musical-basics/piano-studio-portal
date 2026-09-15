@@ -11,6 +11,7 @@ import { createGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendMessageCore } from '@/lib/core/messages'
 import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
+import { recordBillingTransaction } from '@/lib/core/billing'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -1029,6 +1030,19 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
                 console.error('cancelLessonCore: late-cancel fee balance update failed (non-blocking):', balanceError)
             } else {
                 lateCancelFee = LATE_CANCEL_FEE
+
+                // Itemise it in the portal's billing list. Without this the parent
+                // just sees balance_due jump with no stated reason, which is the
+                // complaint that motivated the ledger in the first place.
+                await recordBillingTransaction({
+                    client: supabaseAdmin,
+                    studentId: lesson.student_id,
+                    kind: 'fee',
+                    amountCents: Math.round(LATE_CANCEL_FEE * 100),
+                    description: `Late cancellation fee (lesson on ${formatDateLong(lesson.date)})`,
+                    appliesTo: 'balance',
+                    createdBy: actorId,
+                })
 
                 // Notify the student in-app, sent from the studio admin account so it
                 // lands in their normal message thread (mirrors addAdHocCharge).

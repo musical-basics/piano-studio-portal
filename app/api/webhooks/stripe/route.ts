@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
+import { recordBillingTransaction } from '@/lib/core/billing'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-11-17.clover' as any,
@@ -129,6 +130,17 @@ export async function POST(req: Request) {
                         console.error(`[Webhook] Failed to update balance for user ${userId}:`, updateErr)
                         throw new Error(`Failed to update balance: ${updateErr.message}`)
                     }
+
+                    // Close the loop in the portal's billing list: the family should
+                    // see the payment that cleared the fees, not just the fees.
+                    await recordBillingTransaction({
+                        client: supabaseAdmin,
+                        studentId: userId,
+                        kind: 'balance_payment',
+                        amountCents: -Math.round((currentBalance - newBalance) * 100),
+                        description: 'Payment received, thank you',
+                        appliesTo: 'balance',
+                    })
 
                     console.log(`[Webhook] ✅ Balance payment processed for user ${userId}: Paid $${amountPaid} | ${currentBalance} → ${newBalance}`)
                 }

@@ -33,6 +33,7 @@ import {
     RefreshCw,
     Play,
     Repeat,
+    Gift,
 } from "lucide-react"
 import {
     mockEvents,
@@ -43,6 +44,9 @@ import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
 import { createBalancePaymentSession, getSubscriptionSummary } from "@/app/actions/stripe"
 import type { SubscriptionSummary } from "@/app/actions/stripe"
+import { getBillingSummary } from "@/app/actions/billing"
+import type { BillingSummary } from "@/app/actions/billing"
+import { BillingActivity } from "./billing-activity"
 import { MessagesPanel } from "./messages-panel"
 import { HomeworkTab } from "./homework-tab"
 import { getMyUnreadCount } from "@/app/messages/actions"
@@ -146,6 +150,21 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 console.error("StudentDashboard: subscription lookup failed", err)
                 // Fall back to the credits-only prompt rather than hiding it forever.
                 if (!cancelled) setSubscription({ active: false, endingAt: null, nextPaymentAt: null, creditsPerCycle: null, amountCents: null })
+            })
+        return () => { cancelled = true }
+    }, [])
+
+    // Dollar fees and credits. `balance_due` also arrives on `profile`, but the
+    // summary reads it alongside the live Stripe credit in one pass, so the two
+    // numbers in the stats bar always describe the same moment.
+    const [billing, setBilling] = useState<BillingSummary | undefined>(undefined)
+
+    useEffect(() => {
+        let cancelled = false
+        getBillingSummary()
+            .then(summary => { if (!cancelled) setBilling(summary) })
+            .catch(err => {
+                console.error("StudentDashboard: billing lookup failed", err)
             })
         return () => { cancelled = true }
     }, [])
@@ -825,7 +844,34 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                             )}
                         </CardContent>
                     </Card>
+
+                    {/* Account credit. Hidden at $0 rather than shown as an empty
+                        card: unlike a balance, "no credit" is the normal state and
+                        a permanent $0.00 tile would just be clutter. */}
+                    {billing !== undefined && billing.accountCreditCents > 0 && (
+                        <Card className="flex-1 min-w-[200px] border-success">
+                            <CardContent className="flex items-center justify-between p-4">
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-0.5">Account Credit</p>
+                                    <p className="text-xl font-bold text-success">
+                                        ${(billing.accountCreditCents / 100).toFixed(2)}
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                        {subscription?.nextPaymentAt
+                                            ? `Comes off your ${formatBillingDate(subscription.nextPaymentAt)} payment`
+                                            : "Comes off your next payment"}
+                                    </p>
+                                </div>
+                                <Gift className="h-6 w-6 text-success shrink-0" />
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
+
+                {/* Itemised fees and credits. Before this the parent saw only the
+                    Outstanding Balance figure with no way to find out what it was
+                    for, and a dollar credit was invisible until the invoice came. */}
+                <BillingActivity summary={billing} />
 
                 <div className="grid lg:grid-cols-3 gap-8">
                     {/* My Library */}

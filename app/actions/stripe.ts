@@ -1,51 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
-import Stripe from 'stripe'
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-    apiVersion: '2025-11-17.clover' as any,
-})
-
-/**
- * Get or create a Stripe Customer for a user.
- * Saves stripe_customer_id to profiles table for future use.
- */
-async function getOrCreateStripeCustomer(userId: string, email: string): Promise<string> {
-    const supabaseAdmin = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_KEY!
-    )
-
-    // Check if we already have a Stripe Customer ID saved
-    const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('stripe_customer_id, name')
-        .eq('id', userId)
-        .single()
-
-    if (profile?.stripe_customer_id) {
-        return profile.stripe_customer_id
-    }
-
-    // Create a new Stripe Customer
-    const customer = await stripe.customers.create({
-        email,
-        name: profile?.name || undefined,
-        metadata: { userId }
-    })
-
-    // Save the Customer ID to the profile
-    await supabaseAdmin
-        .from('profiles')
-        .update({ stripe_customer_id: customer.id })
-        .eq('id', userId)
-
-    console.log(`Created Stripe Customer ${customer.id} for user ${userId}`)
-    return customer.id
-}
+import { stripe, getOrCreateStripeCustomer } from '@/lib/stripe'
+import type Stripe from 'stripe'
 
 export async function createCheckoutSession(pricingPointId: string) {
     const supabase = await createClient()
