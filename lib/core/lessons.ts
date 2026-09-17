@@ -396,8 +396,11 @@ export async function logLessonCore({
         {
             status: 'completed',
             notes,
-            video_url: videoUrl || null,
-            sheet_music_url: sheetMusicUrl || null,
+            // Only overwrite links the caller actually passed. The Zoom webhook and
+            // recording jobs attach video_url before completion runs; writing null
+            // here used to erase those recordings.
+            ...(videoUrl ? { video_url: videoUrl } : {}),
+            ...(sheetMusicUrl ? { sheet_music_url: sheetMusicUrl } : {}),
             completed_source: completedSource,
         },
         homework,

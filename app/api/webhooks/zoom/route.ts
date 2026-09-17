@@ -118,8 +118,28 @@ export async function POST(req: Request) {
     }
 
     if (lesson.video_url) {
-        log(`Lesson ${lesson.id} already has video_url; skipping.`)
-        return NextResponse.json({ ok: true, skipped: 'already processed', logs })
+        // The organize-recordings cron can attach the ZBackup copy before this
+        // webhook arrives. That job never completes lessons, so completion (and
+        // the credit deduction) still has to happen here.
+        if (lesson.status === 'completed') {
+            log(`Lesson ${lesson.id} already has video_url and is completed; skipping.`)
+            return NextResponse.json({ ok: true, skipped: 'already processed', logs })
+        }
+        log(`Lesson ${lesson.id} already has video_url but is ${lesson.status}; completing it.`)
+        const logResult = await logLessonCore({
+            client: supabase as any,
+            adminId: lesson.student_id,
+            lessonId: lesson.id,
+            notes: '',
+            completedSource: 'zoom_webhook',
+            awaitNotifications: false,
+        })
+        if ('error' in logResult) {
+            log(`logLessonCore error after Zoom webhook: ${logResult.error}`)
+            return NextResponse.json({ ok: true, lesson_id: lesson.id, credit_warning: logResult.error, logs })
+        }
+        log(`logLessonCore result: credit_deducted=${logResult.credit_deducted} credit_repaired=${logResult.credit_repaired}`)
+        return NextResponse.json({ ok: true, lesson_id: lesson.id, credit_deducted: logResult.credit_deducted, logs })
     }
 
     const { data: profile, error: profileErr } = await supabase
