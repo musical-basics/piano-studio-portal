@@ -2,7 +2,7 @@
 
 How to write external communications (portal messages, emails, announcements) in Lionel Yu's voice.
 
-Built from his real writing: ~430 outbound portal messages (Dec 2025 to Sep 2026), his studio announcements, his replies to new-student inquiries, and the recital video email. Names in the examples are swapped for placeholders, and some quotes are lightly trimmed.
+Built from his real writing: ~430 outbound portal messages (Dec 2025 to Sep 2026), his studio announcements, his replies to new-student inquiries, and the recital video email. Names in the "Patterns by situation" quotes are swapped for placeholders, and some quotes are lightly trimmed.
 
 **If you only read one section, read [The 10 rules](#the-10-rules).**
 
