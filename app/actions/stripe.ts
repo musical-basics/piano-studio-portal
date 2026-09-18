@@ -103,6 +103,8 @@ export async function createCheckoutSession(pricingPointId: string) {
                 payment_intent_data: {
                     capture_method: 'manual',
                     setup_future_usage: 'off_session',
+                    // On the PI itself so the auto-capture cron can tell it's ours.
+                    metadata: { userId: user.id, type: 'one-time' },
                 },
             }
         }
@@ -168,6 +170,7 @@ export async function createBalancePaymentSession() {
             payment_intent_data: {
                 capture_method: 'manual',
                 setup_future_usage: 'off_session',
+                metadata: { userId: user.id, type: 'balance_payment' },
             },
         })
 

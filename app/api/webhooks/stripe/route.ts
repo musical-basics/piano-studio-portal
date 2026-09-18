@@ -406,32 +406,33 @@ async function notifyAdminOfPendingCapture(paymentIntent: Stripe.PaymentIntent) 
     }
 
     const stripePaymentUrl = `https://dashboard.stripe.com/payments/${paymentIntent.id}`
-    const captureDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    const deadlineStr = captureDeadline.toLocaleDateString('en-US', {
-        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    // Matches CAPTURE_AFTER_DAYS in app/api/cron/capture-payments (hourly, so up to an hour later).
+    const autoCaptureAt = new Date(paymentIntent.created * 1000 + 3 * 24 * 60 * 60 * 1000)
+    const deadlineStr = autoCaptureAt.toLocaleDateString('en-US', {
+        timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
     })
 
     try {
         await resend.emails.send({
             from: 'Piano Studio <notifications@updates.musicalbasics.com>',
             to: admin.email,
-            subject: `💰 Payment Needs Capture: $${amount} from ${studentName}`,
+            subject: `💰 Payment Held: $${amount} from ${studentName} (auto-captures in 3 days)`,
             html: `
                 <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
                     <h2 style="font-size: 20px; margin: 0 0 16px; color: #1a1a1a;">
-                        💰 New Payment Requires Capture
+                        💰 New Payment Held for Review
                     </h2>
                     <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
                         <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Student:</strong> ${studentName}</p>
                         <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Amount:</strong> $${amount}</p>
                         <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Type:</strong> ${type === 'balance_payment' ? 'Balance Payment' : 'Credit Purchase'}</p>
-                        <p style="font-size: 15px; color: #555; margin: 0;"><strong>Capture by:</strong> ${deadlineStr}</p>
+                        <p style="font-size: 15px; color: #555; margin: 0;"><strong>Auto-captures:</strong> ${deadlineStr}</p>
                     </div>
                     <p style="font-size: 14px; color: #888; margin: 0 0 16px;">
-                        ⚠️ This payment will <strong>expire</strong> if not captured within 7 days.
+                        This payment will be <strong>captured automatically</strong> on that date. To stop it, cancel the payment in Stripe before then.
                     </p>
                     <a href="${stripePaymentUrl}" style="display: inline-block; background: #635bff; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                        Review & Capture in Stripe →
+                        Review in Stripe →
                     </a>
                 </div>
             `,

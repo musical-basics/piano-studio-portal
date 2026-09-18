@@ -21,6 +21,10 @@
             "schedule": "0 15 * * *"
         },
         {
+            "path": "/api/cron/capture-payments",
+            "schedule": "20 * * * *"
+        },
+        {
             "path": "/api/cron/weekly-digest",
             "schedule": "0 16 * * 1"
         }
