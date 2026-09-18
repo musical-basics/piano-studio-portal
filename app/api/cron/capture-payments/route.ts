@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { cronSource, writeHeartbeat } from '@/lib/cron-alerts'
 import { stripe } from '@/lib/stripe'
+import { CAPTURE_JOB, sendCaptureAlert } from '@/lib/payment-capture-alerts'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,6 +48,21 @@ export async function GET(request: Request) {
     }
 
     const client = createAdminClient()
+    try {
+        return await run(request, client)
+    } catch (e) {
+        // Whole run died (Stripe unreachable, bad key, ...): nothing got captured.
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('[Cron/capture-payments] Run failed:', e)
+        await sendCaptureAlert(client, '🚨 Payment auto-capture cron failed', [
+            `Error: <code>${msg}</code>`,
+            'No held payments were captured on this run. It retries hourly, but check Stripe if this repeats.',
+        ])
+        return NextResponse.json({ error: msg }, { status: 500 })
+    }
+}
+
+async function run(request: Request, client: ReturnType<typeof createAdminClient>) {
     const nowSec = Math.floor(Date.now() / 1000)
     const cutoff = nowSec - CAPTURE_AFTER_DAYS * 86400
 
@@ -84,37 +100,37 @@ export async function GET(request: Request) {
         }
     }
 
-    if (captured.length || failed.length) {
-        await notifyStudio(client, captured, failed).catch(e => {
+    if (captured.length) {
+        await notifyStudio(client, captured).catch(e => {
             console.error('[Cron/capture-payments] Summary email failed:', e)
         })
     }
+    if (failed.length) {
+        await sendCaptureAlert(client, `⚠️ ${failed.length} payment capture${failed.length === 1 ? '' : 's'} failed`, [
+            ...failed.map(row),
+            'These are still held and will be retried hourly until the authorization expires (7 days after checkout).',
+        ])
+    }
 
-    await writeHeartbeat(client, 'capture-payments', { source: cronSource(request) })
+    await writeHeartbeat(client, CAPTURE_JOB, { source: cronSource(request) })
 
     return NextResponse.json({ held: held.length, captured: captured.length, failed: failed.length })
 }
 
-async function notifyStudio(client: ReturnType<typeof createAdminClient>, captured: Outcome[], failed: Outcome[]) {
+const row = (o: Outcome) =>
+    `${o.studentName}: $${o.amount.toFixed(2)} (<a href="https://dashboard.stripe.com/payments/${o.id}">${o.id}</a>)${o.error ? ` - ${o.error}` : ''}`
+
+async function notifyStudio(client: ReturnType<typeof createAdminClient>, captured: Outcome[]) {
     if (!process.env.RESEND_API_KEY) return
     const { data: admin } = await client.from('profiles').select('email').eq('role', 'admin').limit(1).maybeSingle()
     const to = admin?.email || FALLBACK_TO
-
-    const row = (o: Outcome) =>
-        `<li>${o.studentName}: $${o.amount.toFixed(2)} (<a href="https://dashboard.stripe.com/payments/${o.id}">${o.id}</a>)${o.error ? ` - ${o.error}` : ''}</li>`
-
-    const subject = failed.length
-        ? `⚠️ ${failed.length} payment capture${failed.length === 1 ? '' : 's'} failed`
-        : `💰 Auto-captured ${captured.length} payment${captured.length === 1 ? '' : 's'}`
 
     const { Resend } = await import('resend')
     const resend = new Resend(process.env.RESEND_API_KEY)
     await resend.emails.send({
         from: FROM,
         to,
-        subject,
-        html: `
-            ${captured.length ? `<p><strong>Captured after ${CAPTURE_AFTER_DAYS} days:</strong></p><ul>${captured.map(row).join('')}</ul>` : ''}
-            ${failed.length ? `<p><strong>Failed (check these in Stripe, the hold expires 7 days after checkout):</strong></p><ul>${failed.map(row).join('')}</ul>` : ''}`,
+        subject: `💰 Auto-captured ${captured.length} payment${captured.length === 1 ? '' : 's'}`,
+        html: `<p><strong>Captured after ${CAPTURE_AFTER_DAYS} days:</strong></p><ul>${captured.map(o => `<li>${row(o)}</li>`).join('')}</ul>`,
     })
 }

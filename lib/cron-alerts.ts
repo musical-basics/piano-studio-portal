@@ -169,14 +169,21 @@ async function studioInbox(client: DbClient): Promise<string> {
  */
 export async function sendCronAlert(
     client: DbClient,
-    { subject, lines }: { subject: string; lines: string[] },
+    { subject, lines, to: toOverride, footer }: {
+        subject: string
+        lines: string[]
+        /** Fixed recipient instead of the admin profile's inbox. */
+        to?: string
+        /** Replaces the reminder-specific footer for alerts about other jobs. */
+        footer?: string
+    },
 ): Promise<boolean> {
     if (!process.env.RESEND_API_KEY) {
         console.error('[CronHealth] RESEND_API_KEY missing, cannot alert:', subject)
         return false
     }
     try {
-        const to = await studioInbox(client)
+        const to = toOverride || await studioInbox(client)
         const { Resend } = await import('resend')
         const resend = new Resend(process.env.RESEND_API_KEY)
         const { error } = await resend.emails.send({
@@ -186,13 +193,13 @@ export async function sendCronAlert(
             html: `
                 <p><strong>${subject}</strong></p>
                 <ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>
-                <p style="color:#666;font-size:13px">
+                ${footer !== undefined ? `<p style="color:#666;font-size:13px">${footer}</p>` : `<p style="color:#666;font-size:13px">
                     Students may not have received their lesson notices. To send them now:<br>
                     <code>npx tsx scripts/send_reminders_now.ts --date=YYYY-MM-DD --send</code>
                 </p>
                 <p style="color:#666;font-size:13px">
                     Triggers: Vercel Cron (vercel.json) and GitHub Actions (.github/workflows/cron.yml).
-                </p>`,
+                </p>`}`,
         })
         if (error) {
             console.error('[CronHealth] alert send failed:', error)

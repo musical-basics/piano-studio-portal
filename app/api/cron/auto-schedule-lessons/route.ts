@@ -4,6 +4,7 @@ import { autoScheduleStandingLessonsCore } from '@/lib/core/lessons'
 import { studioToday } from '@/lib/studio-timezone'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { readHeartbeat, sendCronAlert, writeHeartbeat, sourceJob, ALERT_COOLDOWN_MINUTES } from '@/lib/cron-alerts'
+import { checkCaptureHeartbeat } from '@/lib/payment-capture-alerts'
 
 export const dynamic = 'force-dynamic'
 // Each booking creates a Google Calendar event + Zoom meeting + email; allow
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
     // (a separate trigger) checks its heartbeat and raises the alarm.
     await checkRemindersHeartbeat(client)
     await checkTriggerHealth(client)
+    await checkCaptureHeartbeat(client)
 
     const today = studioToday()
     const fromDate = shiftDateStr(today, 1)
