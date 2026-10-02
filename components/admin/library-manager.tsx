@@ -61,9 +61,9 @@ import {
     updateResource,
     updateResourceAssignments,
     deleteResource,
-    uploadLibraryFile,
     getResourceWithAssignments,
 } from '@/app/actions/resources'
+import { uploadLibraryFile } from '@/lib/uploads'
 
 interface Student {
     id: string
@@ -202,9 +202,7 @@ export function LibraryManager({ initialResources, students }: LibraryManagerPro
 
         try {
             // Upload file first
-            const formData = new FormData()
-            formData.append('file', uploadFile)
-            const { url, error: uploadError } = await uploadLibraryFile(formData)
+            const { url, error: uploadError } = await uploadLibraryFile(uploadFile)
 
             if (uploadError || !url) {
                 throw new Error(uploadError || 'Failed to upload file')
@@ -286,9 +284,7 @@ export function LibraryManager({ initialResources, students }: LibraryManagerPro
             let newFileType = editingResource.file_type
 
             if (replaceFile) {
-                const formData = new FormData()
-                formData.append('file', replaceFile)
-                const { url, error: uploadError } = await uploadLibraryFile(formData)
+                const { url, error: uploadError } = await uploadLibraryFile(replaceFile)
 
                 if (uploadError || !url) {
                     throw new Error(uploadError || 'Failed to upload new file')

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder, Upload } from "lucide-react"
-import { sendMessage, getStudentsWithMessages, uploadChatAttachment } from "@/app/messages/actions"
+import { sendMessage, getStudentsWithMessages } from "@/app/messages/actions"
+import { uploadChatAttachment } from "@/lib/uploads"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
 import { DeletedMessageBubble } from "@/components/chat-message-delete"
@@ -264,9 +265,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
 
         // Case 2: New File Upload
         if (pending.file) {
-          const formData = new FormData()
-          formData.append('file', pending.file)
-          const result = await uploadChatAttachment(formData)
+          const result = await uploadChatAttachment(pending.file)
 
           if (result.attachment) {
             uploadedAttachments.push(result.attachment)

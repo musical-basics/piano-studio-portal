@@ -26,7 +26,7 @@ import { PricingPlan } from "@/app/actions/pricing"
 import { logout } from "@/app/login/actions"
 import { logLesson, markNoShow, scheduleLesson, updateLesson, bulkScheduleLessons } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
-import { uploadSheetMusic } from "@/app/actions/uploads"
+import { uploadSheetMusic } from "@/lib/uploads"
 import { deleteStudent } from "@/app/actions/users"
 import { deleteEvent, type AdminEvent } from "@/app/actions/events"
 import { sendManualReminder } from "@/app/actions/reminders"
@@ -612,12 +612,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setIsUploading(true)
 
         try {
-            // Prepare FormData for Server Action
-            const formData = new FormData()
-            formData.append('file', file)
-
-            // Call Server Action
-            const result = await uploadSheetMusic(formData, lessonId)
+            const result = await uploadSheetMusic(file, lessonId)
 
             if (result.error) {
                 throw new Error(result.error)

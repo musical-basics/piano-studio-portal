@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { MessageCircle, X, Send, Music, Minimize2, Loader2, Paperclip, Upload } from "lucide-react"
-import { sendMessage, getAdminProfile, uploadChatAttachment } from "@/app/messages/actions"
+import { sendMessage, getAdminProfile } from "@/app/messages/actions"
+import { uploadChatAttachment } from "@/lib/uploads"
 import type { Message, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments } from "@/components/chat-attachment-preview"
 import { DeletedMessageBubble } from "@/components/chat-message-delete"
@@ -151,13 +152,18 @@ export function ChatWidget({ studentId, teacherName, unreadCount: initialUnreadC
       // Upload all pending attachments first
       const uploadedAttachments: MessageAttachment[] = []
       for (const pending of tempAttachments) {
-        const formData = new FormData()
-        formData.append('file', pending.file)
-        const result = await uploadChatAttachment(formData)
+        const result = await uploadChatAttachment(pending.file)
         if (result.attachment) {
           uploadedAttachments.push(result.attachment)
-        } else if (result.error) {
+        } else {
+          // Put the draft back and say why, rather than sending the message
+          // without the file the student meant to attach.
           console.error('Failed to upload attachment:', result.error)
+          setNewMessage(tempMessage)
+          setPendingAttachments(tempAttachments)
+          setReplyTo(tempReplyTo)
+          setAttachmentError(result.error || 'Upload failed')
+          return
         }
       }
 

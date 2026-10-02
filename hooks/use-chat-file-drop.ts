@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { useCallback, useRef, useState } from "react"
+import { MAX_CHAT_FILE_SIZE, MAX_PDF_SOURCE_SIZE, formatMegabytes } from "@/lib/upload-limits"
 
 /**
  * Drag-and-drop attachments for the chat surfaces.
@@ -25,8 +26,13 @@ const ACCEPTED_MIME_TYPES = [
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]
 
-/** Kept in step with MAX_FILE_SIZE in app/messages/actions.ts. */
-const MAX_FILE_SIZE = 10 * 1024 * 1024
+const isPdf = (file: File) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+
+/**
+ * PDFs are compressed before they upload, so a big scan is let through here and
+ * measured against the chat limit once it has been shrunk.
+ */
+const pickLimit = (file: File) => (isPdf(file) ? MAX_PDF_SOURCE_SIZE : MAX_CHAT_FILE_SIZE)
 
 export function isAcceptedChatFile(file: File): boolean {
     if (ACCEPTED_MIME_PREFIXES.some((prefix) => file.type.startsWith(prefix))) return true
@@ -53,8 +59,8 @@ export function screenChatFiles(files: File[], remainingSlots: number): ChatDrop
             rejectedType.push(file.name)
             continue
         }
-        if (file.size > MAX_FILE_SIZE) {
-            rejectedSize.push(file.name)
+        if (file.size > pickLimit(file)) {
+            rejectedSize.push(`${file.name} is over the ${formatMegabytes(pickLimit(file))} limit`)
             continue
         }
         accepted.push(file)
@@ -70,7 +76,7 @@ export function screenChatFiles(files: File[], remainingSlots: number): ChatDrop
         )
     }
     if (rejectedSize.length > 0) {
-        reasons.push(`${rejectedSize.join(", ")} is over the 10MB limit`)
+        reasons.push(rejectedSize.join(", "))
     }
     if (overflow > 0) {
         reasons.push(`only 5 attachments can be sent at once, so ${overflow} ${overflow === 1 ? "was" : "were"} skipped`)

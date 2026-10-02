@@ -2,7 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { Message, MessageAttachment } from '@/lib/supabase/database.types'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import {
     sendMessageCore,
     getConversationCore,
@@ -36,19 +35,6 @@ async function resolveSelfId(realUserId: string, asUserId?: string): Promise<str
     const { studentId } = await getImpersonationTarget()
     return studentId === asUserId ? asUserId : realUserId
 }
-
-// Allowed file types and size limits for chat attachments
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-const ALLOWED_FILE_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-// Sheet music. Browsers report these inconsistently (usually '' or
-// application/octet-stream), so they are matched on extension instead of MIME
-// type and given an explicit content type when uploaded.
-const SHEET_MUSIC_CONTENT_TYPES: Record<string, string> = {
-    '.musicxml': 'application/vnd.recordare.musicxml+xml',
-    '.mxl': 'application/vnd.recordare.musicxml',
-    '.xml': 'text/xml',
-}
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
 export type MessageWithProfile = Message & {
     sender_profile?: {
@@ -309,91 +295,4 @@ export async function getMyUnreadCount(asUserId?: string): Promise<number> {
         .is('deleted_at', null)
 
     return count || 0
-}
-
-/**
- * Upload a file attachment for chat messages
- * Both students and admins can upload attachments
- */
-export async function uploadChatAttachment(formData: FormData): Promise<{ attachment?: MessageAttachment; error?: string }> {
-    const supabase = await createClient()
-
-    // Get current user (both students and admins can upload)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        return { error: 'Unauthorized' }
-    }
-
-    const file = formData.get('file') as File
-    if (!file) {
-        return { error: 'No file provided' }
-    }
-
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-        return { error: `File size must be under ${MAX_FILE_SIZE / (1024 * 1024)}MB` }
-    }
-
-    // Determine file type category
-    const extension = (file.name.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase()
-    const sheetMusicType = SHEET_MUSIC_CONTENT_TYPES[extension]
-    const isImage = ALLOWED_IMAGE_TYPES.includes(file.type)
-    const isDocument = ALLOWED_FILE_TYPES.includes(file.type) || Boolean(sheetMusicType)
-
-    if (!isImage && !isDocument) {
-        return { error: 'Invalid file type. Allowed: images (JPEG, PNG, GIF, WebP), documents (PDF, Word) and sheet music (MusicXML, MXL)' }
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now()
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const filePath = `chat-attachments/${user.id}/${timestamp}_${sanitizedName}`
-
-    // Use Service Role Key to bypass RLS for storage
-    const serviceKey = process.env.SUPABASE_SERVICE_KEY
-    if (!serviceKey) {
-        console.error('UPLOAD ERROR: SUPABASE_SERVICE_KEY is missing')
-        return { error: 'Server configuration error: Missing service key' }
-    }
-
-    try {
-        const supabaseAdmin = createSupabaseClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            serviceKey
-        )
-
-        console.log(`Attempting upload with service key for file: ${filePath}`)
-
-        // Upload to Supabase Storage using Admin client
-        const { data, error } = await supabaseAdmin.storage
-            .from('lesson_materials')
-            .upload(filePath, file, {
-                cacheControl: '3600',
-                upsert: false,
-                contentType: sheetMusicType || file.type || 'application/octet-stream' // Explicitly set content type
-            })
-
-        if (error) {
-            console.error('Error uploading chat attachment (Supabase Error):', error)
-            return { error: `Upload failed: ${error.message}` }
-        }
-
-        // Get public URL using Admin client
-        const { data: { publicUrl } } = supabaseAdmin.storage
-            .from('lesson_materials')
-            .getPublicUrl(data.path)
-
-        return {
-            attachment: {
-                type: isImage ? 'image' : 'file',
-                url: publicUrl,
-                name: file.name,
-                size: file.size
-            }
-        }
-
-    } catch (err: any) {
-        console.error('Unexpected error during upload:', err)
-        return { error: `Unexpected upload error: ${err.message || err}` }
-    }
 }
