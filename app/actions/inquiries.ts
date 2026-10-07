@@ -2,6 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { Resend } from "resend"
+import { revalidatePath } from "next/cache"
+import { getInquiryAdmin, sendInquiryReplyCore } from "@/lib/core/inquiries"
+import type { Inquiry, InquiryMessage } from "@/types/admin"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -118,17 +121,19 @@ export async function submitInquiry(formData: FormData) {
 // Website form submissions land in crm_students (see submitInquiry above and
 // trial-inquiries). The admin Inquiries tab reads those leads here, mapping the
 // CRM shape onto the Inquiry type the UI expects.
-export async function getInquiries() {
+export async function getInquiries(): Promise<{ inquiries: Inquiry[]; error?: string }> {
     const supabase = await createClient()
+    const auth = await getInquiryAdmin(supabase)
+    if (auth.error) return { inquiries: [], error: auth.error }
 
     const { data: leads, error } = await supabase
         .from("crm_students")
-        .select("id, created_at, full_name, email, notes, experience_level, status, crm_messages(body_text, sender_role, created_at)")
+        .select("id, created_at, full_name, email, notes, experience_level, status, crm_messages(id, body_text, sender_role, created_at)")
         .order("created_at", { ascending: false })
 
     if (error) {
         console.error("Error fetching inquiries:", error)
-        return { inquiries: [] }
+        return { inquiries: [], error: 'Could not load inquiries. Please refresh and try again.' }
     }
 
     const inquiries = (leads || []).map((lead: any) => {
@@ -137,10 +142,9 @@ export async function getInquiries() {
         const phone = phoneMatch ? phoneMatch[1].trim() : null
 
         // The prospect's goals are the first message they sent.
-        const messages = (lead.crm_messages || [])
-            .filter((m: any) => m.sender_role === 'student')
-            .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        const goals = messages[0]?.body_text || lead.notes || ''
+        const messages: InquiryMessage[] = (lead.crm_messages || [])
+            .sort((a: InquiryMessage, b: InquiryMessage) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        const goals = messages.find(m => m.sender_role === 'student')?.body_text || lead.notes || ''
 
         return {
             id: lead.id,
@@ -151,6 +155,8 @@ export async function getInquiries() {
             goals,
             status: lead.status || 'Lead',
             created_at: lead.created_at,
+            notes: lead.notes,
+            messages,
         }
     })
 
@@ -159,20 +165,39 @@ export async function getInquiries() {
 
 export async function updateInquiryStatus(id: string, status: string) {
     const supabase = await createClient()
+    const auth = await getInquiryAdmin(supabase)
+    if (auth.error) return { success: false, error: auth.error }
+    if (!['Lead', 'Contacted', 'Prospect', 'Student', 'Archived'].includes(status)) {
+        return { success: false, error: 'Invalid inquiry status' }
+    }
 
     try {
         const { error } = await supabase
             .from("crm_students")
             .update({ status })
             .eq("id", id)
+            .select('id')
+            .single()
 
         if (error) throw error
 
+        revalidatePath('/admin')
+        revalidatePath('/admin/inquiries')
         return { success: true }
     } catch (error) {
         console.error("Error updating inquiry status:", error)
         return { success: false, error: "Failed to update status" }
     }
+}
+
+export async function sendInquiryReply(inquiryId: string, content: string, requestId: string) {
+    const client = await createClient()
+    const result = await sendInquiryReplyCore({ client, emails: resend.emails, inquiryId, content, requestId })
+    if (result.success) {
+        revalidatePath('/admin')
+        revalidatePath('/admin/inquiries')
+    }
+    return result
 }
 
 /**

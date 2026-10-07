@@ -142,7 +142,7 @@ export default async function AdminPage() {
   const totalUnread = 0
 
   // Fetch Inquiries
-  const { inquiries } = await getInquiries()
+  const { inquiries, error: inquiriesError } = await getInquiries()
 
   // Fetch Resources for the library selector
   const { resources } = await getResources()
@@ -161,6 +161,7 @@ export default async function AdminPage() {
       todayEvents={eventsRaw || []}
       totalUnread={totalUnread}
       inquiries={inquiries || []}
+      inquiriesError={inquiriesError}
       resources={resources || []}
       pricingPlans={pricingPlans || []}
     />

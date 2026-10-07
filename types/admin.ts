@@ -40,4 +40,13 @@ export type Inquiry = {
     // CRM lead status, e.g. 'Lead' | 'Contacted' | 'Prospect' | 'Student' | 'Archived'
     status: string
     created_at: string
+    notes: string | null
+    messages: InquiryMessage[]
+}
+
+export type InquiryMessage = {
+    id: string
+    body_text: string | null
+    sender_role: 'student' | 'instructor'
+    created_at: string
 }

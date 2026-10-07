@@ -58,11 +58,12 @@ export interface AdminDashboardProps {
     todayEvents: AdminTodayEvent[]
     totalUnread: number
     inquiries: Inquiry[]
+    inquiriesError?: string
     resources: Resource[]
     pricingPlans: PricingPlan[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, resources, pricingPlans }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -789,12 +790,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         <TabsTrigger value="inquiries" className="gap-2 relative">
                             <Mail className="h-4 w-4" />
                             <span className="hidden sm:inline">Inquiries</span>
-                            {inquiries.filter(i => i.status === 'new').length > 0 && (
+                            {inquiries.filter(i => i.status === 'Lead').length > 0 && (
                                 <Badge
                                     variant="destructive"
                                     className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
                                 >
-                                    {inquiries.filter(i => i.status === 'new').length}
+                                    {inquiries.filter(i => i.status === 'Lead').length}
                                 </Badge>
                             )}
                         </TabsTrigger>
@@ -864,7 +865,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsContent>
 
                     <TabsContent value="inquiries" className="m-0 h-full p-4 lg:p-10 overflow-auto">
-                        <InquiriesTab inquiries={inquiries} />
+                        <InquiriesTab inquiries={inquiries} error={inquiriesError} />
                     </TabsContent>
 
                     <TabsContent value="pricing" className="p-4 lg:p-10">
