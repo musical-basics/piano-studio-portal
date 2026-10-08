@@ -237,7 +237,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
   }, [messages, selectedStudent])
 
   const handleSendMessage = async () => {
-    if ((!newMessage.trim() && pendingAttachments.length === 0) || !selectedStudent) return
+    if (isSending || (!newMessage.trim() && pendingAttachments.length === 0) || !selectedStudent) return
 
     const tempMessage = newMessage
     const tempAttachments = [...pendingAttachments]
@@ -758,7 +758,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                   onChange={e => setNewMessage(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && !isSending && handleSendMessage()}
                   placeholder="Type a message..."
-                  disabled={isSending}
+                  readOnly={isSending}
                   className="flex-1"
                 />
                 <Button

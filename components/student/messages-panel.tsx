@@ -134,7 +134,7 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
   }, [hasMore, isLoadingOlder, loadOlder])
 
   const handleSendMessage = async () => {
-    if ((!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
+    if (isSending || (!newMessage.trim() && pendingAttachments.length === 0) || !adminId) return
 
     const tempMessage = newMessage
     const tempAttachments = [...pendingAttachments]
@@ -447,7 +447,8 @@ export function MessagesPanel({ studentId, teacherName, onRead }: MessagesPanelP
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             className="flex-1"
-            disabled={isSending || !adminId}
+            readOnly={isSending}
+            disabled={!adminId}
           />
           <Button
             onClick={handleSendMessage}
