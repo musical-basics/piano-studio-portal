@@ -6,7 +6,8 @@ export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
 ) {
-    const ctx = await verifyAgentRequest(request)
+    // Elephant's calendar may log lessons with its own, separately revocable key.
+    const ctx = await verifyAgentRequest(request, { allowElephant: true })
     if (ctx instanceof NextResponse) return ctx
 
     const { id } = await params
@@ -43,6 +44,8 @@ export async function POST(
         videoUrl: videoUrl || undefined,
         sheetMusicUrl: sheetMusicUrl || undefined,
         awaitNotifications: true,
+        // The teacher pressed Complete in Elephant's calendar, an admin UI.
+        completedSource: ctx.caller === 'elephant' ? 'admin_ui' : 'agent_log',
     })
 
     if ('error' in result) {

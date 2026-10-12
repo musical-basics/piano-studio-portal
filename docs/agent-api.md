@@ -27,6 +27,8 @@ Authorization: Bearer <AGENT_API_SECRET>
 
 The server reads `AGENT_API_SECRET` from env. Missing or wrong token → `401 Unauthorized`. Missing env var on the server → `500`.
 
+**Elephant key.** `POST /lessons/:id/log` also accepts `Bearer <ELEPHANT_LESSON_LOG_SECRET>`, a separate key used only by the Elephant app's calendar **Complete** button. It works on that endpoint alone (every other endpoint returns `401` for it), records `completed_source = 'admin_ui'`, and can be revoked by removing the env var without affecting the agent.
+
 The agent always acts as the single admin profile (`role='admin'`) — there is no actor switching.
 
 ## Identifiers and formats
@@ -497,7 +499,7 @@ Response:
 |---|---|
 | `agent_log` | Logged via `POST /lessons/:id/log` by this agent API |
 | `zoom_webhook` | Auto-completed when Zoom recording finished processing |
-| `admin_ui` | Logged through the admin web UI |
+| `admin_ui` | Logged through the admin web UI, or with **Complete** in Elephant's calendar |
 | `system` | Explicit repair via `POST /lessons/:id/repair-credit` |
 | `null` | Completed before this field was added (legacy rows) |
 
