@@ -70,3 +70,23 @@ export async function createGoogleCalendarEvent(
         return null // Return null so the app doesn't crash if Google fails
     }
 }
+
+/**
+ * Remove a lesson's event from the studio calendar. Returns true when the event
+ * is gone afterwards, including when Google says it was already deleted (404/410),
+ * so callers can treat a repeat delete as success.
+ */
+export async function deleteGoogleCalendarEvent(eventId: string): Promise<boolean> {
+    try {
+        await calendar.events.delete({
+            calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+            eventId,
+        })
+        return true
+    } catch (error: any) {
+        const status = error?.code ?? error?.response?.status
+        if (status === 404 || status === 410) return true
+        console.error('❌ Google Calendar delete error:', error?.message || error)
+        return false
+    }
+}

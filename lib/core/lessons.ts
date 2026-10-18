@@ -1,13 +1,13 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
-import { studioNow } from '@/lib/studio-timezone'
+import { studioNow, studioToday } from '@/lib/studio-timezone'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
 import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
-import { createGoogleCalendarEvent } from '@/lib/google-calendar'
+import { createGoogleCalendarEvent, deleteGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendMessageCore } from '@/lib/core/messages'
 import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
@@ -915,12 +915,16 @@ export type CancelLessonArgs = {
     actorId: string
     actorRole: 'admin' | 'student'
     lessonId: string
+    // false skips the student and admin cancellation emails. Used when lessons
+    // are cleared as a side effect (e.g. marking a student inactive), where the
+    // conversation already happened and a pile of emails would only confuse.
+    notify?: boolean
 }
 
-export async function cancelLessonCore({ client, actorId, actorRole, lessonId }: CancelLessonArgs) {
+export async function cancelLessonCore({ client, actorId, actorRole, lessonId, notify = true }: CancelLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, date, time, status, zoom_meeting_id')
+        .select('student_id, date, time, status, zoom_meeting_id, google_event_id')
         .eq('id', lessonId)
         .single()
 
@@ -970,7 +974,15 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
         }
     }
 
-    if (resend) {
+    // Without this the cancelled lesson stays on the studio calendar forever,
+    // which made it look like lessons were still being booked.
+    const googleEventId = (lesson as any).google_event_id
+    if (googleEventId) {
+        const removed = await deleteGoogleCalendarEvent(googleEventId)
+        if (!removed) console.error(`cancelLessonCore: calendar event ${googleEventId} not removed (non-blocking)`)
+    }
+
+    if (resend && notify) {
         try {
             const { data: student } = await client
                 .from('profiles')
@@ -1103,7 +1115,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
     }
 
     // Notify the studio admin by email that a cancellation happened. Non-blocking.
-    if (resend) {
+    if (resend && notify) {
         try {
             const { data: student } = await client
                 .from('profiles')
@@ -1157,7 +1169,83 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId }:
     }
 }
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export type CancelUpcomingLessonsResult = {
+    cancelled: Array<{ date: string; time: string }>
+    errors: Array<{ date: string; time: string; error: string }>
+}
+
+/**
+ * Cancels every lesson a student has that hasn't started yet, without emailing
+ * anyone. Marking a student inactive only stops the daily auto-schedule from
+ * booking new weeks; lessons it already booked (up to 7 days ahead) used to stay
+ * on the books with their reminders, Zoom meeting and calendar event.
+ *
+ * Lessons that have already started are left alone so a lesson that just
+ * finished can still be logged by the Zoom webhook or by hand.
+ */
+export async function cancelUpcomingLessonsForStudentCore({
+    studentId,
+    actorId,
+}: {
+    studentId: string
+    actorId?: string
+}): Promise<CancelUpcomingLessonsResult> {
+    const supabaseAdmin = createAdminClient()
+    const result: CancelUpcomingLessonsResult = { cancelled: [], errors: [] }
+
+    const now = studioNow()
+    const today = studioToday()
+
+    const { data: lessons, error } = await supabaseAdmin
+        .from('lessons')
+        .select('id, date, time')
+        .eq('student_id', studentId)
+        .eq('status', 'scheduled')
+        .gte('date', today)
+        .order('date')
+    if (error) {
+        console.error('cancelUpcomingLessonsForStudentCore: lesson fetch failed:', error)
+        result.errors.push({ date: today, time: '', error: error.message })
+        return result
+    }
+
+    const upcoming = (lessons || []).filter((l: any) => {
+        const [hh = '00', mm = '00'] = String(l.time || '00:00').split(':')
+        return new Date(`${l.date}T${hh.padStart(2, '0')}:${mm.padStart(2, '0')}:00`).getTime() > now.getTime()
+    })
+    if (upcoming.length === 0) return result
+
+    let adminId = actorId
+    if (!adminId) {
+        const { data: admin } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('role', 'admin')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+        adminId = admin?.id
+    }
+    if (!adminId) {
+        for (const l of upcoming as any[]) result.errors.push({ date: l.date, time: l.time, error: 'No admin profile found' })
+        return result
+    }
+
+    for (const l of upcoming as any[]) {
+        const res = await cancelLessonCore({
+            client: supabaseAdmin,
+            actorId: adminId,
+            actorRole: 'admin',
+            lessonId: l.id,
+            notify: false,
+        })
+        if ('error' in res && res.error) result.errors.push({ date: l.date, time: l.time, error: res.error })
+        else result.cancelled.push({ date: l.date, time: l.time })
+    }
+    return result
+}
+
+const DAY_NAMES =['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function shiftDateStr(dateStr: string, days: number): string {
     const d = new Date(`${dateStr}T00:00:00`)

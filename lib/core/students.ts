@@ -1,22 +1,50 @@
 import { revalidatePath } from 'next/cache'
 import type { DbClient } from '@/lib/supabase/admin'
+import { cancelUpcomingLessonsForStudentCore, type CancelUpcomingLessonsResult } from '@/lib/core/lessons'
 
 export type StudentStatus = 'active' | 'inactive' | 'prospective' | 'other'
 
 export const ALLOWED_STUDENT_STATUSES: readonly StudentStatus[] = ['active', 'inactive', 'prospective', 'other'] as const
 
+/**
+ * Side effects of a status change. Only moving INTO inactive does anything: it
+ * cancels the lessons the daily auto-schedule already booked, which otherwise
+ * kept appearing after the student was deactivated.
+ *
+ * Keyed on the transition rather than the new value because the edit-student
+ * form resubmits status on every save, and re-saving an inactive student must
+ * not wipe a lesson booked for them by hand.
+ */
+export async function applyStudentStatusChange(
+    studentId: string,
+    previousStatus: string | null | undefined,
+    nextStatus: string | null | undefined,
+    actorId?: string,
+): Promise<CancelUpcomingLessonsResult | null> {
+    if (nextStatus !== 'inactive' || previousStatus === 'inactive') return null
+    return cancelUpcomingLessonsForStudentCore({ studentId, actorId })
+}
+
+async function currentStatus(client: DbClient, studentId: string): Promise<string | null> {
+    const { data } = await client.from('profiles').select('status').eq('id', studentId).maybeSingle()
+    return (data as any)?.status ?? null
+}
+
 export type UpdateStudentStatusResult =
-    | { student: Record<string, any> }
+    | { student: Record<string, any>; cancelled_lessons?: CancelUpcomingLessonsResult }
     | { error: string }
 
 export async function updateStudentStatusCore(
     client: DbClient,
     studentId: string,
     status: StudentStatus,
+    actorId?: string,
 ): Promise<UpdateStudentStatusResult> {
     if (!ALLOWED_STUDENT_STATUSES.includes(status)) {
         return { error: `status must be one of: ${ALLOWED_STUDENT_STATUSES.join(', ')}` }
     }
+
+    const previousStatus = await currentStatus(client, studentId)
 
     const { data, error } = await client
         .from('profiles')
@@ -35,8 +63,10 @@ export async function updateStudentStatusCore(
     }
     if (!data) return { error: 'Student not found' }
 
+    const cancelled = await applyStudentStatusChange(studentId, previousStatus, status, actorId)
+
     revalidatePath('/admin')
-    return { student: data }
+    return { student: data, ...(cancelled ? { cancelled_lessons: cancelled } : {}) }
 }
 
 const DAYS_OF_WEEK = [
@@ -60,7 +90,7 @@ export type WeeklySettingsInput = {
 }
 
 export type UpdateStudentSettingsResult =
-    | { student: Record<string, any> }
+    | { student: Record<string, any>; cancelled_lessons?: CancelUpcomingLessonsResult }
     | { error: string }
 
 function isValidIanaTimezone(tz: string): boolean {
@@ -84,13 +114,16 @@ function normalizeDay(input: string): DayOfWeek | null {
  * on `profiles` that the admin UI exposes in the "edit student" modal). All
  * fields are optional; only provided fields are updated.
  *
- * Does NOT touch existing scheduled lessons — this only changes the default
- * weekly template used when generating future lessons.
+ * Day/time/duration changes do NOT touch existing scheduled lessons; they only
+ * change the weekly template used when generating future lessons. The one
+ * exception is a status change into inactive, which cancels upcoming lessons
+ * (see applyStudentStatusChange).
  */
 export async function updateStudentSettingsCore(
     client: DbClient,
     studentId: string,
     input: WeeklySettingsInput,
+    actorId?: string,
 ): Promise<UpdateStudentSettingsResult> {
     const update: Record<string, any> = {}
 
@@ -161,6 +194,8 @@ export async function updateStudentSettingsCore(
 
     update.updated_at = new Date().toISOString()
 
+    const previousStatus = update.status !== undefined ? await currentStatus(client, studentId) : undefined
+
     const { data, error } = await client
         .from('profiles')
         .update(update)
@@ -178,8 +213,12 @@ export async function updateStudentSettingsCore(
     }
     if (!data) return { error: 'Student not found' }
 
+    const cancelled = update.status !== undefined
+        ? await applyStudentStatusChange(studentId, previousStatus, update.status, actorId)
+        : null
+
     revalidatePath('/admin')
-    return { student: data }
+    return { student: data, ...(cancelled ? { cancelled_lessons: cancelled } : {}) }
 }
 
 export type UpdateStudentProfileResult =

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { applyStudentStatusChange } from '@/lib/core/students'
 
 // Default tuition plan for newly-created students. Existing students keep their
 // own assigned plan (grandfathered); this only affects brand-new students that
@@ -214,6 +215,13 @@ export async function updateStudent(formData: FormData) {
                 ? primaryContactRoleRaw
                 : null
 
+        const { data: before } = await supabaseAdmin
+            .from('profiles')
+            .select('status')
+            .eq('id', id)
+            .maybeSingle()
+        const nextStatus = (formData.get('status') as 'active' | 'inactive' | 'prospective' | 'other') || null
+
         // Step 2: Update profile in public.profiles
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
@@ -227,7 +235,7 @@ export async function updateStudent(formData: FormData) {
                 lesson_time: lessonTime,
                 public_id: publicId,
                 timezone: formData.get('timezone') as string || null,
-                status: (formData.get('status') as 'active' | 'inactive' | 'prospective' | 'other') || null,
+                status: nextStatus,
                 pricing_plan_id: formData.get('pricingPlanId') as string || null,
                 preferred_name: preferredNameRaw,
                 parent_contact_name: parentContactNameRaw,
@@ -243,11 +251,20 @@ export async function updateStudent(formData: FormData) {
             return { error: 'Failed to update student profile: ' + profileError.message }
         }
 
+        const cancelled = await applyStudentStatusChange(id, before?.status, nextStatus)
+        let cancelNote = ''
+        if (cancelled?.cancelled.length) {
+            cancelNote += ` Cancelled ${cancelled.cancelled.length} upcoming lesson(s): ${cancelled.cancelled.map(l => l.date).join(', ')}.`
+        }
+        if (cancelled?.errors.length) {
+            cancelNote += ` Could not cancel ${cancelled.errors.length} lesson(s): ${cancelled.errors.map(l => `${l.date} (${l.error})`).join(', ')}.`
+        }
+
         revalidatePath('/admin')
 
         return {
             success: true,
-            message: `Student "${name}" updated successfully!`
+            message: `Student "${name}" updated successfully!${cancelNote}`
         }
     } catch (error) {
         console.error('Unexpected error:', error)

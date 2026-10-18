@@ -29,7 +29,7 @@ export async function PATCH(
         lesson_duration: body.lesson_duration,
         timezone: body.timezone,
         status: body.status,
-    })
+    }, ctx.admin.id)
 
     if ('error' in result) {
         const isNotFound = result.error === 'Student not found'
@@ -49,5 +49,6 @@ export async function PATCH(
             status: s.status,
             updated_at: s.updated_at,
         },
+        ...(result.cancelled_lessons ? { cancelled_lessons: result.cancelled_lessons } : {}),
     })
 }

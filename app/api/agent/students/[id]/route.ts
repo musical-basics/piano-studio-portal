@@ -90,11 +90,14 @@ export async function PATCH(
         )
     }
 
-    const result = await updateStudentStatusCore(ctx.client, id, status as StudentStatus)
+    const result = await updateStudentStatusCore(ctx.client, id, status as StudentStatus, ctx.admin.id)
     if ('error' in result) {
         const isNotFound = result.error === 'Student not found'
         return agentError(result.error, isNotFound ? 404 : 400)
     }
 
-    return agentOk({ student: result.student })
+    return agentOk({
+        student: result.student,
+        ...(result.cancelled_lessons ? { cancelled_lessons: result.cancelled_lessons } : {}),
+    })
 }
