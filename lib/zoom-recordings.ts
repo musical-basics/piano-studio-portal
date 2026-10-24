@@ -44,6 +44,36 @@ export function pickPrimaryRecordingFile(files: ZoomRecordingFile[]): ZoomRecord
     )
 }
 
+// A recording shorter than this is a no-show (the teacher waiting in an empty
+// room) or a dropped-connection fragment, not a lesson. Robert Alconcel's
+// 2026-10-22 no-show was a 2-3 minute clip that the webhook logged as a lesson,
+// charging him a credit and filing an empty video in his recordings.
+export const MIN_LESSON_RECORDING_MINUTES = 5
+
+// ZBackup copies carry no timing, so the organizer judges length by the
+// audio-only track. A lesson's track runs ~0.8-1 MB a minute; silence is
+// smaller still, so this sits around the same 5 minutes.
+export const MIN_LESSON_AUDIO_BYTES = 4 * 1024 * 1024
+
+/**
+ * Length of a Zoom recording in minutes, from the longest file's start/end
+ * stamps, falling back to the meeting's own duration. Null when neither is
+ * available, so callers can fail open rather than drop a real lesson.
+ */
+export function recordingMinutes(files: ZoomRecordingFile[], fallbackMinutes?: number | null): number | null {
+    const spans = (files || [])
+        .filter(f => f.recording_start && f.recording_end)
+        .map(f => (Date.parse(f.recording_end!) - Date.parse(f.recording_start!)) / 60000)
+        .filter(n => Number.isFinite(n) && n >= 0)
+    if (spans.length) return Math.max(...spans)
+    return typeof fallbackMinutes === 'number' && Number.isFinite(fallbackMinutes) ? fallbackMinutes : null
+}
+
+export function isTooShortForLesson(files: ZoomRecordingFile[], fallbackMinutes?: number | null): boolean {
+    const minutes = recordingMinutes(files, fallbackMinutes)
+    return minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES
+}
+
 export async function downloadFromZoom(downloadUrl: string, downloadToken: string): Promise<Buffer> {
     // Auth via query parameter, NOT Authorization header. Zoom's download URLs
     // redirect from zoom.us to a regional CDN (us04web.zoom.us, etc.), and

@@ -6,7 +6,10 @@ import {
     downloadFromZoom,
     getDropboxClient,
     getOrCreateSharedLink,
+    isTooShortForLesson,
+    MIN_LESSON_RECORDING_MINUTES,
     pickPrimaryRecordingFile,
+    recordingMinutes,
     uploadBufferToDropbox,
     type ZoomRecordingFile,
 } from '@/lib/zoom-recordings'
@@ -95,6 +98,15 @@ export async function POST(req: Request) {
     log(`recording.completed for meeting ${meetingId} (${recordingFiles.length} files)`)
     if (!meetingId) {
         return NextResponse.json({ error: 'missing meeting id' }, { status: 400 })
+    }
+
+    // Checked before anything else so a no-show can neither complete the lesson
+    // (and charge a credit) nor land an empty video in the student's folder.
+    // 200 so Zoom doesn't retry; the lesson stays scheduled for a manual decision.
+    if (isTooShortForLesson(recordingFiles, obj.duration)) {
+        const minutes = recordingMinutes(recordingFiles, obj.duration)
+        log(`Recording is ${minutes?.toFixed(1)} min (< ${MIN_LESSON_RECORDING_MINUTES}); treating as a no-show, not logging.`)
+        return NextResponse.json({ ok: true, skipped: 'recording too short for a lesson', minutes, logs })
     }
 
     const supabase = createAdminClient()

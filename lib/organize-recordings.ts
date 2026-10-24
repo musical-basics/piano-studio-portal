@@ -12,7 +12,12 @@
 // ZBackup directory just accumulated and recordings never reached students.
 
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
-import { getDropboxClient, getOrCreateSharedLink } from '@/lib/zoom-recordings'
+import {
+    getDropboxClient,
+    getOrCreateSharedLink,
+    MIN_LESSON_AUDIO_BYTES,
+    MIN_LESSON_RECORDING_MINUTES,
+} from '@/lib/zoom-recordings'
 
 const DEFAULT_SOURCE_DIR = process.env.DROPBOX_SOURCE_PATH || '/Apps/ZBackup-App/lionel@musicalbasics.com'
 const DEST_ROOT = '/Lesson Recordings'
@@ -158,6 +163,11 @@ export async function organizeZBackupRecordings(opts: OrganizeOptions = {}): Pro
             const primary = pickPrimaryMp4(subList.result.entries)
             if (!primary) {
                 result.skipped.push({ folder: folderName, reason: 'no .mp4 in backup folder' })
+                continue
+            }
+            const audio = subList.result.entries.find((e: any) => e['.tag'] === 'file' && /audio_only\)\.m4a$/i.test(e.name)) as any
+            if (audio && typeof audio.size === 'number' && audio.size < MIN_LESSON_AUDIO_BYTES) {
+                result.skipped.push({ folder: folderName, reason: `recording under ~${MIN_LESSON_RECORDING_MINUTES} min (no-show), left in backup` })
                 continue
             }
 

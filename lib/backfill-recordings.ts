@@ -17,6 +17,8 @@ import {
     downloadFromZoom,
     getDropboxClient,
     getOrCreateSharedLink,
+    isTooShortForLesson,
+    MIN_LESSON_RECORDING_MINUTES,
     pickPrimaryRecordingFile,
     uploadBufferToDropbox,
     type ZoomRecordingFile,
@@ -26,6 +28,7 @@ type ZoomMeeting = {
     id: number | string
     topic?: string
     start_time?: string
+    duration?: number
     recording_files?: ZoomRecordingFile[]
 }
 
@@ -129,6 +132,10 @@ export async function backfillMissingRecordings(opts: BackfillOptions = {}): Pro
         if (!meeting) {
             // No cloud recording (never recorded, or retention-expired). Not an error.
             result.skipped.push({ lessonId: lesson.id, meetingId, reason: 'no cloud recording on Zoom' })
+            continue
+        }
+        if (isTooShortForLesson(meeting.recording_files || [], meeting.duration)) {
+            result.skipped.push({ lessonId: lesson.id, meetingId, reason: `recording under ${MIN_LESSON_RECORDING_MINUTES} min (no-show)` })
             continue
         }
 
