@@ -45,10 +45,12 @@ interface MasterCalendarProps {
     onDeleteLesson?: (lesson: CalendarLesson) => void
     onEditEvent?: (event: AdminEvent) => void
     onDeleteEvent?: (event: AdminEvent) => void
+    /** Clicking a day's number opens that day's schedule (YYYY-MM-DD). */
+    onSelectDate?: (date: string) => void
     refreshTrigger?: number
 }
 
-export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDeleteEvent, refreshTrigger = 0 }: MasterCalendarProps) {
+export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDeleteEvent, onSelectDate, refreshTrigger = 0 }: MasterCalendarProps) {
     const [currentDate, setCurrentDate] = useState(new Date())
     const [items, setItems] = useState<CalendarItem[]>([])
     const [isLoading, setIsLoading] = useState(true)
@@ -215,11 +217,16 @@ export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDe
                 `}
                             >
                                 <div className={`flex justify-between items-start mb-1`}>
-                                    <span className={`text-sm font-medium h-7 w-7 flex items-center justify-center rounded-full
+                                    <button
+                                        type="button"
+                                        onClick={() => onSelectDate?.(dateKey)}
+                                        disabled={!onSelectDate}
+                                        title="View this day's schedule"
+                                        className={`text-sm font-medium h-7 w-7 flex items-center justify-center rounded-full enabled:hover:ring-2 enabled:hover:ring-primary/40 enabled:cursor-pointer
                         ${isToday ? 'bg-primary text-primary-foreground' : ''}
                     `}>
                                         {date.getDate()}
-                                    </span>
+                                    </button>
                                     {dayItems.length > 0 && (
                                         <span className="text-xs text-muted-foreground font-mono">
                                             {dayItems.length}

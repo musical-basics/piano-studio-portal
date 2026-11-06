@@ -16,6 +16,8 @@ import {
     updateLessonWithOptionalHomework,
 } from '@/lib/core/lessons'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
+import type { AdminTodayEvent, LessonWithStudent } from '@/types/admin'
 
 // Initialize Resend
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -28,6 +30,47 @@ export async function checkAvailability(date: string, time: string, duration: nu
 export async function getLessonsForDateRange(startDate: string, endDate: string) {
     const supabase = await createClient()
     return listLessonsCore(supabase as any, startDate, endDate)
+}
+
+/**
+ * One studio day's lessons (scheduled and logged) and events, for the admin
+ * dashboard's day schedule when it is pointed at a date other than today.
+ */
+export async function getAdminDaySchedule(date: string): Promise<
+    { lessons: LessonWithStudent[]; events: AdminTodayEvent[] } | { error: string }
+> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Invalid date' }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+    const { data: adminProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+    if (adminProfile?.role !== 'admin') return { error: 'Only admins can view the schedule' }
+
+    const [lessonsRes, eventsRes] = await Promise.all([
+        supabase
+            .from('lessons')
+            .select('*, student:profiles!lessons_student_id_fkey(*)')
+            .eq('date', date)
+            .in('status', ['scheduled', 'completed'])
+            .order('time', { ascending: true }),
+        supabase
+            .from('events')
+            .select('id, title, description, start_time, duration, duration_minutes, location_type, location_details')
+            .gte('start_time', studioWallClockToISO(date, '00:00'))
+            .lt('start_time', studioWallClockToISO(shiftDateStr(date, 1), '00:00'))
+            .order('start_time', { ascending: true }),
+    ])
+    if (lessonsRes.error) return { error: lessonsRes.error.message }
+
+    return {
+        lessons: (lessonsRes.data || []) as unknown as LessonWithStudent[],
+        events: (eventsRes.data || []) as AdminTodayEvent[],
+    }
 }
 
 /**

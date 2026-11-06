@@ -24,7 +24,7 @@ import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
 import { logout } from "@/app/login/actions"
-import { logLesson, markNoShow, scheduleLesson, updateLesson, bulkScheduleLessons } from "@/app/actions/lessons"
+import { logLesson, markNoShow, scheduleLesson, updateLesson, bulkScheduleLessons, getAdminDaySchedule } from "@/app/actions/lessons"
 import { useToast } from "@/hooks/use-toast"
 import { uploadSheetMusic } from "@/lib/uploads"
 import { deleteStudent } from "@/app/actions/users"
@@ -77,11 +77,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // when the admin is viewing from another timezone
     const todayStr = studioToday()
 
-    // Derive Today's Lessons from the superset
+    // Derive Today's Lessons from the superset. Logged lessons stay listed
+    // (marked Logged) so the day reads as a whole, not just what's left.
     // Note: scheduleLessons from server should include "yesterday" (UTC) to safely cover "today" (PST)
-    const todaysLessons = scheduledLessons
+    const todaysLessons: TodayLesson[] = [...scheduledLessons, ...completedLessons]
         .filter(l => l.date === todayStr)
-        .map(l => ({ ...l, student: l.student })) // Ensure shape matches TodayLesson if needed
 
     // Filter "Upcoming" to likely show today + future
     const upcomingLessons = scheduledLessons.filter(l => l.date >= todayStr)
@@ -153,6 +153,47 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setChatStudentId(studentId)
         setActiveTab("messages")
     }
+
+    // Day shown in the dashboard schedule. null follows the real today (so it
+    // rolls over at midnight); any other date is fetched on demand because the
+    // page only preloads lessons around today.
+    const [pickedDate, setPickedDate] = useState<string | null>(null)
+    const dayViewDate = pickedDate ?? todayStr
+    const isViewingToday = dayViewDate === todayStr
+    const [fetchedDay, setFetchedDay] = useState<{ date: string; lessons: TodayLesson[]; events: AdminTodayEvent[] } | null>(null)
+    const [isLoadingDay, setIsLoadingDay] = useState(false)
+
+    const showScheduleForDate = (date: string) => {
+        if (!date) return
+        setPickedDate(date === studioToday() ? null : date)
+    }
+
+    // Lesson props change whenever a lesson action revalidates the page, and
+    // calendarVersion on schedule/cancel, so the fetched day refreshes with them.
+    React.useEffect(() => {
+        if (isViewingToday) return
+        let cancelled = false
+        setIsLoadingDay(true)
+        getAdminDaySchedule(dayViewDate)
+            .then(res => {
+                if (cancelled) return
+                if ('error' in res) {
+                    toast({ variant: "destructive", title: "Could not load that day", description: res.error })
+                } else {
+                    setFetchedDay({ date: dayViewDate, ...res })
+                }
+            })
+            .catch(() => {
+                if (!cancelled) toast({ variant: "destructive", title: "Could not load that day" })
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoadingDay(false)
+            })
+        return () => { cancelled = true }
+    }, [dayViewDate, isViewingToday, scheduledLessons, completedLessons, calendarVersion])
+
+    const dayLessons = isViewingToday ? todaysLessons : fetchedDay?.date === dayViewDate ? fetchedDay.lessons : []
+    const dayEvents = isViewingToday ? todaysEvents : fetchedDay?.date === dayViewDate ? fetchedDay.events : []
 
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
@@ -796,10 +837,15 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     <TabsContent value="dashboard" className="space-y-8">
                         {/* Daily Schedule */}
                         <DashboardTab
-                            lessons={todaysLessons}
-                            events={todaysEvents}
+                            date={dayViewDate}
+                            isToday={isViewingToday}
+                            onDateChange={showScheduleForDate}
+                            isLoadingDay={isLoadingDay}
+                            lessons={dayLessons}
+                            events={dayEvents}
                             adminZoomLink={admin.zoom_link}
                             onLog={handleLogLesson}
+                            onEdit={handleEditLesson}
                             onReschedule={handleReschedule}
                             onNoShow={handleMarkNoShow}
                             onCancel={handleCancelLesson}
@@ -896,6 +942,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                         onDeleteLesson={onDeleteCalendarLesson}
                                         onEditEvent={handleEditEvent}
                                         onDeleteEvent={handleDeleteEvent}
+                                        onSelectDate={(date) => {
+                                            showScheduleForDate(date)
+                                            setActiveTab("dashboard")
+                                        }}
                                         refreshTrigger={calendarVersion}
                                     />
                                 </CardContent>

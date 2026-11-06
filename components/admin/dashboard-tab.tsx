@@ -3,18 +3,28 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
-import { isoToStudioWallClock } from "@/lib/studio-timezone"
+import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 
 interface DashboardTabProps {
+    /** Studio date being shown (YYYY-MM-DD). */
+    date: string
+    isToday: boolean
+    onDateChange: (date: string) => void
+    /** A non-today date is still being fetched. */
+    isLoadingDay?: boolean
+    /** The day's lessons, scheduled and logged. */
     lessons: TodayLesson[]
-    /** Today's calendar events (consultations, recitals, ...), rendered inline with lessons. */
+    /** The day's calendar events (consultations, recitals, ...), rendered inline with lessons. */
     events?: AdminTodayEvent[]
     adminZoomLink?: string | null
     onLog: (lesson: TodayLesson) => void
+    /** Edit notes/recording of a lesson that's already logged. */
+    onEdit: (lesson: LessonWithStudent) => void
     onReschedule: (lesson: LessonWithStudent) => void
     onNoShow: (lesson: TodayLesson) => void
     onCancel: (lessonId: string, studentName: string) => void
@@ -24,10 +34,15 @@ interface DashboardTabProps {
 }
 
 export function DashboardTab({
+    date,
+    isToday,
+    onDateChange,
+    isLoadingDay = false,
     lessons,
     events = [],
     adminZoomLink,
     onLog,
+    onEdit,
     onReschedule,
     onNoShow,
     onCancel,
@@ -57,12 +72,13 @@ export function DashboardTab({
         return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
     }
 
-    const today = new Date()
-    const formattedDate = today.toLocaleDateString('en-US', {
+    // Noon UTC formatted in UTC, so the label is the date itself in any timezone
+    const formattedDate = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'UTC',
     })
 
     // Studio wall-clock HH:MM for an event's timestamptz, comparable to
@@ -82,24 +98,49 @@ export function DashboardTab({
     return (
         <Card>
             <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div>
-                        <CardTitle className="text-2xl font-serif">Today's Schedule</CardTitle>
+                        <CardTitle className="text-2xl font-serif">{isToday ? "Today's Schedule" : "Schedule"}</CardTitle>
                         <CardDescription className="flex items-center gap-2 mt-1">
                             <Calendar className="h-4 w-4" />
                             {formattedDate}
+                            {isLoadingDay && <Loader2 className="h-4 w-4 animate-spin" />}
                         </CardDescription>
                     </div>
-                    <Badge variant="secondary" className="text-base px-4 py-2">
-                        {lessons.length} Lesson{lessons.length === 1 ? '' : 's'}
-                        {events.length > 0 && ` · ${events.length} Event${events.length === 1 ? '' : 's'}`}
-                    </Badge>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => onDateChange(shiftDateStr(date, -1))} title="Previous day">
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <Input
+                                type="date"
+                                value={date}
+                                onChange={(e) => onDateChange(e.target.value)}
+                                className="h-9 w-[150px]"
+                                aria-label="Schedule date"
+                            />
+                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => onDateChange(shiftDateStr(date, 1))} title="Next day">
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                            {!isToday && (
+                                <Button variant="outline" size="sm" className="h-9" onClick={() => onDateChange(studioToday())}>
+                                    Today
+                                </Button>
+                            )}
+                        </div>
+                        <Badge variant="secondary" className="text-base px-4 py-2">
+                            {lessons.length} Lesson{lessons.length === 1 ? '' : 's'}
+                            {events.length > 0 && ` · ${events.length} Event${events.length === 1 ? '' : 's'}`}
+                        </Badge>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
                 <div className="space-y-4">
                     {scheduleItems.length === 0 ? (
-                        <p className="text-center text-muted-foreground py-8">No lessons scheduled for today</p>
+                        <p className="text-center text-muted-foreground py-8">
+                            {isLoadingDay ? 'Loading...' : `No lessons scheduled for ${isToday ? 'today' : 'this day'}`}
+                        </p>
                     ) : (
                         scheduleItems.map((item) => item.kind === 'event' ? (
                             <Card key={`event-${item.event.id}`} className="border-2 border-violet-500/40 bg-violet-500/5">
@@ -166,7 +207,12 @@ export function DashboardTab({
                                                     <span>{lesson.student.credits} credits left</span>
                                                 </div>
                                                 {/* Confirmation Status */}
-                                                {lesson.is_confirmed ? (
+                                                {lesson.status === 'completed' ? (
+                                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1 px-2 py-0.5 h-6">
+                                                        <CheckCircle2 className="h-3 w-3" />
+                                                        Logged
+                                                    </Badge>
+                                                ) : lesson.is_confirmed ? (
                                                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 gap-1 px-2 py-0.5 h-6">
                                                         <CheckCircle2 className="h-3 w-3" />
                                                         Confirmed
@@ -180,6 +226,36 @@ export function DashboardTab({
                                             </div>
                                         </div>
                                     </div>
+                                    {lesson.status === 'completed' ? (
+                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
+                                        {lesson.video_url && (
+                                            <Button size="sm" variant="outline" asChild>
+                                                <a href={lesson.video_url} target="_blank" rel="noopener noreferrer">
+                                                    <PlayCircle className="h-4 w-4 mr-1" />
+                                                    Recording
+                                                </a>
+                                            </Button>
+                                        )}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => onMessage(lesson.student.id)}
+                                            disabled={isLoading}
+                                        >
+                                            <MessageCircle className="h-4 w-4 mr-1" />
+                                            Message
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => onEdit(lesson)}
+                                            disabled={isLoading}
+                                        >
+                                            <Pencil className="h-4 w-4 mr-1" />
+                                            Edit
+                                        </Button>
+                                    </div>
+                                    ) : (
                                     <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
                                         {(lesson.zoom_link || lesson.student.zoom_link || adminZoomLink) && (
                                             <Button
@@ -275,6 +351,7 @@ export function DashboardTab({
                                             Cancel
                                         </Button>
                                     </div>
+                                    )}
                                 </CardContent>
                             </Card>
                             ))(item)
