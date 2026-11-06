@@ -780,10 +780,13 @@ export async function listThreadsCore(
 }
 
 export async function listStudentsWithMessagesCore(client: DbClient, adminId: string) {
+    // Prospects (approved website leads) can message from their portal too;
+    // leaving them out hid their messages from the inbox while the
+    // notification email still went out.
     const { data: students, error } = await client
         .from('profiles')
         .select('*')
-        .eq('role', 'student')
+        .in('role', ['student', 'prospect'])
         .order('name')
 
     if (error || !students) {

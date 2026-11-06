@@ -29,13 +29,25 @@ export function studioNow(): Date {
 
 /**
  * Returns today's date string (YYYY-MM-DD) in studio local time.
+ *
+ * Built from Intl formatting alone, so it is also safe in the browser. Client
+ * code must use this instead of `new Date().toISOString().split('T')[0]`,
+ * which is the UTC date and rolls over to tomorrow at 4pm PST / 5pm PDT.
  */
 export function studioToday(): string {
-    const now = studioNow()
-    const y = now.getFullYear()
-    const m = String(now.getMonth() + 1).padStart(2, '0')
-    const d = String(now.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
+    return new Date().toLocaleDateString('en-CA', { timeZone: STUDIO_TZ })
+}
+
+/** Shift a YYYY-MM-DD string by whole calendar days, in any runtime timezone. */
+export function shiftDateStr(dateStr: string, days: number): string {
+    const d = new Date(`${dateStr}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+}
+
+/** Day of the week (0 = Sunday) of a YYYY-MM-DD string, in any runtime timezone. */
+export function weekdayOfDateStr(dateStr: string): number {
+    return new Date(`${dateStr}T00:00:00Z`).getUTCDay()
 }
 
 /**

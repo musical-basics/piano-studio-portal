@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Send, Music, User, Search, Loader2, Paperclip, ArrowLeft, Folder, Upload } from "lucide-react"
 import { sendMessage, getStudentsWithMessages } from "@/app/messages/actions"
 import { uploadChatAttachment } from "@/lib/uploads"
+import { studioToday } from "@/lib/studio-timezone"
 import type { Message, Profile, MessageAttachment } from "@/lib/supabase/database.types"
 import { ChatAttachmentPreview, ChatPendingAttachments, type PendingAttachment } from "@/components/chat-attachment-preview"
 import { DeletedMessageBubble } from "@/components/chat-message-delete"
@@ -494,6 +495,11 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                       <span className="font-medium truncate text-sm">
                         {student.name || 'Unknown'}
                       </span>
+                      {student.role === 'prospect' && (
+                        <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
+                          Prospect
+                        </Badge>
+                      )}
                       {student.unreadCount > 0 && selectedStudent?.id !== student.id && (
                         <Badge variant="destructive" className="h-5 px-1.5 text-[10px] rounded-full shrink-0">
                           {student.unreadCount}
@@ -811,7 +817,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                 type="date"
                 value={flagDate}
                 onChange={(e) => setFlagDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
+                min={studioToday()}
               />
             </div>
             <div className="space-y-2">

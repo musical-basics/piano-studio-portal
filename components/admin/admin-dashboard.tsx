@@ -36,7 +36,7 @@ import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
-import { isoToStudioWallClock } from "@/lib/studio-timezone"
+import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
 // Re-export types for compatibility if used elsewhere (e.g. page.tsx)
 export type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry }
@@ -73,13 +73,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setIsMounted(true)
     }, [])
 
-    // Client-side date calculation for robust timezone handling
-    // We want YYYY-MM-DD in local time
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const todayStr = `${year}-${month}-${day}`
+    // Studio (PST/PDT) date, not the browser's: lessons run on studio time even
+    // when the admin is viewing from another timezone
+    const todayStr = studioToday()
 
     // Derive Today's Lessons from the superset
     // Note: scheduleLessons from server should include "yesterday" (UTC) to safely cover "today" (PST)
@@ -172,8 +168,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setSelectedStudentForLog(student)
         setSelectedLesson(null)
         // Set default date to today
-        const today = new Date().toISOString().split('T')[0]
-        setLogDate(today)
+        setLogDate(studioToday())
         setLogTime("12:00")
         setLogDuration(60)
         setLessonHomework("")
@@ -291,29 +286,18 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setSelectedStudent(student)
 
         // Autofill date from student's recurring lesson day
-        if (student.lesson_day) {
-            const dayMap: Record<string, number> = {
-                'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
-                'Thursday': 4, 'Friday': 5, 'Saturday': 6
-            }
-            const targetDay = dayMap[student.lesson_day]
-            if (targetDay !== undefined) {
-                const today = new Date()
-                const currentDay = today.getDay()
-                let daysUntil = targetDay - currentDay
-                if (daysUntil < 0) daysUntil += 7 // Pick today if it matches, otherwise next occurrence
-                const nextDate = new Date(today)
-                nextDate.setDate(today.getDate() + daysUntil)
-                setScheduleDate(nextDate.toISOString().split('T')[0])
-            } else {
-                const tomorrow = new Date()
-                tomorrow.setDate(tomorrow.getDate() + 1)
-                setScheduleDate(tomorrow.toISOString().split('T')[0])
-            }
+        const today = studioToday()
+        const dayMap: Record<string, number> = {
+            'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+            'Thursday': 4, 'Friday': 5, 'Saturday': 6
+        }
+        const targetDay = student.lesson_day ? dayMap[student.lesson_day] : undefined
+        if (targetDay !== undefined) {
+            let daysUntil = targetDay - weekdayOfDateStr(today)
+            if (daysUntil < 0) daysUntil += 7 // Pick today if it matches, otherwise next occurrence
+            setScheduleDate(shiftDateStr(today, daysUntil))
         } else {
-            const tomorrow = new Date()
-            tomorrow.setDate(tomorrow.getDate() + 1)
-            setScheduleDate(tomorrow.toISOString().split('T')[0])
+            setScheduleDate(shiftDateStr(today, 1))
         }
 
         // Autofill time and duration from student defaults
@@ -326,9 +310,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     const openNewSchedule = () => {
         setSelectedStudent(null)
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        setScheduleDate(tomorrow.toISOString().split('T')[0])
+        setScheduleDate(shiftDateStr(studioToday(), 1))
         setScheduleTime("15:00")
         setScheduleDuration(60)
         setIsRescheduling(false)
@@ -544,7 +526,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         // Past -> Log/Complete
 
         const now = new Date()
-        const lessonDate = new Date(`${lesson.date}T${lesson.time}`) // ISO string for comparison
+        // Lesson times are studio wall-clock; parsing them as browser-local
+        // time made a later-today lesson look past when viewed from EST
+        const lessonDate = new Date(studioWallClockToISO(lesson.date, lesson.time.slice(0, 5)))
 
         if (lessonDate < now) {
             // Past: Open Log Lesson Modal
@@ -1166,7 +1150,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                     type="date"
                                     value={scheduleDate}
                                     onChange={(e) => setScheduleDate(e.target.value)}
-                                    min={new Date().toISOString().split('T')[0]}
+                                    min={studioToday()}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -1204,7 +1188,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         <Button variant="outline" onClick={() => setShowScheduleModal(false)} disabled={isLoading}>
                             Cancel
                         </Button>
-                        <Button onClick={handleScheduleSubmit} disabled={isLoading}>
+                        <Button onClick={() => handleScheduleSubmit()} disabled={isLoading}>
                             {isLoading ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
