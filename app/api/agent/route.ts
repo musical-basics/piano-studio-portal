@@ -34,7 +34,7 @@ Core endpoints:
 - DELETE /lessons/:id
 - GET /lesson-intent-flags?student_id=&from=&to=&status=
 - POST /lesson-intent-flags     body: { student_id, target_date, intent, source?, source_message_id?, lesson_id?, note? }
-- PATCH /lesson-intent-flags/:id body: { status?, note?, lesson_id? }
+- PATCH /lesson-intent-flags/:id body: { status?, note?, lesson_id? } (skip/cancel/reschedule flags keep their date from being auto-booked while "active" or "resolved"; set "dismissed" only if the request was declined and the regular lesson should happen)
 `
 
 export async function GET() {

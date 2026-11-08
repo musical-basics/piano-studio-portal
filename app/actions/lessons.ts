@@ -6,6 +6,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
 import {
+    autoBookingBlockReason,
     checkAvailabilityCore,
     listLessonsCore,
     logLessonCore,
@@ -211,7 +212,12 @@ export async function logPastLesson(
                 .neq('status', 'cancelled')
                 .maybeSingle()
 
-            if (!existingLesson) {
+            const blockReason = existingLesson ? null : await autoBookingBlockReason(studentId, nextWeekDateStr)
+            if (blockReason) {
+                console.log(`logPastLesson: not auto-creating ${nextWeekDateStr} (${blockReason})`)
+            }
+
+            if (!existingLesson && !blockReason) {
                 await supabase
                     .from('lessons')
                     .insert({

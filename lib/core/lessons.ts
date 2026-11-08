@@ -480,7 +480,14 @@ export async function logLessonCore({
                 .neq('status', 'cancelled')
                 .maybeSingle()
 
-            if (!existingLesson) {
+            // A requested day off (or a date they already cancelled) must not be
+            // re-booked just because this week's lesson got logged.
+            const blockReason = existingLesson ? null : await autoBookingBlockReason(lesson.student_id, nextWeekDateStr)
+            if (blockReason) {
+                console.log(`logLessonCore: not auto-creating ${nextWeekDateStr} (${blockReason})`)
+            }
+
+            if (!existingLesson && !blockReason) {
                 const { data: createdLesson, error: createError } = await client
                     .from('lessons')
                     .insert({
@@ -1247,6 +1254,43 @@ export async function cancelUpcomingLessonsForStudentCore({
 
 const DAY_NAMES =['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+// Flags that mean "no standing lesson on this date". 'resolved' still blocks:
+// the request was carried out (lesson skipped or moved), and re-booking the
+// date would undo it. Only 'dismissed' (request declined) frees the date.
+const DATE_BLOCKING_INTENTS = ['skip_requested', 'cancel_requested', 'reschedule_requested']
+const DATE_BLOCKING_FLAG_STATUSES = ['active', 'resolved']
+
+/**
+ * Why a date must not be booked automatically for a student (a requested day
+ * off, or a lesson they already cancelled on that date), or null if it's free.
+ * Used by the +7 day auto-create after logging a lesson; the daily
+ * auto-schedule cron applies the same rules in bulk.
+ */
+export async function autoBookingBlockReason(studentId: string, date: string): Promise<string | null> {
+    // Service role: cancellation_log is RLS deny-all, and the admin UI's
+    // RLS-scoped session would silently read zero rows.
+    const supabaseAdmin = createAdminClient()
+    const [{ data: flags }, { data: cancellations }] = await Promise.all([
+        supabaseAdmin
+            .from('lesson_intent_flags')
+            .select('intent')
+            .eq('student_id', studentId)
+            .eq('target_date', date)
+            .in('status', DATE_BLOCKING_FLAG_STATUSES)
+            .in('intent', DATE_BLOCKING_INTENTS)
+            .limit(1),
+        supabaseAdmin
+            .from('cancellation_log')
+            .select('lesson_date')
+            .eq('student_id', studentId)
+            .eq('lesson_date', date)
+            .limit(1),
+    ])
+    if (flags && flags.length > 0) return (flags[0] as any).intent
+    if (cancellations && cancellations.length > 0) return 'previously_cancelled'
+    return null
+}
+
 function shiftDateStr(dateStr: string, days: number): string {
     const d = new Date(`${dateStr}T00:00:00`)
     d.setDate(d.getDate() + days)
@@ -1280,7 +1324,8 @@ export type AutoScheduleResultRow = {
  * A slot occurrence is skipped when:
  *  - the student already has a non-cancelled lesson on that date (same convention
  *    as logLessonCore's +7d auto-create: one lesson per student per day),
- *  - an active skip/cancel/reschedule lesson_intent_flag targets that date,
+ *  - an active or resolved skip/cancel/reschedule lesson_intent_flag targets
+ *    that date (see DATE_BLOCKING_FLAG_STATUSES),
  *  - the student previously cancelled a lesson on that exact date
  *    (cancellation_log; never silently re-book a dropped date).
  * Everything else goes through scheduleLessonCore, so Google Calendar, Zoom and
@@ -1311,8 +1356,8 @@ export async function autoScheduleStandingLessonsCore({ client, adminId, fromDat
     const { data: activeFlags } = await client
         .from('lesson_intent_flags')
         .select('student_id, target_date, intent, note')
-        .eq('status', 'active')
-        .in('intent', ['skip_requested', 'cancel_requested', 'reschedule_requested'])
+        .in('status', DATE_BLOCKING_FLAG_STATUSES)
+        .in('intent', DATE_BLOCKING_INTENTS)
         .gte('target_date', fromDate)
         .lte('target_date', toDate)
     const flaggedKeys = new Map(
