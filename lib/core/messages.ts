@@ -7,6 +7,7 @@ import { isReactionEmoji, REACTION_EMOJIS } from '@/lib/chat-reactions'
 import type { ReactionMap, ReactionSummary } from '@/lib/chat-reactions'
 import { resolveSalutation } from '@/lib/core/students'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { replyAddressForStudent } from '@/lib/inbound-email'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -100,14 +101,22 @@ export async function sendMessageCore({
                 const rawSender = senderProfile?.name || 'Lionel Yu Piano Studio'
                 const finalSenderName = rawSender === 'Professor Lionel' ? 'Professor Lionel Yu' : rawSender
 
+                // Families can answer straight from their inbox: replies to this
+                // address land back in this chat (app/api/webhooks/resend-inbound).
+                // They need the whole message for that, not a teaser.
+                const isFamily = recipientProfile?.role === 'student' || recipientProfile?.role === 'prospect'
+                const replyTo = isFamily ? replyAddressForStudent(recipientId) : null
+
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: recipientEmail,
+                    ...(replyTo ? { replyTo } : {}),
                     subject: `New message from ${finalSenderName}`,
                     react: MessageNotification({
                         senderName: finalSenderName,
-                        messageContent: content.length > 200 ? content.substring(0, 200) + '...' : content,
+                        messageContent: replyTo || content.length <= 200 ? content : content.substring(0, 200) + '...',
                         recipientName: recipientProfile.name || 'Student',
+                        canReplyByEmail: Boolean(replyTo),
                     }),
                 })
             } catch (emailError) {

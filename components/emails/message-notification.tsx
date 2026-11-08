@@ -14,12 +14,15 @@ interface MessageNotificationProps {
     senderName: string
     messageContent: string
     recipientName: string
+    /** Replies to this email are posted back into the portal chat. */
+    canReplyByEmail?: boolean
 }
 
 export function MessageNotification({
     senderName,
     messageContent,
     recipientName,
+    canReplyByEmail = false,
 }: MessageNotificationProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -40,7 +43,9 @@ export function MessageNotification({
                             <Text style={messageText}>&quot;{messageContent}&quot;</Text>
                         </Section>
                         <Text style={text}>
-                            Log in to your Lionel Yu Piano Studio portal to view and reply to this message.
+                            {canReplyByEmail
+                                ? 'You can reply to this email to answer. Your reply goes straight to the studio portal chat. You can also log in to your portal to view and reply.'
+                                : 'Log in to your Lionel Yu Piano Studio portal to view and reply to this message.'}
                         </Text>
                         <Button style={button} href={`${loginUrl}/login`}>
                             View Message
@@ -109,6 +114,8 @@ const messageText = {
     color: '#333',
     margin: '0',
     fontStyle: 'italic' as const,
+    // Full messages keep their line breaks
+    whiteSpace: 'pre-wrap' as const,
 }
 
 const button = {
