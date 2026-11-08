@@ -212,7 +212,7 @@ export async function logPastLesson(
                 .neq('status', 'cancelled')
                 .maybeSingle()
 
-            const blockReason = existingLesson ? null : await autoBookingBlockReason(studentId, nextWeekDateStr)
+            const blockReason = existingLesson ? null : await autoBookingBlockReason(studentId, nextWeekDateStr, time)
             if (blockReason) {
                 console.log(`logPastLesson: not auto-creating ${nextWeekDateStr} (${blockReason})`)
             }

@@ -481,8 +481,9 @@ export async function logLessonCore({
                 .maybeSingle()
 
             // A requested day off (or a date they already cancelled) must not be
-            // re-booked just because this week's lesson got logged.
-            const blockReason = existingLesson ? null : await autoBookingBlockReason(lesson.student_id, nextWeekDateStr)
+            // re-booked just because this week's lesson got logged, and a
+            // one-off makeup must not repeat.
+            const blockReason = existingLesson ? null : await autoBookingBlockReason(lesson.student_id, nextWeekDateStr, lesson.time)
             if (blockReason) {
                 console.log(`logLessonCore: not auto-creating ${nextWeekDateStr} (${blockReason})`)
             }
@@ -1265,11 +1266,33 @@ const DATE_BLOCKING_FLAG_STATUSES = ['active', 'resolved']
  * off, or a lesson they already cancelled on that date), or null if it's free.
  * Used by the +7 day auto-create after logging a lesson; the daily
  * auto-schedule cron applies the same rules in bulk.
+ *
+ * With `time`, the booking would repeat a lesson at that weekday/time, which
+ * is also refused when the student has standing weekly slots and this isn't
+ * one of them: a logged makeup lesson shouldn't turn into a weekly one.
+ * Students with no standing slot keep the plain repeat-weekly behaviour.
  */
-export async function autoBookingBlockReason(studentId: string, date: string): Promise<string | null> {
+export async function autoBookingBlockReason(studentId: string, date: string, time?: string): Promise<string | null> {
     // Service role: cancellation_log is RLS deny-all, and the admin UI's
     // RLS-scoped session would silently read zero rows.
     const supabaseAdmin = createAdminClient()
+
+    if (time) {
+        const [{ data: profile }, { data: extraSlots }] = await Promise.all([
+            supabaseAdmin.from('profiles').select('lesson_day, lesson_time').eq('id', studentId).maybeSingle(),
+            supabaseAdmin.from('recurring_lesson_slots').select('day_of_week, time').eq('student_id', studentId),
+        ])
+        const slots: Array<{ day: string; time: string }> = []
+        if ((profile as any)?.lesson_day && (profile as any)?.lesson_time) {
+            slots.push({ day: (profile as any).lesson_day, time: String((profile as any).lesson_time).slice(0, 5) })
+        }
+        for (const e of (extraSlots || []) as any[]) slots.push({ day: e.day_of_week, time: String(e.time).slice(0, 5) })
+        const dayName = DAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]
+        if (slots.length > 0 && !slots.some(s => s.day === dayName && s.time === time.slice(0, 5))) {
+            return 'not_a_standing_slot'
+        }
+    }
+
     const [{ data: flags }, { data: cancellations }] = await Promise.all([
         supabaseAdmin
             .from('lesson_intent_flags')
