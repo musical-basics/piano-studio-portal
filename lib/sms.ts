@@ -60,7 +60,7 @@ export function smsBodyForMessage({
         parts.push(`(${attachmentCount === 1 ? 'An attachment is' : `${attachmentCount} attachments are`} in the portal: ${portal})`)
     }
     if (isFirstText) {
-        parts.push('You can reply to this text to answer. Reply STOP to stop texts.')
+        parts.push('You can reply to this text to answer. Message frequency varies; message and data rates may apply. Reply HELP for help or STOP to stop texts.')
     }
     return parts.join('\n\n')
 }
