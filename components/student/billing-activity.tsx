@@ -69,7 +69,8 @@ export function BillingActivity({ summary }: { summary: BillingSummary | undefin
                                     <p className="text-sm font-medium truncate">{row.description}</p>
                                     <p className="text-xs text-muted-foreground">
                                         {label} &middot; {formatDate(row.created_at)}
-                                        {row.applies_to === "subscription" && " · applied to your subscription payment"}
+                                        {/* Also covers package buyers: checkout takes the credit off too. */}
+                                        {row.applies_to === "subscription" && " · comes off your next payment"}
                                     </p>
                                 </div>
                             </div>
