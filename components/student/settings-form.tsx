@@ -6,22 +6,109 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Lock, Mail } from "lucide-react"
-import { updatePassword, updateNotificationEmail } from "@/app/actions/account"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Loader2, Lock, Mail, MessageSquare } from "lucide-react"
+import { updatePassword, updateNotificationEmail, updateTextSettings, type TextSettings } from "@/app/actions/account"
+import { formatPhone } from "@/lib/phone"
 
 interface StudentSettingsFormProps {
     /** The auth identity. Shown read-only: changing it would change how you sign in. */
     loginEmail: string | null
     /** Current delivery override, or null when notifications go to the login email. */
     notificationEmail: string | null
+    texting?: TextSettings
 }
 
-export function StudentSettingsForm({ loginEmail, notificationEmail }: StudentSettingsFormProps) {
+export function StudentSettingsForm({ loginEmail, notificationEmail, texting }: StudentSettingsFormProps) {
     return (
         <>
             <NotificationEmailCard loginEmail={loginEmail} notificationEmail={notificationEmail} />
+            {texting?.available && <TextMessagesCard texting={texting} />}
             <PasswordCard />
         </>
+    )
+}
+
+/**
+ * The family asks for Lionel's portal messages by text, and can answer by
+ * replying. Ticking the box is their consent, so the wording says exactly what
+ * they're agreeing to (Twilio's number approval checks for it).
+ */
+function TextMessagesCard({ texting }: { texting: TextSettings }) {
+    const [phone, setPhone] = useState(formatPhone(texting.smsPhone))
+    const [optIn, setOptIn] = useState(texting.smsOptIn)
+    const [isLoading, setIsLoading] = useState(false)
+    const { toast } = useToast()
+
+    // onSubmit rather than <form action>: an action resets the form when it
+    // finishes, and the checkbox would snap back to how it was when the page
+    // loaded, so saving again could quietly turn texts off.
+    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        const formData = new FormData(e.currentTarget)
+        formData.set("smsOptIn", optIn ? "true" : "false")
+        setIsLoading(true)
+        const result = await updateTextSettings(formData)
+        setIsLoading(false)
+        if (result.error) {
+            toast({ variant: "destructive", title: "Error", description: result.error })
+            return
+        }
+        toast({ title: "Saved", description: result.message })
+    }
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    Text messages
+                </CardTitle>
+                <CardDescription>
+                    Get Lionel&apos;s messages by text as well as email, and answer them by replying to the text.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="smsPhone">Mobile number</Label>
+                        <Input
+                            id="smsPhone"
+                            name="smsPhone"
+                            type="tel"
+                            placeholder="(604) 555-1234"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
+                        <Checkbox
+                            id="smsOptIn"
+                            checked={optIn}
+                            onCheckedChange={(v) => setOptIn(v === true)}
+                            className="mt-0.5"
+                        />
+                        <Label htmlFor="smsOptIn" className="text-xs font-normal leading-relaxed text-muted-foreground">
+                            Yes, text me messages from Lionel Yu Piano Studio about my lessons at this number. Message
+                            frequency varies. Message and data rates may apply. Reply STOP to stop at any time, or HELP
+                            for help.
+                        </Label>
+                    </div>
+
+                    <Button type="submit" disabled={isLoading}>
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Saving...
+                            </>
+                        ) : (
+                            "Save"
+                        )}
+                    </Button>
+                </form>
+            </CardContent>
+        </Card>
     )
 }
 

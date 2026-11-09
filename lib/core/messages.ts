@@ -8,6 +8,7 @@ import type { ReactionMap, ReactionSummary } from '@/lib/chat-reactions'
 import { resolveSalutation } from '@/lib/core/students'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { replyAddressForStudent } from '@/lib/inbound-email'
+import { textFamilyAboutMessageCore } from '@/lib/core/sms'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -122,6 +123,18 @@ export async function sendMessageCore({
             } catch (emailError) {
                 console.error('sendMessageCore email failed (non-blocking):', emailError)
             }
+        }
+
+        // 1b. Text it too, to a family that opted in; their text replies come
+        // back into this chat (app/api/webhooks/twilio-sms).
+        if (senderProfile?.role === 'admin') {
+            await textFamilyAboutMessageCore({
+                client,
+                recipient: recipientProfile,
+                content,
+                attachmentCount: attachments?.length ?? 0,
+                messageId: data.id,
+            })
         }
 
         // 2. Webhook Notification for inbound student messages

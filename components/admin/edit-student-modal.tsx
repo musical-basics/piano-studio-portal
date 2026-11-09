@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/select"
 import { Pencil, Loader2, Save } from "lucide-react"
 import { updateStudent } from "@/app/actions/users"
+import { Switch } from "@/components/ui/switch"
+import { formatPhone } from "@/lib/phone"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile } from "@/lib/supabase/database.types"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -68,6 +70,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
     const [primaryContactRole, setPrimaryContactRole] = useState<string>(
         ((student as any).primary_contact_role as string) || "student"
     )
+    const [smsOptIn, setSmsOptIn] = useState<boolean>(Boolean((student as any).sms_opt_in))
     const { toast } = useToast()
     const router = useRouter()
 
@@ -78,6 +81,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
         formData.set('timezone', timezone)
         formData.set('pricingPlanId', pricingPlanId)
         formData.set('primaryContactRole', primaryContactRole)
+        formData.set('smsOptIn', smsOptIn ? 'true' : 'false')
 
         try {
             const result = await updateStudent(formData)
@@ -108,7 +112,15 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
     }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                // Families can opt in themselves; start from what's saved, not
+                // what was saved when this page loaded.
+                if (next) setSmsOptIn(Boolean((student as any).sms_opt_in))
+                setOpen(next)
+            }}
+        >
             <DialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
                     <Pencil className="h-4 w-4" />
@@ -195,6 +207,30 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                         <p className="text-xs text-muted-foreground">
                             Where notifications are delivered. Students can set this themselves in Account Settings,
                             typically to move mail off a parent&apos;s inbox. Sign-in still uses the email above.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2 rounded-md border p-3">
+                        <Label htmlFor="smsPhone">Texting Number (Optional)</Label>
+                        <Input
+                            id="smsPhone"
+                            name="smsPhone"
+                            type="tel"
+                            defaultValue={formatPhone((student as any).sms_phone)}
+                            placeholder="(604) 555-1234"
+                        />
+                        <div className="flex items-start justify-between gap-3 pt-1">
+                            <Label htmlFor="smsOptIn" className="text-sm font-normal leading-snug">
+                                Text them my portal messages. Only turn this on once the family has agreed to texts.
+                            </Label>
+                            <Switch id="smsOptIn" checked={smsOptIn} onCheckedChange={setSmsOptIn} />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Their text replies land in this chat. Texts from this number always land here, even with
+                            texting off. Families can also turn this on themselves in Account Settings.
+                            {(student as any).sms_opt_in_at && (student as any).sms_opt_in
+                                ? ` Agreed ${new Date((student as any).sms_opt_in_at).toLocaleDateString()} (${(student as any).sms_opt_in_source === 'portal' ? 'in the portal' : (student as any).sms_opt_in_source === 'text' ? 'by text' : 'with you'}).`
+                                : ''}
                         </p>
                     </div>
 

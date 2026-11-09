@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { applyStudentStatusChange } from '@/lib/core/students'
+import { toE164 } from '@/lib/phone'
 
 // Default tuition plan for newly-created students. Existing students keep their
 // own assigned plan (grandfathered); this only affects brand-new students that
@@ -180,6 +181,19 @@ export async function updateStudent(formData: FormData) {
         return { error: 'Invalid lesson duration. Must be 30, 45, or 60 minutes.' }
     }
 
+    // Texting. Only touched when the form sent the fields, so other callers
+    // can't wipe a family's number or consent by leaving them out.
+    const smsFieldsSent = formData.has('smsPhone')
+    const smsPhoneRaw = ((formData.get('smsPhone') as string | null) || '').trim()
+    const smsPhone = smsPhoneRaw ? toE164(smsPhoneRaw) : null
+    if (smsPhoneRaw && !smsPhone) {
+        return { error: 'That texting number doesn\'t look right. Use 10 digits, or + and the country code.' }
+    }
+    const smsOptIn = formData.get('smsOptIn') === 'true'
+    if (smsFieldsSent && smsOptIn && !smsPhone) {
+        return { error: 'Add a texting number before turning texts on.' }
+    }
+
     // Create admin client for sensitive updates
     const supabaseAdmin = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -217,10 +231,21 @@ export async function updateStudent(formData: FormData) {
 
         const { data: before } = await supabaseAdmin
             .from('profiles')
-            .select('status')
+            .select('*')
             .eq('id', id)
             .maybeSingle()
         const nextStatus = (formData.get('status') as 'active' | 'inactive' | 'prospective' | 'other') || null
+
+        // Consent is stamped when it's given, so the record says when and how.
+        const smsUpdates = smsFieldsSent
+            ? {
+                  sms_phone: smsPhone,
+                  sms_opt_in: smsOptIn,
+                  ...(smsOptIn && !(before as any)?.sms_opt_in
+                      ? { sms_opt_in_at: new Date().toISOString(), sms_opt_in_source: 'teacher' }
+                      : {}),
+              }
+            : {}
 
         // Step 2: Update profile in public.profiles
         const { error: profileError } = await supabaseAdmin
@@ -241,6 +266,7 @@ export async function updateStudent(formData: FormData) {
                 parent_contact_name: parentContactNameRaw,
                 contact_salutation: contactSalutationRaw,
                 primary_contact_role: primaryContactRole,
+                ...smsUpdates,
                 ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })

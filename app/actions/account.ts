@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { isValidEmail } from '@/lib/notification-email'
 import { getImpersonationTarget } from '@/app/actions/impersonate'
+import { toE164 } from '@/lib/phone'
+import { smsConfigured } from '@/lib/sms'
 
 export async function updatePassword(formData: FormData) {
     const supabase = await createClient()
@@ -118,5 +120,81 @@ export async function updateNotificationEmail(formData: FormData) {
         message: raw
             ? `Notifications will now go to ${raw}`
             : 'Notifications will go back to your login email',
+    }
+}
+
+export type TextSettings = {
+    /** False until the studio's texting number is set up; the settings card stays hidden. */
+    available: boolean
+    smsPhone: string | null
+    smsOptIn: boolean
+}
+
+/** This family's texting number and whether they've asked for texts. */
+export async function getTextSettings(): Promise<TextSettings> {
+    const off: TextSettings = { available: false, smsPhone: null, smsOptIn: false }
+    if (!smsConfigured()) return off
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return off
+
+    const { studentId } = await getImpersonationTarget()
+    const { data } = await createAdminClient()
+        .from('profiles')
+        .select('*')
+        .eq('id', studentId ?? user.id)
+        .single()
+
+    return {
+        available: true,
+        smsPhone: (data as any)?.sms_phone ?? null,
+        smsOptIn: Boolean((data as any)?.sms_opt_in),
+    }
+}
+
+/**
+ * The family turns texts on or off for themselves. Turning them on is their
+ * consent, so it's stamped with when and where it was given.
+ */
+export async function updateTextSettings(formData: FormData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+
+    const { studentId } = await getImpersonationTarget()
+    const selfId = studentId ?? user.id
+
+    const raw = ((formData.get('smsPhone') as string) || '').trim()
+    const phone = raw ? toE164(raw) : null
+    const optIn = formData.get('smsOptIn') === 'true'
+
+    if (raw && !phone) return { error: 'That number doesn\'t look right. Use 10 digits, or + and your country code.' }
+    if (optIn && !phone) return { error: 'Add your mobile number to get texts.' }
+
+    const client = createAdminClient()
+    const { data: before } = await client.from('profiles').select('*').eq('id', selfId).single()
+    if (!before || !['student', 'prospect'].includes((before as any).role)) return { error: 'Could not load your account' }
+
+    const { error } = await client
+        .from('profiles')
+        .update({
+            sms_phone: phone,
+            sms_opt_in: optIn,
+            ...(optIn && !(before as any).sms_opt_in
+                ? { sms_opt_in_at: new Date().toISOString(), sms_opt_in_source: 'portal' }
+                : {}),
+        })
+        .eq('id', selfId)
+
+    if (error) {
+        console.error('updateTextSettings error:', error)
+        return { error: 'Could not save that. Please try again.' }
+    }
+
+    revalidatePath('/student/settings')
+    return {
+        success: true,
+        message: optIn ? 'You\'ll get Lionel\'s messages by text too. Reply to a text to answer.' : 'Texts are off.',
     }
 }

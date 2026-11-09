@@ -280,6 +280,11 @@ export type Profile = Database['public']['Tables']['profiles']['Row'] & {
     lesson_day?: string | null
     lesson_time?: string | null
     timezone?: string | null
+    /** Texting (supabase/migrations/20261109000000_texting.sql) */
+    sms_phone?: string | null
+    sms_opt_in?: boolean
+    sms_opt_in_at?: string | null
+    sms_opt_in_source?: 'portal' | 'teacher' | 'text' | null
 }
 export type Lesson = Database['public']['Tables']['lessons']['Row']
 /**
