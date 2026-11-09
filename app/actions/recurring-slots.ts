@@ -2,10 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { requireAdmin } from '@/lib/require-admin'
 
 // Additional recurring weekly lesson days for a student (beyond the primary slot
-// in profiles.lesson_day). All operations are admin-only and use the service-role
-// client, matching the pattern in app/actions/users.ts.
+// in profiles.lesson_day). All operations are admin-only (checked with
+// requireAdmin, since they use the service-role client), matching
+// app/actions/users.ts.
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -19,6 +21,8 @@ function admin() {
 
 export async function getRecurringSlots(studentId: string) {
     if (!studentId) return { slots: [] }
+    const denied = await requireAdmin()
+    if (denied) return { error: denied, slots: [] }
     const { data, error } = await admin()
         .from('recurring_lesson_slots')
         .select('*')
@@ -30,6 +34,8 @@ export async function getRecurringSlots(studentId: string) {
 
 export async function addRecurringSlot(studentId: string, dayOfWeek: string, time: string, duration: number) {
     if (!studentId) return { error: 'Missing student' }
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
     if (!DAYS.includes(dayOfWeek)) return { error: 'Invalid day of week' }
     if (!/^\d{2}:\d{2}$/.test(time)) return { error: 'Invalid time (expected HH:MM)' }
     if (![30, 45, 60].includes(duration)) return { error: 'Invalid duration' }
@@ -56,6 +62,8 @@ export async function addRecurringSlot(studentId: string, dayOfWeek: string, tim
 
 export async function deleteRecurringSlot(slotId: string) {
     if (!slotId) return { error: 'Missing slot id' }
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
     const { error } = await admin().from('recurring_lesson_slots').delete().eq('id', slotId)
     if (error) return { error: error.message }
     revalidatePath('/admin')

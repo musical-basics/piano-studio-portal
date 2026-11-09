@@ -6,20 +6,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { applyStudentStatusChange } from '@/lib/core/students'
 import { toE164 } from '@/lib/phone'
 import { sendOptInConfirmationCore, smsOptInStarted } from '@/lib/core/sms'
-
-/**
- * These actions use the service key, so they must check the caller themselves:
- * a server action can be called by anyone who has its id, not only from the
- * admin pages. Previewing as a student still passes, because the signed-in
- * user is still the admin.
- */
-async function requireAdmin(): Promise<string | null> {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return 'Unauthorized'
-    const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-    return me?.role === 'admin' ? null : 'Only admins can do that'
-}
+import { requireAdmin } from '@/lib/require-admin'
 
 // Default tuition plan for newly-created students. Existing students keep their
 // own assigned plan (grandfathered); this only affects brand-new students that
