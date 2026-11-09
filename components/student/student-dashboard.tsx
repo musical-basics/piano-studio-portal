@@ -78,6 +78,7 @@ import { VideoPlayer } from "@/components/video-player"
 import { getDropboxRecordings, getDropboxTemporaryLink } from "@/app/actions/recordings"
 import type { DropboxRecording } from "@/app/actions/recordings"
 import { formatRecordingName } from "@/lib/format-recording-name"
+import { studioTzAbbr } from "@/lib/studio-timezone"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -758,7 +759,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                 {new Date(`${event.date}T00:00:00`).toLocaleDateString('en-US', {
                                                     weekday: 'long', month: 'long', day: 'numeric',
                                                 })}
-                                                {' at '}{event.start_time} PST
+                                                {' at '}{event.start_time} {studioTzAbbr(event.date)}
                                                 {event.location_type === 'virtual' ? ' · Zoom' : ''}
                                             </p>
                                         </div>

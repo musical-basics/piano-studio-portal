@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -44,13 +45,13 @@ export async function notifyStudentJoined(type: 'classroom' | 'zoom') {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-        timeZone: 'America/Los_Angeles',
+        timeZone: STUDIO_TZ,
     })
     const formattedDate = now.toLocaleDateString('en-US', {
         weekday: 'long',
         month: 'short',
         day: 'numeric',
-        timeZone: 'America/Los_Angeles',
+        timeZone: STUDIO_TZ,
     })
 
     const label = type === 'classroom' ? 'Classroom' : 'Zoom'

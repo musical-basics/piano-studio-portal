@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyAgentRequest, agentOk, agentError } from '@/lib/agent/auth'
 import { listLessonsCore, scheduleLessonCore } from '@/lib/core/lessons'
-import { studioToday } from '@/lib/studio-timezone'
+import { STUDIO_TZ, studioToday, studioWallClockToISO } from '@/lib/studio-timezone'
 
 function defaultRange() {
     const start = studioToday()
@@ -23,7 +23,13 @@ export async function GET(request: NextRequest) {
     const studentId = sp.get('student_id') || undefined
 
     const { lessons, events } = await listLessonsCore(ctx.client, from, to, studentId)
-    return agentOk({ from, to, lessons, events })
+    // date/time are studio wall-clock; starts_at is the real moment, so readers
+    // never have to assume a zone. studio_timezone matches studio_settings.timezone.
+    const withInstants = (lessons as any[]).map(l => ({
+        ...l,
+        starts_at: l.date && l.time ? studioWallClockToISO(l.date, String(l.time).slice(0, 5)) : null,
+    }))
+    return agentOk({ studio_timezone: STUDIO_TZ, from, to, lessons: withInstants, events })
 }
 
 export async function POST(request: NextRequest) {

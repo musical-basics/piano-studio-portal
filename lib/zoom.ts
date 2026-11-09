@@ -1,3 +1,4 @@
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 // Basic in-memory cache for the token
 let cachedToken: string | null = null
@@ -70,7 +71,7 @@ export async function createZoomMeeting(
             type: 2, // Scheduled meeting
             start_time: startTime,
             duration: durationMinutes,
-            timezone: 'America/Los_Angeles', // Hardcoded for this studio
+            timezone: STUDIO_TZ, // Hardcoded for this studio
             settings: {
                 join_before_host: false,
                 waiting_room: true,
@@ -151,7 +152,7 @@ export async function updateZoomMeeting(
                 topic,
                 start_time: startTime,
                 duration,
-                timezone: 'America/Los_Angeles'
+                timezone: STUDIO_TZ
             })
         })
 

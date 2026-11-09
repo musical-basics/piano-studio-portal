@@ -5,6 +5,7 @@ import { Resend } from 'resend'
 import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, format } from 'date-fns'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -25,7 +26,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
     }
 
     // Calculate exact time remaining (Shifted Reference Frame)
-    // We treat both dates as "Wall Clock Time" in the Studio's Timezone (America/Los_Angeles)
+    // We treat both dates as "Wall Clock Time" in the Studio's Timezone (STUDIO_TZ)
     // regardless of the server's actual timezone (UTC).
 
     // 1. Lesson Date (Already in Wall Clock Time from DB)
@@ -33,7 +34,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
 
     // 2. Current Time (Shifted to LA Wall Clock Time)
     // toLocaleString returns "M/D/YYYY, HH:MM:SS" in the specified timezone
-    const nowInStudioTimeStr = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+    const nowInStudioTimeStr = new Date().toLocaleString('en-US', { timeZone: STUDIO_TZ })
     const now = new Date(nowInStudioTimeStr)
 
     // Calculate total minutes difference

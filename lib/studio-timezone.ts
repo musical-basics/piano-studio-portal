@@ -11,7 +11,25 @@
  *     to be treated as "next-day" by date comparisons using new Date()
  */
 
+// The ONE place the portal's code names the studio time zone. Every stored
+// lesson date/time is wall-clock in this zone with no offset. The database
+// row studio_settings.timezone says the same thing for other apps (Lionel's
+// calendar app reads it live); the two must always change together, along
+// with converting the stored times (see docs/studio-timezone.md).
 export const STUDIO_TZ = 'America/Los_Angeles'
+
+/**
+ * Short zone label for display, e.g. "PST"/"PDT" or "EST"/"EDT", correct for
+ * the date in question (daylight time or not). Pass the lesson's date when
+ * there is one; defaults to now.
+ */
+export function studioTzAbbr(at: Date | string = new Date()): string {
+    const d = typeof at === 'string' ? new Date(`${at.slice(0, 10)}T12:00:00Z`) : at
+    const part = new Intl.DateTimeFormat('en-US', { timeZone: STUDIO_TZ, timeZoneName: 'short' })
+        .formatToParts(d)
+        .find(p => p.type === 'timeZoneName')?.value
+    return part || 'ET'
+}
 
 /**
  * Returns the current Date object representing "now" evaluated in studio

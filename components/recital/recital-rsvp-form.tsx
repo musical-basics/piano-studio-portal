@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, CheckCircle2 } from "lucide-react"
 import { submitRecitalRsvp } from "@/app/actions/recital-rsvp"
+import { STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
 
 interface RecitalRsvpFormProps {
     eventId: string
@@ -41,7 +42,7 @@ export function RecitalRsvpForm({
     const [error, setError] = useState<string | null>(null)
 
     const when = new Date(eventStartTime).toLocaleString("en-US", {
-        timeZone: "America/Los_Angeles",
+        timeZone: STUDIO_TZ,
         weekday: "long", month: "long", day: "numeric",
         hour: "numeric", minute: "2-digit",
     })
@@ -80,7 +81,7 @@ export function RecitalRsvpForm({
         <Card>
             <CardHeader>
                 <CardTitle className="text-2xl font-serif">{eventTitle}</CardTitle>
-                <CardDescription>{when} PST · Group Zoom call</CardDescription>
+                <CardDescription>{when} {studioTzAbbr(new Date(eventStartTime))} · Group Zoom call</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
                 {existingStatus && (

@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { Profile } from "@/lib/supabase/database.types"
 import { PricingPlan } from "@/app/actions/pricing"
 import { RecurringSlotsManager } from "@/components/admin/recurring-slots-manager"
+import { STUDIO_TZ } from "@/lib/studio-timezone"
 
 function SubmitButton() {
     const { pending } = useFormStatus()
@@ -65,7 +66,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
         (student as any).lesson_time || "15:30"
     )
     const [timezone, setTimezone] = useState(
-        student.timezone || "America/Los_Angeles"
+        student.timezone || STUDIO_TZ
     )
     const [primaryContactRole, setPrimaryContactRole] = useState<string>(
         ((student as any).primary_contact_role as string) || "student"

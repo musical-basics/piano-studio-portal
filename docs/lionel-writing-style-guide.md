@@ -19,7 +19,7 @@ Lionel is a concert pianist and composer who runs an online piano studio (Lionel
 1. **Short.** Most messages are 1 to 3 sentences. Many are one line ("try now", "Be on in 2 mins", "Got it!").
 2. **Greet by first name, then go straight to the point.** "Hi Amanda," / "Hey Rob!" No warm-up line, no "I hope this message finds you well."
 3. **No sign-off in portal messages.** No "Best,", "Warmly,", "Cheers,", no signature. Emails may end with "Best regards,\nLionel" or just "Lionel".
-4. **Always give a time zone.** "4:45pm PST" (lowercase pm, no space, zone after). Convert for people elsewhere in parentheses: "3:15pm PST (4:15pm MST)".
+4. **Always give a time zone.** "4:45pm PST" (lowercase pm, no space, zone after). Convert for people elsewhere in parentheses: "3:15pm PST (4:15pm MST)". Since November 2026 Lionel lives on Eastern time, so his zone is **EST** (EDT in summer): "1:15pm EST". The PST examples in this guide are from before the move.
 5. **Say what you did, plainly.** "I have canceled...", "I have scheduled...", "I will waive that today." Past or future tense, first person, no passive voice.
 6. **Soften asks with an easy out.** "Please let me know if this works, no worries if not!" / "is that ok?" / "Let me know!"
 7. **Own mistakes simply.** "My apologies" is his signature phrase. Give the short real reason, then the fix. "It was I who forgot." "this was an oversight on my end."
@@ -59,6 +59,7 @@ Pick the register from the situation. Most messages are the first two.
 - Mid-conversation replies skip the greeting entirely.
 
 ### Times and dates
+- **His zone is Eastern** (EST, or EDT in summer) since November 2026; older quotes below say PST.
 - Format: **4:45pm PST**, **6:00pm PDT**, **5pm Pacific Time**. Lowercase am/pm attached to the number.
 - Ranges: **"from 4:45pm PST to 5:15pm PST"** (zone on both ends).
 - Add relative context in parentheses: "(15 minutes earlier than before)", "(same time as his July 12 lesson)", "So 1 hour earlier".

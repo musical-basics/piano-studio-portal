@@ -73,13 +73,13 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setIsMounted(true)
     }, [])
 
-    // Studio (PST/PDT) date, not the browser's: lessons run on studio time even
+    // Studio-time date (STUDIO_TZ), not the browser's: lessons run on studio time even
     // when the admin is viewing from another timezone
     const todayStr = studioToday()
 
     // Derive Today's Lessons from the superset. Logged lessons stay listed
     // (marked Logged) so the day reads as a whole, not just what's left.
-    // Note: scheduleLessons from server should include "yesterday" (UTC) to safely cover "today" (PST)
+    // Note: scheduleLessons from server should include "yesterday" (UTC) to safely cover "today" (studio time)
     const todaysLessons: TodayLesson[] = [...scheduledLessons, ...completedLessons]
         .filter(l => l.date === todayStr)
 

@@ -34,8 +34,9 @@ The agent always acts as the single admin profile (`role='admin'`) — there is 
 ## Identifiers and formats
 
 - `student_id`, `lesson_id`: UUIDs (strings). Get them from `GET /students` or `GET /lessons`.
-- `date`: `YYYY-MM-DD` (studio local date, Pacific time).
-- `time`: `HH:MM` 24-hour (e.g. `"16:30"`, `"09:00"`).
+- `date`: `YYYY-MM-DD`, the studio-local date.
+- `time`: `HH:MM` 24-hour (e.g. `"16:30"`, `"09:00"`), studio-local wall-clock.
+- **Studio time zone:** lesson dates and times (sent and received) are wall-clock in the studio time zone, with no offset. Never assume the zone: read it from `GET /lessons` (`studio_timezone`) or from the database row `studio_settings.timezone` (readable with the public key). `GET /lessons` also gives each lesson `starts_at`, the real moment as an ISO timestamp. If the studio changes zone, every stored time is converted and that setting flips in the same step.
 - `duration`: integer minutes — typically `30`, `45`, or `60`. Defaults to `60` if omitted.
 - All responses are JSON. Errors have shape `{ "error": "<message>" }`.
 
@@ -466,7 +467,7 @@ Response: `{ "success": true }`
 
 ### `GET /lessons?from=YYYY-MM-DD&to=YYYY-MM-DD&student_id=<uuid>`
 
-List non-cancelled lessons + studio events in a date range, joined with student info. All three query params are optional:
+List non-cancelled lessons + studio events in a date range, joined with student info. The response also carries `studio_timezone` (e.g. `"America/Los_Angeles"`), and each lesson a `starts_at` ISO timestamp (the real start moment; `date`/`time` stay studio wall-clock). All three query params are optional:
 - `from` defaults to today
 - `to` defaults to today + 60 days
 - `student_id` filters to one student

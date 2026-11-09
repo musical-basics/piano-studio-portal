@@ -10,6 +10,7 @@ import {
     readHeartbeat, writeHeartbeat, sendCronAlert, pingDeadManSwitch,
     cronSource, withRetry, ALERT_COOLDOWN_MINUTES,
 } from '@/lib/cron-alerts'
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,9 +44,9 @@ export async function GET(request: Request) {
     }
     const source = cronSource(request)
 
-    // 1. Establish Reference Time (Studio Time - America/Los_Angeles)
+    // 1. Establish Reference Time (Studio Time - STUDIO_TZ)
     // We treat 'now' as the Wall Clock time in the studio.
-    const nowInStudioTimeStr = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+    const nowInStudioTimeStr = new Date().toLocaleString('en-US', { timeZone: STUDIO_TZ })
     const now = new Date(nowInStudioTimeStr)
 
     console.log(`[Cron] Checking reminders at ${now.toISOString()} (Studio Time), trigger=${source}`)

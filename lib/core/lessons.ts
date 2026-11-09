@@ -1,7 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
-import { studioNow, studioToday } from '@/lib/studio-timezone'
+import { studioNow, studioToday, studioTzAbbr } from '@/lib/studio-timezone'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
@@ -24,12 +24,13 @@ function formatDateLong(date: string) {
     })
 }
 
-function formatTimePst(time: string) {
+/** "4:45pm EST": a stored studio time with the zone label for that date. */
+function formatStudioTime(time: string, date?: string) {
     const [h, m] = time.split(':')
     const hn = parseInt(h, 10)
     const ap = hn >= 12 ? 'pm' : 'am'
     const h12 = hn % 12 || 12
-    return `${h12}:${m}${ap} PST`
+    return `${h12}:${m}${ap} ${studioTzAbbr(date)}`
 }
 
 function formatDateWithWeekday(date: string) {
@@ -97,7 +98,7 @@ async function sendAutoScheduledLessonEmail({
             : (adminData?.name || 'Teacher')
 
         const formattedDate = formatDateLong(date)
-        const formattedTime = formatTimePst(time)
+        const formattedTime = formatStudioTime(time, date)
         const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
 
         await resend.emails.send({
@@ -714,7 +715,7 @@ export async function scheduleLessonCore({
             const adminName = rawName === 'Professor Lionel' ? 'Professor Lionel Yu' : rawName
 
             const formattedDate = formatDateLong(date)
-            const formattedTime = formatTimePst(time)
+            const formattedTime = formatStudioTime(time, date)
             const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
 
             await resend.emails.send({
@@ -878,9 +879,9 @@ export async function rescheduleLessonCore({
 
                 const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                 const oldDateStr = formatDateLong(lesson.date)
-                const oldTimeStr = formatTimePst(lesson.time)
+                const oldTimeStr = formatStudioTime(lesson.time, lesson.date)
                 const newDateStr = formatDateLong(newDate)
-                const newTimeStr = formatTimePst(newTime)
+                const newTimeStr = formatStudioTime(newTime, newDate)
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
@@ -1008,7 +1009,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
 
                 const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                 const formattedDate = formatDateLong(lesson.date)
-                const formattedTime = formatTimePst(lesson.time)
+                const formattedTime = formatStudioTime(lesson.time, lesson.date)
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
@@ -1080,7 +1081,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
 
                     if (admin?.id) {
                         const formattedDate = formatDateLong(lesson.date)
-                        const formattedTime = formatTimePst(lesson.time)
+                        const formattedTime = formatStudioTime(lesson.time, lesson.date)
                         await sendMessageCore({
                             client: supabaseAdmin,
                             senderId: admin.id,
@@ -1142,7 +1143,7 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
             if (adminProfile?.email) {
                 const studioName = adminProfile.studio_name || 'Lionel Yu Piano Studio'
                 const formattedDate = formatDateLong(lesson.date)
-                const formattedTime = formatTimePst(lesson.time)
+                const formattedTime = formatStudioTime(lesson.time, lesson.date)
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,

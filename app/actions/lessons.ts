@@ -17,7 +17,7 @@ import {
     updateLessonWithOptionalHomework,
 } from '@/lib/core/lessons'
 import { resolveNotificationEmail } from '@/lib/notification-email'
-import { shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import type { AdminTodayEvent, LessonWithStudent } from '@/types/admin'
 
 // Initialize Resend
@@ -742,7 +742,7 @@ export async function confirmAttendance(lessonId: string) {
                 from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                 to: adminProfile?.email || 'support@musicalbasics.com',
                 subject: `✅ ${studentName} confirmed: ${dayLabel} at ${timeLabel}`,
-                html: `<p><strong>${studentName}</strong> confirmed their lesson on <strong>${dayLabel}</strong> at <strong>${timeLabel}</strong> PST.</p>`,
+                html: `<p><strong>${studentName}</strong> confirmed their lesson on <strong>${dayLabel}</strong> at <strong>${timeLabel}</strong> ${studioTzAbbr(lessonBefore.date)}.</p>`,
             })
         } catch (notifyError) {
             console.error('confirmAttendance: admin notification failed (non-blocking):', notifyError)
@@ -811,7 +811,7 @@ export async function bulkScheduleLessons(studentId: string, count: number) {
         for (let i = 0; i < count; i++) {
             const nextDateObj = getNextDayOfWeek(lastDate, slot.day)
 
-            // Use local date components to avoid timezone shifts (e.g. 8pm PST -> Next Day UTC)
+            // Use local date components to avoid timezone shifts (e.g. an evening studio time -> next day in UTC)
             const year = nextDateObj.getFullYear()
             const month = String(nextDateObj.getMonth() + 1).padStart(2, '0')
             const day = String(nextDateObj.getDate()).padStart(2, '0')

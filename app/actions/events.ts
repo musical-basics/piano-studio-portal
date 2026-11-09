@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createZoomMeeting } from '@/lib/zoom'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
-import { studioWallClockToISO } from '@/lib/studio-timezone'
+import { STUDIO_TZ, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 
 // ==========================================
 // Types matching v0 UI expectations
@@ -87,7 +87,7 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
 
     // Fetch current user details to get Timezone
     const { data: { user } } = await supabase.auth.getUser()
-    let timezone = 'America/Los_Angeles' // Default
+    let timezone = STUDIO_TZ // Default
 
     if (user) {
         const { data: profile } = await supabase
@@ -183,7 +183,7 @@ export async function createEvent(
 ): Promise<{ success: boolean; event?: AdminEvent; error?: string }> {
     const supabase = await createClient()
 
-    // The form's date/time are STUDIO (PST) wall-clock. Parse them in the
+    // The form's date/time are STUDIO wall-clock (STUDIO_TZ). Parse them in the
     // studio timezone: `new Date(...)` here would use the server's timezone
     // (UTC on Vercel) and store a shifted instant.
     const fullStartTime = studioWallClockToISO(input.date, input.start_time)
@@ -319,7 +319,7 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
     //     .eq('id', user.id)
     //     .single()
 
-    // const timezone = profile?.timezone || 'America/Los_Angeles'
+    // const timezone = profile?.timezone || STUDIO_TZ
 
     const now = new Date()
     const upcoming: StudentEvent[] = []
@@ -330,10 +330,10 @@ export async function getStudentEvents(): Promise<{ upcoming: StudentEvent[], pa
 
         const event = invite.events
         const startDateTime = new Date(event.start_time)
-        // Studio wall-clock (America/Los_Angeles), not server-local: on Vercel the
+        // Studio wall-clock (STUDIO_TZ), not server-local: on Vercel the
         // server runs UTC and the old formatting shifted times by 7-8 hours.
-        const dateStr = startDateTime.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
-        const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' })
+        const dateStr = startDateTime.toLocaleDateString('en-CA', { timeZone: STUDIO_TZ })
+        const timeStr = startDateTime.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit', timeZone: STUDIO_TZ })
 
         const studentEvent: StudentEvent = {
             id: event.id,
@@ -427,7 +427,7 @@ export async function rsvpToEvent(
             const who = student?.name || student?.email || 'A student'
             const when = eventRow?.start_time
                 ? new Date(eventRow.start_time).toLocaleString('en-US', {
-                    timeZone: 'America/Los_Angeles',
+                    timeZone: STUDIO_TZ,
                     weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
                 })
                 : ''
@@ -437,7 +437,7 @@ export async function rsvpToEvent(
                 subject: status === 'going'
                     ? `✅ ${who} confirmed for ${eventRow?.title || 'event'}`
                     : `❌ ${who} is not attending ${eventRow?.title || 'event'}`,
-                html: `<p><strong>${who}</strong> responded <strong>${status === 'going' ? 'ATTENDING' : 'NOT ATTENDING'}</strong> to "${eventRow?.title || 'event'}"${when ? ` (${when} PST)` : ''} from the student portal.</p>${notes ? `<p>Note: ${notes}</p>` : ''}`,
+                html: `<p><strong>${who}</strong> responded <strong>${status === 'going' ? 'ATTENDING' : 'NOT ATTENDING'}</strong> to "${eventRow?.title || 'event'}"${when ? ` (${when} ${studioTzAbbr(new Date(eventRow!.start_time))})` : ''} from the student portal.</p>${notes ? `<p>Note: ${notes}</p>` : ''}`,
             })
         } catch (notifyError) {
             console.error('rsvpToEvent: admin notification failed (non-blocking):', notifyError)

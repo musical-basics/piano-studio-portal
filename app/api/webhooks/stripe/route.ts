@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { recordBillingTransaction, consumeAccountCreditForCheckoutCore } from '@/lib/core/billing'
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-11-17.clover' as any,
@@ -432,7 +433,7 @@ async function notifyAdminOfPendingCapture(paymentIntent: Stripe.PaymentIntent) 
     // Matches CAPTURE_AFTER_DAYS in app/api/cron/capture-payments (hourly, so up to an hour later).
     const autoCaptureAt = new Date(paymentIntent.created * 1000 + 3 * 24 * 60 * 60 * 1000)
     const deadlineStr = autoCaptureAt.toLocaleDateString('en-US', {
-        timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+        timeZone: STUDIO_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
     })
 
     try {
@@ -493,7 +494,7 @@ async function notifyAdminOfWebhookFailure(eventType: string, eventId: string, e
 
     const stripeEventUrl = `https://dashboard.stripe.com/events/${eventId}`
     const timestamp = new Date().toLocaleString('en-US', {
-        timeZone: 'America/Los_Angeles',
+        timeZone: STUDIO_TZ,
         weekday: 'short', month: 'short', day: 'numeric',
         hour: 'numeric', minute: '2-digit', hour12: true
     })
@@ -548,7 +549,7 @@ async function notifyRenewalSuccess({ studentName, studentEmail, creditsAdded, n
 
     const resend = new Resend(resendKey)
     const date = new Date().toLocaleDateString('en-US', {
-        timeZone: 'America/Los_Angeles',
+        timeZone: STUDIO_TZ,
         month: 'long', day: 'numeric', year: 'numeric'
     })
 

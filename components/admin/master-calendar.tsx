@@ -20,7 +20,7 @@ const formatDateKey = (date: Date) => {
 
 // Helper to extract STUDIO wall-clock date and time from an ISO string.
 // Uses the studio timezone (not the browser's), so an admin viewing from
-// another timezone still sees PST times, matching the lesson columns.
+// another timezone still sees studio times, matching the lesson columns.
 const getLocalDateTime = (isoString: string) => {
     if (!isoString) return { localDate: '', localTime: '' }
     return isoToStudioWallClock(isoString)

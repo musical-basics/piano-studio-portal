@@ -1,4 +1,5 @@
 import { google } from 'googleapis'
+import { STUDIO_TZ } from '@/lib/studio-timezone'
 
 const auth = new google.auth.JWT({
     email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -47,11 +48,11 @@ export async function createGoogleCalendarEvent(
             description: `Lesson scheduled via Studio Portal.`,
             start: {
                 dateTime: startDateTime,
-                timeZone: 'America/Los_Angeles', // ⚠️ Check this matches your studio's timezone
+                timeZone: STUDIO_TZ, // ⚠️ Check this matches your studio's timezone
             },
             end: {
                 dateTime: endDateTime,
-                timeZone: 'America/Los_Angeles',
+                timeZone: STUDIO_TZ,
             },
             colorId: '11', // 11 = Red (Tomato)
         }

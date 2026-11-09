@@ -15,7 +15,7 @@ import { getActiveStudents, createEvent, updateEvent, type CreateEventInput, typ
 import { isoToStudioWallClock } from "@/lib/studio-timezone"
 
 // Helper to extract STUDIO wall-clock date and time from an ISO string.
-// The form's date/time fields are studio (PST) wall-clock, so prefill must
+// The form's date/time fields are studio wall-clock (STUDIO_TZ), so prefill must
 // convert with the studio timezone, not the browser's.
 const getLocalDateTime = (isoString: string) => isoToStudioWallClock(isoString);
 

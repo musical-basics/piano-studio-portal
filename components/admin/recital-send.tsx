@@ -26,6 +26,7 @@ import {
     updateRecitalSendMeta, type RecitalSendItem,
 } from "@/app/actions/recital-send"
 import { saveAnnouncementDraft, sendAnnouncement } from "@/app/actions/announcements"
+import { STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
 
 export type SendPageStudent = {
     id: string
@@ -77,7 +78,7 @@ function parseToList(to: string): string[] {
 
 function studioTimeLabel(iso: string): string {
     return new Date(iso).toLocaleTimeString('en-US', {
-        timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+        timeZone: STUDIO_TZ, hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
     })
 }
 
@@ -520,7 +521,7 @@ export function RecitalSend({ event, students, initialLog }: {
                                                 ))}
                                                 {st.sent && (
                                                     <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40" variant="outline">
-                                                        Sent {new Date(st.sent.at).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })} PT
+                                                        Sent {new Date(st.sent.at).toLocaleTimeString('en-US', { timeZone: STUDIO_TZ, hour: 'numeric', minute: '2-digit' })} {studioTzAbbr(new Date(st.sent.at))}
                                                     </Badge>
                                                 )}
                                                 <div className="ml-auto flex items-center gap-2">
