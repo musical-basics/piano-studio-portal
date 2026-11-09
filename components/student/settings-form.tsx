@@ -90,12 +90,20 @@ function TextMessagesCard({ texting }: { texting: TextSettings }) {
                             className="mt-0.5"
                         />
                         <Label htmlFor="smsOptIn" className="text-xs font-normal leading-relaxed text-muted-foreground">
-                            Yes, text me messages from Lionel Yu Piano Studio about my lessons at this number. Message
-                            frequency varies. Message and data rates may apply. Reply STOP to stop at any time, or HELP
-                            for help.{" "}
-                            <a href="/texting" target="_blank" rel="noopener noreferrer" className="underline">
-                                Texting terms and privacy
-                            </a>
+                            {/* One span so the links flow inside the sentence (Label is a flex row). */}
+                            <span>
+                                Yes, text me messages from Lionel Yu Piano Studio about my lessons at this number.
+                                Message frequency varies. Message and data rates may apply. Reply STOP to stop at any
+                                time, or HELP for help.{" "}
+                                <a href="/texting" target="_blank" rel="noopener noreferrer" className="underline">
+                                    Texting terms
+                                </a>{" "}
+                                and{" "}
+                                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">
+                                    privacy policy
+                                </a>
+                                .
+                            </span>
                         </Label>
                     </div>
 

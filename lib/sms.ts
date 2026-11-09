@@ -13,6 +13,10 @@ import crypto from 'crypto'
 export { toE164, formatPhone } from '@/lib/phone'
 
 export const SMS_SENDER_NAME = 'Lionel Yu Piano Studio'
+
+// Sent once when a family turns texts on (the carrier-registered opt-in
+// confirmation; keep it in step with the Twilio campaign's opt-in message).
+export const SMS_OPT_IN_CONFIRMATION = `${SMS_SENDER_NAME}: you're signed up for texts about your lessons. Message frequency varies; message and data rates may apply. Reply HELP for help or STOP to stop.`
 // Twilio's hard limit is 1600 characters; leave room for the footer.
 const MAX_SMS_BODY = 1200
 

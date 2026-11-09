@@ -565,7 +565,11 @@ export async function StaticLandingPage() {
                             </a>
                         </div>
 
-                        <p className="text-sm text-gray-500">© {new Date().getFullYear()} Lionel Yu Piano Studio. All rights reserved.</p>
+                        <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-gray-500">
+                            <span>© {new Date().getFullYear()} Lionel Yu Piano Studio. All rights reserved.</span>
+                            <a href="/texting" className="hover:text-black transition-colors">Text messages</a>
+                            <a href="/privacy" className="hover:text-black transition-colors">Privacy policy</a>
+                        </div>
                     </div>
                 </div>
             </footer>

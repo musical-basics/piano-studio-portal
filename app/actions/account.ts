@@ -5,8 +5,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { isValidEmail } from '@/lib/notification-email'
 import { getImpersonationTarget } from '@/app/actions/impersonate'
-import { toE164 } from '@/lib/phone'
+import { formatPhone, toE164 } from '@/lib/phone'
 import { smsConfigured } from '@/lib/sms'
+import { sendOptInConfirmationCore, smsOptInStarted } from '@/lib/core/sms'
 
 export async function updatePassword(formData: FormData) {
     const supabase = await createClient()
@@ -190,6 +191,16 @@ export async function updateTextSettings(formData: FormData) {
     if (error) {
         console.error('updateTextSettings error:', error)
         return { error: 'Could not save that. Please try again.' }
+    }
+
+    if (phone && smsOptInStarted(before, optIn, phone)) {
+        const { stoppedEarlier } = await sendOptInConfirmationCore(client, selfId, phone)
+        if (stoppedEarlier) {
+            revalidatePath('/student/settings')
+            return {
+                error: `This number replied STOP to the studio before, so texts can't reach it. Text START to ${formatPhone(process.env.TWILIO_FROM_NUMBER)} to turn them back on.`,
+            }
+        }
     }
 
     revalidatePath('/student/settings')

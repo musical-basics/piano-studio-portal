@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { applyStudentStatusChange } from '@/lib/core/students'
 import { toE164 } from '@/lib/phone'
+import { sendOptInConfirmationCore, smsOptInStarted } from '@/lib/core/sms'
 
 /**
  * These actions use the service key, so they must check the caller themselves:
@@ -297,8 +298,15 @@ export async function updateStudent(formData: FormData) {
             return { error: 'Failed to update student profile: ' + profileError.message }
         }
 
+        let smsNote = ''
+        if (smsFieldsSent && smsPhone && smsOptInStarted(before, smsOptIn, smsPhone)) {
+            const { sent, stoppedEarlier } = await sendOptInConfirmationCore(supabaseAdmin as any, id, smsPhone)
+            if (stoppedEarlier) smsNote = ' Texts are off: that number replied STOP before, and has to text START to the studio number first.'
+            else if (sent) smsNote = ' A text confirming texts are on went to them.'
+        }
+
         const cancelled = await applyStudentStatusChange(id, before?.status, nextStatus)
-        let cancelNote = ''
+        let cancelNote = smsNote
         if (cancelled?.cancelled.length) {
             cancelNote += ` Cancelled ${cancelled.cancelled.length} upcoming lesson(s): ${cancelled.cancelled.map(l => l.date).join(', ')}.`
         }

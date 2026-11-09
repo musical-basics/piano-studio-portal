@@ -2,7 +2,7 @@
 // The Twilio side is lib/sms.ts.
 
 import type { DbClient } from '@/lib/supabase/admin'
-import { sendSms, smsBodyForMessage, smsConfigured } from '@/lib/sms'
+import { SMS_OPT_IN_CONFIRMATION, sendSms, smsBodyForMessage, smsConfigured } from '@/lib/sms'
 
 export type SmsLogRow = {
     student_id: string | null
@@ -87,6 +87,46 @@ export async function textFamilyAboutMessageCore({
     } catch (err: any) {
         console.error('textFamilyAboutMessageCore threw (non-blocking):', err?.message)
     }
+}
+
+/**
+ * Confirm by text that a family just turned texts on (or changed the number
+ * texts go to). Never throws. `stoppedEarlier` means that number once replied
+ * STOP, so Twilio won't text it until it replies START; texts are switched back
+ * off so the portal's record matches.
+ */
+export async function sendOptInConfirmationCore(
+    client: DbClient,
+    studentId: string,
+    phone: string,
+): Promise<{ sent: boolean; stoppedEarlier: boolean }> {
+    try {
+        if (!smsConfigured()) return { sent: false, stoppedEarlier: false }
+        const result = await sendSms(phone, SMS_OPT_IN_CONFIRMATION)
+        const stoppedEarlier = 'error' in result && result.code === 21610
+        if (stoppedEarlier) {
+            await client.from('profiles').update({ sms_opt_in: false }).eq('id', studentId)
+        }
+        await logSms(client, {
+            student_id: studentId,
+            direction: 'outbound',
+            phone,
+            body: SMS_OPT_IN_CONFIRMATION,
+            twilio_sid: 'sid' in result ? result.sid : null,
+            status: 'sid' in result ? result.status : 'failed',
+            error: 'error' in result ? result.error : null,
+        })
+        if ('error' in result) console.error(`sendOptInConfirmationCore: text to ${studentId} failed:`, result.error)
+        return { sent: 'sid' in result, stoppedEarlier }
+    } catch (err: any) {
+        console.error('sendOptInConfirmationCore threw (non-blocking):', err?.message)
+        return { sent: false, stoppedEarlier: false }
+    }
+}
+
+/** Whether saving these settings turns texts on, or moves them to a new number. */
+export function smsOptInStarted(before: any, optIn: boolean, phone: string | null): boolean {
+    return Boolean(optIn && phone && (!before?.sms_opt_in || before?.sms_phone !== phone))
 }
 
 /**
