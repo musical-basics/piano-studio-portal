@@ -65,4 +65,4 @@ Not converted, on purpose: `lesson_intent_flags.target_date` (a date only; it wo
 
 ## History
 
-- Until 2026-11-09 the studio ran on Pacific time (Lionel lived in Las Vegas). He moved to Columbia, Maryland; the switch to Eastern was coordinated with Elephant through the command center.
+- Until 2026-11-09 the studio ran on Pacific time (Lionel lived in Las Vegas). He moved to Columbia, Maryland, and the studio switched to Eastern on 2026-11-09, coordinated with Elephant through the command center (Elephant reads `studio_settings.timezone` live).
