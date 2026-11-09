@@ -6,6 +6,20 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { applyStudentStatusChange } from '@/lib/core/students'
 import { toE164 } from '@/lib/phone'
 
+/**
+ * These actions use the service key, so they must check the caller themselves:
+ * a server action can be called by anyone who has its id, not only from the
+ * admin pages. Previewing as a student still passes, because the signed-in
+ * user is still the admin.
+ */
+async function requireAdmin(): Promise<string | null> {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return 'Unauthorized'
+    const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    return me?.role === 'admin' ? null : 'Only admins can do that'
+}
+
 // Default tuition plan for newly-created students. Existing students keep their
 // own assigned plan (grandfathered); this only affects brand-new students that
 // don't get an explicit plan from the form.
@@ -16,6 +30,9 @@ const DEFAULT_PRICING_PLAN_NAME = 'Quarterly Plan (30-min Weekly)'
  * Uses SUPABASE_SERVICE_KEY to create auth user
  */
 export async function createStudent(formData: FormData) {
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
+
     const name = formData.get('name') as string
     const email = formData.get('email') as string
     const parentEmail = formData.get('parentEmail') as string | null
@@ -139,6 +156,9 @@ export async function createStudent(formData: FormData) {
  * Uses SUPABASE_SERVICE_KEY to update auth and profile
  */
 export async function updateStudent(formData: FormData) {
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
+
     const id = formData.get('id') as string
     const name = formData.get('name') as string
     const email = formData.get('email') as string
@@ -378,6 +398,9 @@ export async function updateProfileSettings(formData: FormData) {
  * Uses SUPABASE_SERVICE_KEY to remove from auth and database
  */
 export async function deleteStudent(studentId: string) {
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
+
     if (!studentId) {
         return { error: 'Student ID is required' }
     }
