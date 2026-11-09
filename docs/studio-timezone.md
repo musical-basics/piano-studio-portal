@@ -1,6 +1,6 @@
 # Studio time zone
 
-Lesson dates and times are stored as **wall-clock values in the studio's time zone, with no offset**: `lessons.date` + `lessons.time`, `profiles.lesson_day` + `profiles.lesson_time`, `cancellation_log.lesson_date` + `lesson_time`, and the admin's `profiles.available_hours`. Everything else that holds a moment (`events.start_time`, `makeup_slots`, Zoom meetings, Google Calendar events) is an absolute timestamp and never needs converting.
+Lesson dates and times are stored as **wall-clock values in the studio's time zone, with no offset**: `lessons.date` + `lessons.time`, `profiles.lesson_day` + `profiles.lesson_time`, `cancellation_log.lesson_date` + `lesson_time`, `recurring_lesson_slots.day_of_week` + `time` (a student's extra weekly days), and the admin's `profiles.available_hours`. Everything else that holds a moment (`events.start_time`, `makeup_slots`, Zoom meetings, Google Calendar events) is an absolute timestamp and never needs converting.
 
 The zone is named in two places that must always agree:
 
@@ -44,6 +44,16 @@ UPDATE profiles SET
         ELSE lesson_day END,
     lesson_time = to_char(lesson_time::time + interval '3 hours', 'HH24:MI')
 WHERE lesson_time ~ '^\d{1,2}:\d{2}';
+
+-- Extra weekly days, the same way. (This table was created after the 2026-11-09
+-- switch, so it held nothing then; include it in any future move.)
+UPDATE recurring_lesson_slots SET
+    day_of_week = CASE WHEN time::time >= '21:00' THEN
+        (ARRAY['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'])[
+            array_position(ARRAY['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'], day_of_week)]
+        ELSE day_of_week END,
+    time = to_char(time::time + interval '3 hours', 'HH24:MI')
+WHERE time ~ '^\d{1,2}:\d{2}';
 
 -- Lionel's makeup-slot availability keeps its real hours too.
 UPDATE profiles SET
