@@ -197,6 +197,44 @@ export async function issueAccountCreditCore({
     return { success: true, stripeBalanceTxnId: txn.id, newCreditCents }
 }
 
+/**
+ * Use up account credit that a one-time package checkout already took off the
+ * price (createCheckoutSession applies it as a discount, because Stripe never
+ * applies the customer balance outside an invoice).
+ *
+ * Safe to call twice for the same checkout: a balance transaction tagged with
+ * the session id means it already ran. Never takes more than the credit left,
+ * so the balance can't flip into an amount the family owes.
+ */
+export async function consumeAccountCreditForCheckoutCore({
+    customerId,
+    studentId,
+    checkoutSessionId,
+    amountCents,
+}: {
+    customerId: string
+    studentId: string
+    checkoutSessionId: string
+    amountCents: number
+}): Promise<{ usedCents: number }> {
+    const existing = await stripe.customers.listBalanceTransactions(customerId, { limit: 50 })
+    if (existing.data.some(t => t.metadata?.checkoutSessionId === checkoutSessionId)) {
+        return { usedCents: 0 }
+    }
+
+    const usedCents = Math.min(Math.round(amountCents), await getAccountCreditCents(customerId))
+    if (usedCents <= 0) return { usedCents: 0 }
+
+    await stripe.customers.createBalanceTransaction(customerId, {
+        // Positive = the credit shrinks.
+        amount: usedCents,
+        currency: 'usd',
+        description: 'Account credit used on a lesson package purchase',
+        metadata: { studentId, checkoutSessionId },
+    })
+    return { usedCents }
+}
+
 export type BillingSummary = {
     /** Dollars owed for ad-hoc items, in cents. */
     balanceDueCents: number

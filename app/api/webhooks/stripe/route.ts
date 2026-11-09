@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { Resend } from 'resend'
-import { recordBillingTransaction } from '@/lib/core/billing'
+import { recordBillingTransaction, consumeAccountCreditForCheckoutCore } from '@/lib/core/billing'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-11-17.clover' as any,
@@ -175,6 +175,29 @@ export async function POST(req: Request) {
                         }
 
                         console.log(`[Webhook] ✅ Added ${creditsToAdd} credits to user ${userId} (Checkout) | ${oldCredits} → ${newBalance}`)
+                    }
+
+                    // The checkout took account credit off the price; use it up now.
+                    // Never throws: the lesson credits are already added, and a
+                    // failed webhook would be retried and add them a second time.
+                    const accountCreditCents = Number(session.metadata?.accountCreditCents || 0)
+                    if (accountCreditCents > 0 && stripeCustomerId) {
+                        try {
+                            const { usedCents } = await consumeAccountCreditForCheckoutCore({
+                                customerId: stripeCustomerId,
+                                studentId: userId,
+                                checkoutSessionId: session.id,
+                                amountCents: accountCreditCents,
+                            })
+                            console.log(`[Webhook] Used $${(usedCents / 100).toFixed(2)} account credit for ${userId} on ${session.id}`)
+                        } catch (err: any) {
+                            console.error(`[Webhook] Failed to use account credit for ${userId} on ${session.id}:`, err?.message)
+                            await notifyAdminOfWebhookFailure(
+                                event.type,
+                                event.id,
+                                `Checkout ${session.id} gave a $${(accountCreditCents / 100).toFixed(2)} account credit discount, but the credit could not be removed from Stripe customer ${stripeCustomerId}. Remove it by hand so it isn't used twice. Error: ${err?.message}`,
+                            ).catch(() => {})
+                        }
                     }
                 }
 

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
-import { stripe, getOrCreateStripeCustomer } from '@/lib/stripe'
+import { stripe, getOrCreateStripeCustomer, getAccountCreditCents } from '@/lib/stripe'
 import type Stripe from 'stripe'
 
 export async function createCheckoutSession(pricingPointId: string) {
@@ -77,7 +77,37 @@ export async function createCheckoutSession(pricingPointId: string) {
                 cancel_url: `${appUrl}/student?canceled=true`,
             }
         } else {
-            // One-time payment
+            // One-time payment. Stripe only applies a customer's account credit
+            // (the Stripe customer balance, see issueAccountCreditCore) to
+            // invoices, and a payment-mode Checkout has no invoice, so package
+            // buyers would never see a credit come off. Apply it here as a
+            // one-off discount instead; the Stripe webhook uses up the credit
+            // once the checkout completes, so an abandoned checkout keeps it.
+            let creditAppliedCents = 0
+            const discounts: Stripe.Checkout.SessionCreateParams.Discount[] = []
+            try {
+                const creditCents = await getAccountCreditCents(stripeCustomerId)
+                // Stripe won't take a card payment under $0.50.
+                creditAppliedCents = Math.min(creditCents, Math.max(0, point.price - 50))
+                if (creditAppliedCents > 0) {
+                    const coupon = await stripe.coupons.create({
+                        amount_off: creditAppliedCents,
+                        currency: 'usd',
+                        duration: 'once',
+                        max_redemptions: 1,
+                        name: 'Account credit',
+                        metadata: { userId: user.id },
+                    })
+                    discounts.push({ coupon: coupon.id })
+                }
+            } catch (err: any) {
+                // Charge full price rather than block the purchase; the credit
+                // stays on the account for next time.
+                console.error('Account credit lookup failed, charging full price:', err?.message)
+                creditAppliedCents = 0
+                discounts.length = 0
+            }
+
             sessionParams = {
                 mode: 'payment',
                 payment_method_types: ['card'],
@@ -93,10 +123,12 @@ export async function createCheckoutSession(pricingPointId: string) {
                     },
                     quantity: 1, // We treat it as 1 item
                 }],
+                ...(discounts.length > 0 ? { discounts } : {}),
                 metadata: {
                     userId: user.id,
                     credits: point.credits.toString(),
-                    type: 'one-time'
+                    type: 'one-time',
+                    ...(creditAppliedCents > 0 ? { accountCreditCents: String(creditAppliedCents) } : {}),
                 },
                 success_url: `${appUrl}/student?success=true`,
                 cancel_url: `${appUrl}/student?canceled=true`,
