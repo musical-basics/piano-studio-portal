@@ -376,7 +376,7 @@ export default function FaqPage() {
                             The free 15-minute trial is the best way to get them answered. Send a quick note and I&apos;ll personally reply within 48 hours.
                         </p>
                         <Link
-                            href="/#trial"
+                            href="/#waitlist"
                             className="inline-flex h-11 items-center justify-center rounded-md bg-black px-6 text-base font-medium text-white shadow hover:bg-gray-800 transition-colors"
                         >
                             Request a Free Trial

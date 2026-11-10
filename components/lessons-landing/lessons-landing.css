@@ -1,0 +1,320 @@
+/*
+ * The public lessons landing page (app/page.tsx), ported from the MusicalBasics
+ * site's /lessons page (musicalbasics-monorepo, apps/web/src/components/site/
+ * site.css), which replicates the Shopify theme "Craft 4". Only the rules this
+ * page uses are copied. Everything is scoped to .mb-site so nothing leaks into
+ * the portal.
+ */
+
+.mb-site {
+    --mb-fg: 37, 37, 37;
+    --mb-bg: 239, 236, 236;
+    --mb-btn: 35, 35, 35;
+    --mb-btn-text: 239, 236, 236;
+    --mb-outline: 80, 86, 85;
+    --mb-radius: 6px;
+    --mb-rte: 34, 34, 34;
+
+    color-scheme: light;
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    background: rgb(var(--mb-bg));
+    color: rgba(var(--mb-fg), 0.75);
+    font-family: var(--font-jost), "Jost", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 300;
+    font-size: 18.75px;
+    letter-spacing: 0.75px;
+    line-height: 1.64;
+}
+
+@media (min-width: 750px) {
+    .mb-site {
+        font-size: 20px;
+    }
+}
+
+/* The portal's globals.css sets every heading to the serif; this page is all Jost. */
+.mb-site :is(h1, h2, h3, h4, h5, h6) {
+    font-family: inherit;
+}
+
+.mb-site .mb-scheme-bg1,
+.mb-site .mb-scheme-accent1 {
+    color: rgba(var(--mb-fg), 0.75);
+    background: rgb(var(--mb-bg));
+}
+
+.mb-site .mb-scheme-bg1 {
+    --mb-fg: 37, 37, 37;
+    --mb-bg: 239, 236, 236;
+    --mb-btn: 35, 35, 35;
+    --mb-btn-text: 239, 236, 236;
+    --mb-outline: 80, 86, 85;
+    --mb-rte: 34, 34, 34;
+}
+
+.mb-site .mb-scheme-accent1 {
+    --mb-fg: 239, 236, 236;
+    --mb-bg: 35, 35, 35;
+    --mb-btn: 239, 236, 236;
+    --mb-btn-text: 35, 35, 35;
+    --mb-outline: 239, 236, 236;
+    --mb-rte: 239, 236, 236;
+}
+
+/* ---- layout ---- */
+
+.mb-site .mb-page-width {
+    width: 100%;
+    max-width: 1750px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 18.75px;
+    padding-right: 18.75px;
+}
+
+@media (min-width: 750px) {
+    .mb-site .mb-page-width {
+        padding-left: 62.5px;
+        padding-right: 62.5px;
+    }
+}
+
+.mb-site .mb-page-width--narrow {
+    max-width: 907.5px;
+}
+
+/* Theme section padding: full value at 750px and up, 75% below. */
+.mb-site .mb-section-pad {
+    padding-top: calc(var(--mb-pt, 36px) * 0.75);
+    padding-bottom: calc(var(--mb-pb, 36px) * 0.75);
+}
+
+@media (min-width: 750px) {
+    .mb-site .mb-section-pad {
+        padding-top: var(--mb-pt, 36px);
+        padding-bottom: var(--mb-pb, 36px);
+    }
+}
+
+/* ---- typography ---- */
+
+.mb-site .mb-h1,
+.mb-site .mb-h3 {
+    font-weight: 400;
+    letter-spacing: 0.69px;
+    line-height: 1.3;
+    color: rgb(var(--mb-fg));
+    word-break: break-word;
+}
+
+.mb-site .mb-h1 {
+    font-size: 34.5px;
+}
+.mb-site .mb-h3 {
+    font-size: 19.55px;
+}
+
+@media (min-width: 750px) {
+    .mb-site .mb-h1 {
+        font-size: 46px;
+    }
+    .mb-site .mb-h3 {
+        font-size: 20.7px;
+    }
+}
+
+.mb-site .mb-caption {
+    font-size: 12.5px;
+    letter-spacing: 0.875px;
+    line-height: 1.56;
+}
+
+/* ---- buttons ---- */
+
+.mb-site .mb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 152px;
+    min-height: 58px;
+    padding: 0 37.5px;
+    border: 1px solid rgb(var(--mb-btn));
+    border-radius: var(--mb-radius);
+    background: rgb(var(--mb-btn));
+    color: rgb(var(--mb-btn-text));
+    font: inherit;
+    font-size: 18.75px;
+    letter-spacing: 1.25px;
+    line-height: 1.16;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+        box-shadow 0.1s ease,
+        opacity 0.1s ease;
+}
+
+.mb-site .mb-btn:hover {
+    box-shadow: 0 0 0 1px rgb(var(--mb-btn));
+}
+
+.mb-site .mb-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* ---- form fields ---- */
+
+.mb-site .mb-field {
+    width: 100%;
+    height: 58px;
+    padding: 0 18.75px;
+    border: 1px solid rgba(var(--mb-fg), 0.55);
+    border-radius: var(--mb-radius);
+    background: transparent;
+    color: rgb(var(--mb-fg));
+    font: inherit;
+    font-size: 18.75px;
+    letter-spacing: 0.5px;
+}
+
+.mb-site .mb-field::placeholder {
+    color: rgba(var(--mb-fg), 0.75);
+}
+
+.mb-site .mb-field:focus {
+    outline: none;
+    box-shadow: 0 0 0 1px rgba(var(--mb-fg), 0.55);
+}
+
+.mb-site textarea.mb-field {
+    height: auto;
+    min-height: 120px;
+    padding: 15px 18.75px;
+}
+
+.mb-site .mb-field--icon {
+    padding-right: 56px;
+}
+
+/* ---- rich text ---- */
+
+.mb-site .mb-rte {
+    overflow-wrap: anywhere;
+    color: rgb(var(--mb-rte));
+}
+
+.mb-site .mb-rte > * + * {
+    margin-top: 1em;
+}
+
+.mb-site .mb-rte h1,
+.mb-site .mb-rte h2,
+.mb-site .mb-rte h3 {
+    font-weight: 400;
+    letter-spacing: 0.69px;
+    line-height: 1.3;
+    color: rgb(var(--mb-fg));
+    margin-top: 1.2em;
+    margin-bottom: 0.4em;
+}
+
+.mb-site .mb-rte > h1:first-child,
+.mb-site .mb-rte > h2:first-child,
+.mb-site .mb-rte > h3:first-child {
+    margin-top: 0;
+}
+
+.mb-site .mb-rte h1 {
+    font-size: 1.8em;
+}
+.mb-site .mb-rte h2 {
+    font-size: 1.4em;
+}
+.mb-site .mb-rte h3 {
+    font-size: 1.15em;
+}
+
+/* Body <strong> renders at 400 (body text is 300), but bold inside headings. */
+.mb-site .mb-rte strong {
+    font-weight: 400;
+}
+
+.mb-site .mb-rte :is(h1, h2, h3) strong {
+    font-weight: 600;
+}
+
+.mb-site .mb-rte a {
+    color: rgba(var(--mb-outline), 0.85);
+    text-decoration: underline;
+    text-underline-offset: 3.75px;
+    text-decoration-thickness: 1.25px;
+}
+
+.mb-site .mb-rte a:hover {
+    color: rgb(var(--mb-outline));
+    text-decoration-thickness: 2.5px;
+}
+
+.mb-site .mb-rte ul {
+    padding-left: 1.5em;
+    list-style: disc;
+}
+
+.mb-site .mb-rte li + li {
+    margin-top: 0.35em;
+}
+
+.mb-site .mb-visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---- image banner (theme section "image-banner", small, stacked on mobile) ---- */
+
+.mb-site .mb-banner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.mb-site .mb-banner__media {
+    position: relative;
+    height: 350px;
+    overflow: hidden;
+}
+
+.mb-site .mb-banner__media img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+@media (min-width: 750px) {
+    .mb-site .mb-banner {
+        flex-direction: row;
+        min-height: 525px;
+    }
+
+    .mb-site .mb-banner__media {
+        position: absolute;
+        inset: 0;
+        height: auto;
+    }
+}
+
+html:has(.mb-site) {
+    scroll-behavior: smooth;
+}
