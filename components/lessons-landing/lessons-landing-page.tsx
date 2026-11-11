@@ -90,14 +90,15 @@ export function LessonsLandingPage() {
             <SiteHeader />
 
             <main id="MainContent" className="flex-1">
-                <section className="mb-banner">
+                <section className="mb-banner mb-banner--dim">
                     <div className="mb-banner__media">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src="/landing/piano-hands.jpg" alt="" />
                     </div>
-                    {/* The second way into the portal, like the old landing's "Student Portal" button (brief #275). */}
-                    <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-8 md:pb-12">
-                        <Link href="/login" className="mb-btn mb-btn--light shadow-lg">
+                    {/* The second way into the portal, like the old landing's "Student Portal" button (briefs #275, #285). */}
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 px-6 text-center">
+                        <p className="text-[14px] uppercase tracking-[3px] text-white/85">Already a student?</p>
+                        <Link href="/login" className="mb-btn mb-btn--outline-light">
                             Student Portal
                         </Link>
                     </div>
