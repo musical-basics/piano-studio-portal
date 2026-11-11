@@ -166,6 +166,8 @@
     border-color: rgba(255, 255, 255, 0.9);
     background: rgba(255, 255, 255, 0.08);
     color: #fff;
+    font-weight: 500;
+    border-width: 1.5px;
     backdrop-filter: blur(2px);
 }
 

@@ -97,7 +97,9 @@ export function LessonsLandingPage() {
                     </div>
                     {/* The second way into the portal, like the old landing's "Student Portal" button (briefs #275, #285). */}
                     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 px-6 text-center">
-                        <p className="text-[14px] uppercase tracking-[3px] text-white/85">Already a student?</p>
+                        <p className="text-[14px] font-semibold uppercase tracking-[3px] text-white [text-shadow:0_1px_6px_rgba(0,0,0,0.5)]">
+                            Already a student?
+                        </p>
                         <Link href="/login" className="mb-btn mb-btn--outline-light">
                             Student Portal
                         </Link>
