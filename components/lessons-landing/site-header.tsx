@@ -185,18 +185,17 @@ export function SiteHeader() {
                 </a>
 
                 <div className="flex items-center justify-end gap-1 text-[rgb(var(--mb-fg))]">
+                    {/* The portal's sign-in, as a clear button like the old studio landing had (brief #275). */}
                     <Link
                         href={LOGIN_HREF}
-                        className="hidden px-2 text-[17.5px] text-[rgba(var(--mb-fg),0.75)] transition-colors hover:text-[rgb(var(--mb-fg))] hover:underline hover:underline-offset-4 sm:inline"
+                        className="inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-[6px] border border-[rgba(var(--mb-fg),0.6)] px-3 text-[15px] tracking-[0.5px] text-[rgb(var(--mb-fg))] transition-colors hover:bg-[rgb(var(--mb-fg))] hover:text-[rgb(var(--mb-bg))] sm:h-11 sm:px-4 sm:text-[16.25px]"
                     >
-                        Login
-                    </Link>
-                    <Link href={LOGIN_HREF} className="flex h-11 w-11 items-center justify-center transition-transform hover:scale-105" aria-label="Student login">
-                        <User size={28} strokeWidth={1.2} aria-hidden />
+                        <User size={18} strokeWidth={1.5} aria-hidden className="hidden sm:block" />
+                        Student Login
                     </Link>
                     <a
                         href={`${STORE}/cart`}
-                        className="flex h-11 w-11 items-center justify-center transition-transform hover:scale-105"
+                        className="hidden h-11 w-11 items-center justify-center transition-transform hover:scale-105 sm:flex"
                         aria-label="MusicalBasics cart"
                     >
                         <ShoppingBag size={28} strokeWidth={1.2} aria-hidden />

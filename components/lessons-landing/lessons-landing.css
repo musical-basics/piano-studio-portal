@@ -161,6 +161,12 @@
     box-shadow: 0 0 0 1px rgb(var(--mb-btn));
 }
 
+/* Light button for use over a photo. */
+.mb-site .mb-btn--light {
+    --mb-btn: 239, 236, 236;
+    --mb-btn-text: 35, 35, 35;
+}
+
 .mb-site .mb-btn:disabled {
     cursor: not-allowed;
     opacity: 0.5;

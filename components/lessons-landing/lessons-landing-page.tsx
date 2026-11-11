@@ -95,6 +95,12 @@ export function LessonsLandingPage() {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src="/landing/piano-hands.jpg" alt="" />
                     </div>
+                    {/* The second way into the portal, like the old landing's "Student Portal" button (brief #275). */}
+                    <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center pb-8 md:pb-12">
+                        <Link href="/login" className="mb-btn mb-btn--light shadow-lg">
+                            Student Portal
+                        </Link>
+                    </div>
                 </section>
 
                 {SHOW_FULL_NOTICE ? (
