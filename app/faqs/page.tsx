@@ -6,6 +6,7 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion"
+import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
 
 type FaqItem = {
     question: string
@@ -71,7 +72,7 @@ const FAQ_GROUPS: FaqGroup[] = [
             {
                 question: "What ages do you teach?",
                 answer: (
-                    <p><strong>Students 12 and over.</strong> Currently focused on teen and adult learners.</p>
+                    <p><strong>Students {MIN_STUDENT_AGE} and over.</strong> From pre-teens through adult learners.</p>
                 ),
             },
         ],

@@ -17,6 +17,7 @@ import {
 import { Loader2, CheckCircle2 } from "lucide-react"
 import { submitTrialInquiry } from "@/app/actions/trial-inquiries"
 import { useToast } from "@/hooks/use-toast"
+import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
 
 const TIMEZONES = [
     { value: "America/New_York", label: "Eastern (ET)" },
@@ -72,11 +73,11 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
         e.preventDefault()
 
         const ageNumber = Number(age)
-        if (!age || !Number.isInteger(ageNumber) || ageNumber < 12) {
+        if (!age || !Number.isInteger(ageNumber) || ageNumber < MIN_STUDENT_AGE) {
             toast({
                 variant: "destructive",
                 title: "Please enter a valid age",
-                description: "This studio currently teaches students 12 and over.",
+                description: `This studio currently teaches students ${MIN_STUDENT_AGE} and over.`,
             })
             return
         }
@@ -169,7 +170,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
                     id="trial-age"
                     type="number"
                     inputMode="numeric"
-                    min={12}
+                    min={MIN_STUDENT_AGE}
                     max={120}
                     required
                     placeholder="Your age"
@@ -177,7 +178,7 @@ export function TrialInquiryForm({ className }: TrialInquiryFormProps) {
                     value={age}
                     onChange={(e) => setAge(e.target.value)}
                 />
-                <p className="text-sm text-gray-500">This studio currently teaches students 12 and over.</p>
+                <p className="text-sm text-gray-500">This studio currently teaches students {MIN_STUDENT_AGE} and over.</p>
             </div>
 
             <div className="space-y-2">

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { Resend } from "resend"
 import { TrialInquiryAutoResponse } from "@/components/emails/trial-inquiry-autoresponse"
+import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -25,8 +26,8 @@ export async function submitTrialInquiry(input: TrialInquiryInput) {
         return { success: false, error: "Missing required fields" }
     }
 
-    if (!Number.isInteger(age) || age < 12) {
-        return { success: false, error: "Students must be 12 or older" }
+    if (!Number.isInteger(age) || age < MIN_STUDENT_AGE) {
+        return { success: false, error: `Students must be ${MIN_STUDENT_AGE} or older` }
     }
 
     if (availability.length === 0) {

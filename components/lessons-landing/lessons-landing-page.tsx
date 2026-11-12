@@ -2,6 +2,7 @@ import { Fragment } from "react"
 import Link from "next/link"
 import { Jost } from "next/font/google"
 import { STUDIO_TZ } from "@/lib/studio-timezone"
+import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
 import { SiteHeader } from "./site-header"
 import { SiteFooter } from "./site-footer"
 import { WaitlistForm } from "./waitlist-form"
@@ -192,6 +193,9 @@ export function LessonsLandingPage() {
                             </li>
                             <li>
                                 <strong>Trial Lesson (15 Mins):</strong> Free
+                            </li>
+                            <li>
+                                <strong>Ages:</strong> {MIN_STUDENT_AGE} and up
                             </li>
                             <li>
                                 Every quarter includes lesson recordings, custom sheet music &amp; exercises, online recital
