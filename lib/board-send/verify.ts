@@ -45,7 +45,7 @@ export type BoardSendCheck =
  * The trust anchor, from this deployment's environment:
  *   BOARD_SEND_RP_ID        the board's tailnet host name
  *   BOARD_SEND_ORIGIN       https:// + that host
- *   BOARD_SEND_CREDENTIALS  JSON list from `cmdr faceid --export`: [{ id, x, y }] (P-256, base64url)
+ *   BOARD_SEND_CREDENTIALS  the `credentials` list from `cmdr faceid --export` (P-256 keys, base64url)
  * Returns null until all three are set, which keeps Face ID send switched off.
  */
 export function readBoardSendTrust(env: Record<string, string | undefined> = process.env): BoardSendTrust | null {
@@ -60,11 +60,14 @@ export function readBoardSendTrust(env: Record<string, string | undefined> = pro
     }
     if (!Array.isArray(raw)) return null
     const credentials: PinnedCredential[] = []
-    for (const c of raw as any[]) {
-        if (!c || typeof c.id !== 'string' || typeof c.x !== 'string' || typeof c.y !== 'string') continue
+    for (const entry of raw as any[]) {
+        // Accepts the export's own shape ({ id, publicKey: { kty, crv, x, y } }) or a flat { id, kty, crv, x, y }.
+        if (!entry || typeof entry.id !== 'string') continue
+        const c = entry.publicKey && typeof entry.publicKey === 'object' ? entry.publicKey : entry
+        if (typeof c.x !== 'string' || typeof c.y !== 'string') continue
         if (c.kty !== undefined && c.kty !== 'EC') continue
         if (c.crv !== undefined && c.crv !== 'P-256') continue
-        credentials.push({ id: c.id, x: c.x, y: c.y })
+        credentials.push({ id: entry.id, x: c.x, y: c.y })
     }
     if (!credentials.length) return null
     return { rpId, origin, credentials }
@@ -126,17 +129,20 @@ function coseKey(cred: PinnedCredential): Uint8Array {
 }
 
 /**
- * Contract checks 1 to 4, in order. Any failure means nothing is sent.
+ * Contract checks 1 to 4, in order. Any failure means nothing is sent. `channel` is only
+ * overridden by the self-check, to run the wiki's test vector (which is signed for "support").
  * (5 to 7, single use and the studio's own pre-send checks, need the database: the route does them.)
  */
-export async function verifyBoardSend(body: unknown, trust: BoardSendTrust, nowSeconds: number): Promise<BoardSendCheck> {
+export async function verifyBoardSend(
+    body: unknown, trust: BoardSendTrust, nowSeconds: number, channel: string = BOARD_SEND_CHANNEL,
+): Promise<BoardSendCheck> {
     const parsed = parseBoardSendRequest(body)
     if (typeof parsed === 'string') return { ok: false, status: 400, reason: parsed }
     const req = parsed
 
     // 1. Version (parsed), channel, expiry window.
-    if (req.message.channel !== BOARD_SEND_CHANNEL) {
-        return { ok: false, status: 400, reason: `this receiver only sends the "${BOARD_SEND_CHANNEL}" channel` }
+    if (req.message.channel !== channel) {
+        return { ok: false, status: 400, reason: `this receiver only sends the "${channel}" channel` }
     }
     if (req.expires <= nowSeconds) return { ok: false, status: 403, reason: 'the signature has expired; tap Send again' }
     if (req.expires > nowSeconds + MAX_EXPIRES_AHEAD_SECONDS) {

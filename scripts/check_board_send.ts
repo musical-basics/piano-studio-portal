@@ -126,7 +126,59 @@ async function expectRefused(name: string, body: unknown, status: number) {
         BOARD_SEND_CREDENTIALS: JSON.stringify([{ id: CRED_ID, kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y }, { id: 'rsa', kty: 'RSA', x: 'a', y: 'b' }]),
     })
     assert.equal(t?.credentials.length, 1)
+    // The export's own shape (publicKey nested), as printed by `cmdr faceid --export`.
+    const nested = readBoardSendTrust({
+        BOARD_SEND_RP_ID: RP_ID, BOARD_SEND_ORIGIN: ORIGIN,
+        BOARD_SEND_CREDENTIALS: JSON.stringify([{ id: CRED_ID, label: 'his phone', fingerprint: 'x', publicKey: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y } }]),
+    })
+    assert.deepEqual(nested?.credentials, [{ id: CRED_ID, x: jwk.x, y: jwk.y }])
     console.log('ok    trust anchor parsing')
+
+    // The wiki's test vector ("Signed send"), made by the board's own code with a throw-away key.
+    // It is signed for the "support" channel, so the channel is overridden for this check only.
+    const wikiTrust: BoardSendTrust = {
+        rpId: 'board.example.ts.net', origin: 'https://board.example.ts.net',
+        credentials: [{ id: 'test-credential-id', x: 'vWKYNd79XLD1Rwt8jjQUeyuqby_bYc5XjycckhufSPc', y: 'imEczEp2Loy1v0C53oqNdvgNRaa5txt1fmA0wqvlmyM' }],
+    }
+    const draft = 'Hi Dana,\n\nThursday at 4 works. See you then.\n\nWarmly, Lionel'
+    const wiki = () => ({
+        v: 1,
+        message: { id: 412, channel: 'support', ref: 'thread-81' },
+        draft,
+        draft_sha256: '5a960f38c0e2c1bc98f26be70764618c95814e6c33d7201657622d3cde90bb37',
+        nonce: '000102030405060708090a0b0c0d0e0f',
+        expires: 1900000000,
+        assertion: {
+            id: 'test-credential-id',
+            authenticatorData: 'qkBBIpv8A1S435VIe662FA1hGIQKLT0bKvcAw3DElOcFAAAAAA',
+            clientDataJSON: 'eyJ0eXBlIjogIndlYmF1dGhuLmdldCIsICJjaGFsbGVuZ2UiOiAiT0I2dUc4NXcwak53bzl4Y0RBWTEwMWY2cXhLMDFQWVAyblcwUDVRd3pxYyIsICJvcmlnaW4iOiAiaHR0cHM6Ly9ib2FyZC5leGFtcGxlLnRzLm5ldCIsICJjcm9zc09yaWdpbiI6IGZhbHNlfQ',
+            signature: 'MEQCIEWIMwFEFpbX0tW5GY7N-7wy0NK2a9safDs60sLhABwEAiBYrW0YNncWRJSncwwHqCOF4eFywlhzKvPYgBS9nHoOcQ',
+        },
+    })
+    assert.equal(
+        challengeFor(signedPayload(412, 'support', 'thread-81', wiki().draft_sha256, wiki().nonce, 1900000000)),
+        'OB6uG85w0jNwo9xcDAY101f6qxK01PYP2nW0P5Qwzqc',
+    )
+    const WIKI_NOW = 1900000000 - 300
+    const wikiCheck = (b: unknown) => verifyBoardSend(b, wikiTrust, WIKI_NOW, 'support')
+    const good = await wikiCheck(wiki())
+    assert.equal(good.ok, true, `wiki vector: expected ok, got ${JSON.stringify(good)}`)
+    console.log('ok    the wiki test vector')
+    const tweaks: [string, (b: ReturnType<typeof wiki>) => void][] = [
+        ['draft', b => { b.draft = b.draft.replace('Dana', 'Dane'); b.draft_sha256 = sha256Hex(b.draft) }],
+        ['nonce', b => { b.nonce = b.nonce.slice(0, -1) + 'e' }],
+        ['expires', b => { b.expires = 1900000001 }],
+        ['message.id', b => { b.message.id = 413 }],
+        ['message.channel', b => { b.message.channel = 'supporu' }],
+        ['message.ref', b => { b.message.ref = 'thread-82' }],
+    ]
+    for (const [field, tweak] of tweaks) {
+        const b = wiki()
+        tweak(b)
+        const r = await verifyBoardSend(b, wikiTrust, WIKI_NOW, field === 'message.channel' ? 'supporu' : 'support')
+        assert.equal(r.ok, false, `wiki vector with ${field} changed: expected refusal`)
+        console.log(`refused the wiki vector with one character of ${field} changed${r.ok ? '' : `: ${r.reason}`}`)
+    }
 
     console.log('\nall checks passed')
 })().catch(e => { console.error(e); process.exit(1) })
