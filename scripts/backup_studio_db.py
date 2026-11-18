@@ -27,11 +27,13 @@ run emails OK or FAILED to the studio inbox (the admin profile's email), and
 every finished run (OK or PARTIAL) stamps cron_heartbeats 'studio-backup', which
 the portal's daily watchdog checks (decision #438).
 
-Secrets: environment first (the launchd agent's plist), then the repo's
-.env.local. The Management API token comes from SUPABASE_PAT or, failing that,
-the Supabase CLI's login in the macOS keychain. The launchd agent runs a COPY
-of this file outside ~/Documents (macOS denies launchd agents reads there);
-re-run scripts/install_backup_agent.sh after editing it.
+Secrets: the environment (manual and test runs), then the macOS Keychain
+(service 'studio-backup', written by install_backup_agent.sh; the launchd plists
+hold no keys), then the repo's .env.local. The Management API token comes from
+SUPABASE_PAT or, failing that, the Supabase CLI's login in the Keychain. The
+launchd agent runs a COPY of this file outside ~/Documents (macOS denies
+launchd agents reads there); re-run scripts/install_backup_agent.sh after
+editing it.
 
     python3 scripts/backup_studio_db.py                 # run a backup now
     python3 scripts/backup_studio_db.py --prune-dry-run # what retention would delete
@@ -144,10 +146,31 @@ def env_file_value(name):
     return None
 
 
+KEYCHAIN_SERVICE = "studio-backup"
+_secrets = {}
+
+
+def keychain_secret(name):
+    """A key stored by install_backup_agent.sh in the login Keychain (service
+    'studio-backup', account = the key's name). Readable under launchd."""
+    try:
+        r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
+                            "-a", name, "-w"], capture_output=True, text=True, timeout=30)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
 def secret(name, required=True):
-    v = (os.environ.get(name) or "").strip() or env_file_value(name)
+    """The environment (manual and test runs), then the Keychain (the launchd
+    agents: no key is kept in their plists), then the repo's .env.local."""
+    if name not in _secrets:
+        _secrets[name] = ((os.environ.get(name) or "").strip() or keychain_secret(name)
+                          or env_file_value(name))
+    v = _secrets[name]
     if not v and required:
-        die(f"{name} is not set (environment or .env.local)")
+        die(f"{name} is missing from the Keychain (service {KEYCHAIN_SERVICE}); "
+            f"re-run scripts/install_backup_agent.sh")
     return v
 
 
