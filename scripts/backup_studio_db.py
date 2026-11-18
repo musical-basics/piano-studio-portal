@@ -1,0 +1,568 @@
+#!/usr/bin/env python3
+"""Nightly backup of the studio's Supabase database (lessons.musicalbasics.com).
+
+Why it exists: the studio's Supabase project is on the free plan, which keeps
+NO backups, and the Mac-wide pg_dump script (~/scripts/backup_supabase.sh)
+never produced one: this network blocks outbound database ports 5432/6543.
+Everything here goes over HTTPS (443), which works. Decision #420 (2026-11-18):
+a nightly copy on the Mac, kept grandfather/father/son like Ultimate Pianist's
+backup (its tools/backup_db.py is the model for this file).
+
+Each run writes
+    ~/Backups/piano-studio/piano-studio-YYYY-MM-DD-HHMM[-PARTIAL].tar.gz
+holding every public table as JSON (rows via PostgREST with the service key,
+so RLS-hidden rows are included), the sign-in tables (auth.users with password
+hashes, so families can still sign in after a restore, and auth.identities),
+and a schema snapshot (columns, constraints, indexes, functions, policies,
+grants, triggers) so the rows can be put back into a rebuilt database. Storage
+files are mirrored incrementally to ~/Backups/piano-studio/storage/.
+
+Retention (prune): one archive a day for 7 days, one a week for the 4 weeks
+before that, one a month for the 12 months before that, one a year forever.
+
+If the Management API token is refused, the rows are still dumped (they need
+only the service key) from the table list remembered from the last good run,
+and the archive is named -PARTIAL so it can never pass for a whole one. Every
+run emails OK or FAILED to the studio inbox (the admin profile's email).
+
+Secrets: environment first (the launchd agent's plist), then the repo's
+.env.local. The Management API token comes from SUPABASE_PAT or, failing that,
+the Supabase CLI's login in the macOS keychain. The launchd agent runs a COPY
+of this file outside ~/Documents (macOS denies launchd agents reads there);
+re-run scripts/install_backup_agent.sh after editing it.
+
+    python3 scripts/backup_studio_db.py                 # run a backup now
+    python3 scripts/backup_studio_db.py --prune-dry-run # what retention would delete
+"""
+import base64
+import datetime
+import json
+import os
+import pathlib
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tarfile
+import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PROJECT_REF = "glexdzzmdkqpfbqqffyw"
+SUPABASE_URL = f"https://{PROJECT_REF}.supabase.co"
+BACKUP_ROOT = pathlib.Path(
+    os.environ.get("STUDIO_BACKUP_DIR") or pathlib.Path.home() / "Backups" / "piano-studio")
+STORAGE_ROOT = BACKUP_ROOT / "storage"
+PREFIX = "piano-studio"
+PAGE = 1000
+
+DAILY_DAYS = 7
+WEEKLY_DAYS = DAILY_DAYS + 4 * 7
+MONTHLY_DAYS = WEEKLY_DAYS + 365
+
+ALERT_FROM = "Piano Studio backup <notifications@updates.musicalbasics.com>"
+FALLBACK_TO = "support@musicalbasics.com"
+
+SCHEMA_QUERIES = {
+    "columns": """
+        select table_schema, table_name, ordinal_position, column_name,
+               data_type, udt_name, is_nullable, column_default
+        from information_schema.columns
+        where table_schema in ('public','storage')
+        order by table_schema, table_name, ordinal_position""",
+    "constraints": """
+        select n.nspname as schema, c.relname as table, con.conname as name,
+               con.contype as type, pg_get_constraintdef(con.oid) as def
+        from pg_constraint con
+        join pg_class c on c.oid = con.conrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public'
+        order by 1,2,3""",
+    "indexes": """
+        select schemaname as schema, tablename as table, indexname as name,
+               indexdef as def
+        from pg_indexes where schemaname = 'public'
+        order by 1,2,3""",
+    "functions": """
+        select n.nspname as schema, p.proname as name,
+               pg_get_functiondef(p.oid) as def
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.prokind = 'f'
+        order by 1,2""",
+    "policies": """
+        select schemaname as schema, tablename as table, policyname as name,
+               permissive, roles::text, cmd, qual, with_check
+        from pg_policies where schemaname in ('public','storage')
+        order by 1,2,3""",
+    "grants": """
+        select table_schema as schema, table_name as table, grantee,
+               string_agg(privilege_type, ',' order by privilege_type) as privs
+        from information_schema.role_table_grants
+        where table_schema = 'public'
+        group by 1,2,3 order by 1,2,3""",
+    "triggers": """
+        select n.nspname as schema, c.relname as table, t.tgname as name,
+               pg_get_triggerdef(t.oid) as def
+        from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname in ('public','auth') and not t.tgisinternal
+        order by 1,2,3""",
+    "buckets": "select id, name, public, file_size_limit, allowed_mime_types, created_at from storage.buckets order by id",
+}
+
+# Sign-in tables, read through the Management API (PostgREST can't reach auth).
+AUTH_TABLES = ("users", "identities")
+
+
+# ---------------------------------------------------------------- secrets ---
+
+def env_file_value(name):
+    for fname in (".env.local", ".env"):
+        f = ROOT / fname
+        if not f.exists():
+            continue
+        for line in f.read_text().splitlines():
+            if line.startswith(f"{name}="):
+                v = line.split("=", 1)[1].strip()
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                    v = v[1:-1]
+                return v
+    return None
+
+
+def secret(name, required=True):
+    v = (os.environ.get(name) or "").strip() or env_file_value(name)
+    if not v and required:
+        die(f"{name} is not set (environment or .env.local)")
+    return v
+
+
+def keychain_token():
+    try:
+        raw = subprocess.run(
+            ["/usr/bin/security", "find-generic-password", "-s", "Supabase CLI", "-w"],
+            capture_output=True, text=True, timeout=20).stdout.strip()
+        if raw.startswith("go-keyring-base64:"):
+            raw = base64.b64decode(raw.split(":", 1)[1]).decode()
+        return raw.strip() or None
+    except Exception:
+        return None
+
+
+def management_token():
+    """The first Management API token that works: SUPABASE_PAT from the
+    environment, then .env.local, then the Supabase CLI's keychain login. Each
+    is tried because a stale one is easy to leave behind (the repo's .env.local
+    held a dead PAT on 2026-11-18). Raises with every refusal if none works."""
+    tried = []
+    for source, get in (("environment", lambda: (os.environ.get("SUPABASE_PAT") or "").strip()),
+                        (".env.local", lambda: env_file_value("SUPABASE_PAT")),
+                        ("keychain", keychain_token)):
+        pat = get()
+        if not pat or pat in [p for _, p in tried]:
+            continue
+        try:
+            mgmt_query(pat, "select 1 as ok")
+            return pat
+        except Exception as e:
+            tried.append((f"{source}: {str(e)[:80]}", pat))
+    raise RuntimeError("no working Management API token (" + "; ".join(s for s, _ in tried or [("none found", "")]) + ")")
+
+
+# ----------------------------------------------------------------- alerts ---
+
+def http_json(url, *, data=None, headers=None, timeout=60):
+    req = urllib.request.Request(url, data=data, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        return json.loads(res.read() or b"null")
+
+
+def alert_recipient():
+    to = (os.environ.get("BACKUP_ALERT_TO") or "").strip()
+    if to:
+        return to
+    key = secret("SUPABASE_SERVICE_KEY", required=False)
+    if key:
+        try:
+            rows = http_json(f"{SUPABASE_URL}/rest/v1/profiles?select=email&role=eq.admin&limit=1",
+                             headers={"apikey": key, "Authorization": f"Bearer {key}"}, timeout=20)
+            if rows and rows[0].get("email"):
+                return rows[0]["email"]
+        except Exception:
+            pass
+    return FALLBACK_TO
+
+
+def newest_backup_line():
+    try:
+        tars = sorted((t for t in BACKUP_ROOT.glob(f"{PREFIX}-*.tar.gz") if "PARTIAL" not in t.name),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+        if not tars:
+            return "Newest good backup: NONE ON DISK"
+        hrs = (datetime.datetime.now() - datetime.datetime.fromtimestamp(tars[0].stat().st_mtime)).total_seconds() / 3600
+        return f"Newest good backup: {tars[0].name} ({hrs:.1f} h old, {tars[0].stat().st_size / 1e6:.1f} MB)"
+    except Exception as e:
+        return f"Newest good backup: could not tell ({e})"
+
+
+def alert(subject, body):
+    """Never raises: an unreachable mailer must not hide the error it reports.
+    STUDIO_BACKUP_MAIL=off silences every email (test runs)."""
+    if os.environ.get("STUDIO_BACKUP_MAIL", "on").lower() in ("off", "0", "no"):
+        print(f"(mail off) {subject}")
+        return
+    api = secret("RESEND_API_KEY", required=False)
+    if not api:
+        print("WARNING: no RESEND_API_KEY, this run goes unannounced", file=sys.stderr)
+        return
+    try:
+        res = subprocess.run(
+            ["curl", "-sS", "-X", "POST", "https://api.resend.com/emails",
+             "-H", f"Authorization: Bearer {api}", "-H", "Content-Type: application/json",
+             "-d", json.dumps({"from": ALERT_FROM, "to": [alert_recipient()], "subject": subject, "text": body})],
+            capture_output=True, text=True, timeout=30)
+        reply = json.loads(res.stdout or "{}")
+        print(f"alert emailed (id={reply['id']})" if reply.get("id")
+              else f"WARNING: alert NOT sent: {res.stdout.strip()[:200]}")
+    except Exception as e:
+        print(f"WARNING: could not send alert: {e}", file=sys.stderr)
+
+
+def alert_body(reason):
+    return "\n".join([
+        reason.strip(), "",
+        f"Host: {socket.gethostname()}",
+        f"When: {datetime.datetime.now().isoformat(timespec='seconds')}",
+        newest_backup_line(), "",
+        f"Log: {BACKUP_ROOT / 'backup.log'}",
+    ])
+
+
+def die(msg):
+    print(f"backup FAILED: {msg}", file=sys.stderr)
+    alert(f"Studio backup FAILED: {msg[:70]}", alert_body(f"The studio database backup failed: {msg}"))
+    sys.exit(1)
+
+
+# ------------------------------------------------------------- database ---
+
+def mgmt_query(pat, sql):
+    """Management API SQL, through curl: api.supabase.com sits behind Cloudflare,
+    which can refuse urllib's fingerprint with a 403 that looks like a bad token."""
+    res = subprocess.run(
+        ["curl", "-s", "-w", "\n%{http_code}", "-X", "POST",
+         f"https://api.supabase.com/v1/projects/{PROJECT_REF}/database/query",
+         "-H", f"Authorization: Bearer {pat}", "-H", "Content-Type: application/json",
+         "-d", json.dumps({"query": sql})],
+        capture_output=True, text=True, timeout=180)
+    body, _, code = res.stdout.rpartition("\n")
+    if not code.startswith("2"):
+        raise RuntimeError(f"HTTP {code}: {body[:300]}")
+    return json.loads(body) if body.strip() else []
+
+
+TABLE_CACHE = "table-list.json"
+
+
+def discover_tables(pat):
+    """Every public base table with its primary key (pagination needs a stable order)."""
+    rows = mgmt_query(pat, """
+        select c.relname as tbl, string_agg(a.attname, ',' order by k.ord) as pk
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        left join pg_constraint con on con.conrelid = c.oid and con.contype = 'p'
+        left join lateral unnest(con.conkey) with ordinality as k(attnum, ord) on true
+        left join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
+        where n.nspname = 'public' and c.relkind = 'r'
+        group by 1 order by 1""")
+    tables = []
+    for r in rows:
+        if not r["pk"]:
+            print(f"WARNING: public.{r['tbl']} has no primary key, ordered by all columns", file=sys.stderr)
+        tables.append((r["tbl"], r["pk"] or ""))
+    try:
+        (BACKUP_ROOT / TABLE_CACHE).write_text(json.dumps(tables))
+    except Exception as e:
+        print(f"WARNING: could not remember the table list: {e}", file=sys.stderr)
+    return tables
+
+
+def cached_tables():
+    try:
+        return [tuple(t) for t in json.loads((BACKUP_ROOT / TABLE_CACHE).read_text())]
+    except Exception:
+        return None
+
+
+def fetch_table(table, order, key, dest):
+    """Stream one table to disk a page at a time; returns the row count."""
+    total = 0
+    q = f"select=*&order={urllib.parse.quote(order)}" if order else "select=*"
+    with dest.open("w") as f:
+        f.write("[")
+        while True:
+            page = http_json(f"{SUPABASE_URL}/rest/v1/{urllib.parse.quote(table)}?{q}", headers={
+                "apikey": key, "Authorization": f"Bearer {key}",
+                "Range-Unit": "items", "Range": f"{total}-{total + PAGE - 1}",
+            }, timeout=120)
+            for row in page:
+                f.write(("," if total else "") + "\n " + json.dumps(row))
+                total += 1
+            if len(page) < PAGE:
+                break
+        f.write("\n]\n")
+    return total
+
+
+def fetch_auth_table(pat, table, dest):
+    total, rows = 0, []
+    while True:
+        page = mgmt_query(pat, f"""
+            select coalesce(json_agg(x), '[]'::json) as j
+            from (select * from auth.{table} order by id offset {total} limit 500) x""")[0]["j"]
+        rows += page
+        total += len(page)
+        if len(page) < 500:
+            break
+    dest.write_text(json.dumps(rows, indent=0, default=str))
+    return total
+
+
+def live_counts(pat, tables):
+    parts = [f"select '{t}' as t, count(*)::int as n from public.\"{t}\"" for t, _ in tables]
+    parts += [f"select 'auth.{t}' as t, count(*)::int as n from auth.{t}" for t in AUTH_TABLES]
+    return {r["t"]: r["n"] for r in mgmt_query(pat, " union all ".join(parts))}
+
+
+def dump_schema(pat, dest):
+    snap = {name: mgmt_query(pat, sql) for name, sql in SCHEMA_QUERIES.items()}
+    (dest / "schema.json").write_text(json.dumps(snap, indent=1, default=str))
+    lines = [f"-- Piano Studio schema snapshot {datetime.date.today()}", ""]
+    for section in ("functions", "indexes", "triggers"):
+        lines.append(f"-- ===== {section.upper()} =====")
+        lines += [r["def"].rstrip().rstrip(";") + ";" for r in snap[section]]
+        lines.append("")
+    (dest / "schema.sql").write_text("\n".join(lines))
+    return sum(len(v) for v in snap.values())
+
+
+def mirror_storage(pat, key):
+    """Incremental copy of every Storage file (sheet music, lesson materials, attachments)."""
+    objects = mgmt_query(pat, """
+        select b.id as bucket, o.name as path, o.updated_at, o.metadata->>'size' as size
+        from storage.objects o join storage.buckets b on b.id = o.bucket_id
+        order by 1,2""")
+    manifest_path = STORAGE_ROOT / ".manifest.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    fetched = skipped = 0
+    for o in objects:
+        okey = f"{o['bucket']}/{o['path']}"
+        stamp = {"updated_at": str(o["updated_at"]), "size": o["size"]}
+        dest = STORAGE_ROOT / o["bucket"] / o["path"]
+        if manifest.get(okey) == stamp and dest.exists():
+            skipped += 1
+            continue
+        url = f"{SUPABASE_URL}/storage/v1/object/{o['bucket']}/" + urllib.parse.quote(o["path"])
+        req = urllib.request.Request(url, headers={"apikey": key, "Authorization": f"Bearer {key}"})
+        with urllib.request.urlopen(req, timeout=300) as res:
+            data = res.read()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        manifest[okey] = stamp
+        fetched += 1
+    STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True))
+    return fetched, skipped, len(manifest)
+
+
+# -------------------------------------------------------------- retention ---
+
+ARCHIVE_RE = re.compile(rf"{PREFIX}-(\d{{4}}-\d{{2}}-\d{{2}})-(\d{{2}})(\d{{2}})(-PARTIAL)?\.tar\.gz")
+
+
+def restore_points(root):
+    points = []
+    for p in (root.iterdir() if root.exists() else ()):
+        m = ARCHIVE_RE.fullmatch(p.name)
+        if not m:
+            continue
+        try:
+            points.append((p, datetime.datetime.fromisoformat(f"{m[1]}T{m[2]}:{m[3]}"), not m[4]))
+        except ValueError:
+            pass
+    return points
+
+
+def gfs_plan(points, today):
+    """{path: tier} for the archives to KEEP: the newest (complete beats PARTIAL)
+    per day, ISO week, month and year inside each tier's age window. A week's
+    keeper is always some day's keeper, so tiers hand over without a gap."""
+    tiers = (
+        ("daily", 0, DAILY_DAYS, lambda d: d),
+        ("weekly", DAILY_DAYS, WEEKLY_DAYS, lambda d: d.isocalendar()[:2]),
+        ("monthly", WEEKLY_DAYS, MONTHLY_DAYS, lambda d: (d.year, d.month)),
+        ("yearly", MONTHLY_DAYS, None, lambda d: d.year),
+    )
+    keep = {}
+    for tier, lo, hi, bucket_of in tiers:
+        best = {}
+        for path, when, complete in points:
+            age = (today - when.date()).days
+            if age < lo or (hi is not None and age >= hi):
+                continue
+            b = bucket_of(when.date())
+            if b not in best or (complete, when) > best[b][1:]:
+                best[b] = (path, complete, when)
+        for path, _, _ in best.values():
+            keep[path] = tier
+    return keep
+
+
+def prune(dry_run=False):
+    points = restore_points(BACKUP_ROOT)
+    keep = gfs_plan(points, datetime.date.today())
+    for path, _, _ in sorted(points, key=lambda p: p[1]):
+        if path in keep:
+            if dry_run:
+                print(f"keep   {keep[path]:8} {path.name}")
+            continue
+        print(f"{'would delete' if dry_run else 'pruned'} {path.name}")
+        if not dry_run:
+            path.unlink()
+    kept = {t: 0 for t in ("daily", "weekly", "monthly", "yearly")}
+    for tier in keep.values():
+        kept[tier] += 1
+    return kept
+
+
+# ------------------------------------------------------------------- main ---
+
+def verify_archive(path, expected):
+    """Re-open the archive and count every table's rows against what was written."""
+    with tarfile.open(path, "r:gz") as tar:
+        for m in tar.getmembers():
+            name = pathlib.Path(m.name).name
+            if name in expected:
+                n = len(json.load(tar.extractfile(m)))
+                if n != expected[name]:
+                    raise RuntimeError(f"{name}: archive holds {n} rows, expected {expected[name]}")
+
+
+def main():
+    started = datetime.datetime.now()
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    os.chmod(BACKUP_ROOT, 0o700)
+    key = secret("SUPABASE_SERVICE_KEY")
+    stamp = started.strftime("%Y-%m-%d-%H%M")
+    tmp = BACKUP_ROOT / f".tmp-{stamp}"
+    tmp.mkdir(exist_ok=True)
+
+    degraded = ""
+    pat = None
+    try:
+        pat = management_token()
+        tables = discover_tables(pat)
+    except Exception as e:
+        degraded = str(e)
+        pat = None
+        tables = cached_tables()
+        if not tables:
+            shutil.rmtree(tmp, ignore_errors=True)
+            die(f"Management API unavailable and no remembered table list: {degraded}")
+        print(f"WARNING: {degraded}; using the remembered list of {len(tables)} tables", file=sys.stderr)
+
+    expected, total = {}, 0
+    for t, order in tables:
+        try:
+            n = fetch_table(t, order, key, tmp / f"public.{t}.json")
+        except Exception as e:
+            shutil.rmtree(tmp, ignore_errors=True)
+            die(f"public.{t}: {e}")
+        expected[f"public.{t}.json"] = n
+        total += n
+        print(f"public.{t}: {n} rows")
+
+    storage = None
+    if pat:
+        try:
+            for t in AUTH_TABLES:
+                n = fetch_auth_table(pat, t, tmp / f"auth.{t}.json")
+                expected[f"auth.{t}.json"] = n
+                print(f"auth.{t}: {n} rows")
+            print(f"schema snapshot: {dump_schema(pat, tmp)} objects")
+            # Compare against the live counts. Rows can arrive mid-run (a new
+            # message), so only a real gap is an error.
+            written = {t: expected[f"public.{t}.json"] for t, _ in tables}
+            written.update({f"auth.{t}": expected[f"auth.{t}.json"] for t in AUTH_TABLES})
+            short = [f"{t}: {written[t]} of {n}" for t, n in live_counts(pat, tables).items()
+                     if t in written and n - written[t] > 5]
+            if short:
+                raise RuntimeError("rows missing against the live count: " + "; ".join(short))
+        except Exception as e:
+            shutil.rmtree(tmp, ignore_errors=True)
+            die(f"sign-in tables / schema: {e}")
+
+    tag = "-PARTIAL" if degraded else ""
+    out = BACKUP_ROOT / f"{PREFIX}-{stamp}{tag}.tar.gz"
+    with tarfile.open(out, "w:gz") as tar:
+        for f in sorted(tmp.iterdir()):
+            tar.add(f, arcname=f"{PREFIX}-{stamp}/{f.name}")
+    shutil.rmtree(tmp)
+    os.chmod(out, 0o600)
+    try:
+        verify_archive(out, expected)
+    except Exception as e:
+        die(f"archive check: {e}")
+
+    if pat:
+        try:
+            storage = mirror_storage(pat, key)
+            print(f"storage: {storage[0]} fetched, {storage[1]} unchanged, {storage[2]} files mirrored")
+        except Exception as e:
+            die(f"storage mirror: {e}")
+
+    size_mb = out.stat().st_size / 1e6
+    kept = prune()  # may remove this very archive: a PARTIAL loses to a complete one from the same day
+    secs = (datetime.datetime.now() - started).total_seconds()
+    print(f"backup ok -> {out} ({len(tables)} tables, {total} rows, {secs:.0f}s)")
+
+    lines = [
+        f"Backed up {len(tables)} tables, {total:,} rows"
+        + (f", {expected.get('auth.users.json', 0)} sign-ins." if not degraded else "."),
+        "",
+        f"Archive: {out.name} ({size_mb:.1f} MB), checked after writing"
+        + ("" if out.exists() else "; not kept, a complete copy from today already exists"),
+    ]
+    if storage:
+        lines.append(f"Files:   {storage[2]} mirrored ({storage[0]} new or changed this run)")
+    lines += [
+        f"Kept:    {sum(kept.values())} archives ({kept['daily']} daily, {kept['weekly']} weekly, "
+        f"{kept['monthly']} monthly, {kept['yearly']} yearly)",
+        f"Where:   {BACKUP_ROOT} on {socket.gethostname()}",
+        f"Took:    {secs:.0f}s",
+    ]
+    if degraded:
+        alert("Studio backup PARTIAL: rows saved, sign-ins and schema missing", alert_body(
+            f"The Management API token was refused ({degraded}).\n\nAll table rows were saved from the "
+            f"remembered table list, but this archive has no sign-in tables, no schema snapshot and no "
+            f"file mirror, and misses any table added since the last good run. Sign in again with the "
+            f"Supabase CLI (supabase login) to refresh the token.\n\n" + "\n".join(lines)))
+    elif os.environ.get("STUDIO_BACKUP_SUCCESS_MAIL", "on").lower() not in ("off", "0", "no"):
+        alert(f"Studio backup OK: {len(tables)} tables, {total:,} rows", "\n".join(lines))
+
+
+if __name__ == "__main__":
+    if "--prune-dry-run" in sys.argv:
+        print(prune(dry_run=True))
+        sys.exit(0)
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        die(f"unhandled {type(e).__name__}: {e}")
