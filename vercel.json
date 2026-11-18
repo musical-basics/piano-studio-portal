@@ -17,6 +17,10 @@
             "schedule": "15,45 * * * *"
         },
         {
+            "path": "/api/cron/classroom-recordings",
+            "schedule": "5,35 * * * *"
+        },
+        {
             "path": "/api/cron/auto-schedule-lessons",
             "schedule": "0 15 * * *"
         },
