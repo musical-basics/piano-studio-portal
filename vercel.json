@@ -25,6 +25,10 @@
             "schedule": "30 13 * * *"
         },
         {
+            "path": "/api/cron/unlogged-tonight",
+            "schedule": "0 4 * * *"
+        },
+        {
             "path": "/api/cron/credit-check",
             "schedule": "0 14 1 * *"
         },
