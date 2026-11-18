@@ -17,7 +17,10 @@ export const dynamic = 'force-dynamic'
  * same token, and only the POST acts:
  *   - log:    logLessonCore, the same path the admin dashboard uses, so the
  *             credit, snapshots, ledger row, next-week booking and lesson-notes
- *             email all behave exactly as a normal log. A lesson over a week
+ *             email all behave exactly as a normal log. The confirm page has
+ *             optional notes and homework boxes (#753) that go into that log,
+ *             so the family's usual lesson email carries the notes; left empty,
+ *             the log is as before. A lesson over a week
  *             old (the monthly credit check lists those) is logged quietly
  *             instead: credit and snapshots, no email, no booking (see
  *             lib/late-lesson-log.ts).
@@ -69,6 +72,9 @@ function page(title: string, bodyHtml: string, status = 200): Response {
   p { margin: 0 0 12px; }
   .muted { color: #57534e; font-size: 15px; }
   .warn { background: #fef3c7; border-radius: 8px; padding: 10px 12px; font-size: 15px; }
+  label { display: block; font-weight: 600; font-size: 15px; margin: 14px 0 6px; }
+  label span { font-weight: 400; color: #57534e; }
+  textarea { display: block; box-sizing: border-box; width: 100%; padding: 10px 12px; font: 16px/1.4 inherit; font-family: inherit; border: 1px solid #d6d3d1; border-radius: 8px; resize: vertical; }
   button { display: block; width: 100%; margin-top: 16px; padding: 14px; font-size: 17px; font-weight: 600; border: 0; border-radius: 8px; color: #fff; cursor: pointer; }
   .log { background: #15803d; }
   .remove { background: #b91c1c; }
@@ -103,6 +109,10 @@ function weekday(date: string): string {
 function longDay(date: string): string {
     return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
+
+/** Caps for the Log it page's notes and homework boxes (#753). */
+const NOTES_MAX = 5000
+const HOMEWORK_MAX = 2000
 
 type Checked =
     | { ok: true; lesson: LessonRow; studentName: string }
@@ -196,14 +206,21 @@ ${form('Send apology and remove lesson', 'missed', `<input type="hidden" name="m
     }
 
     if (claims.a === 'log') {
-        const effect = isTooOldForUsualLog(lesson.date)
+        const quiet = isTooOldForUsualLog(lesson.date)
+        const effect = quiet
             ? `This takes 1 credit. The lesson is over ${QUIET_LOG_AFTER_DAYS} days old, so it is logged quietly: no email to the family and no next lesson booked.`
-            : 'This takes 1 credit, the same as logging it in admin.'
+            : "This takes 1 credit and sends 1 family the usual emails (the lesson email, plus the next week's booking if one is made), the same as logging it in admin."
+        const notesHint = quiet ? 'optional, saved on the lesson' : "optional, goes in the family's lesson email"
+        const boxes = `
+<label for="n">Lesson notes <span>(${esc(notesHint)})</span></label>
+<textarea id="n" name="n" rows="6" maxlength="${NOTES_MAX}">${esc(lesson.notes || '')}</textarea>
+<label for="h">Homework <span>(optional)</span></label>
+<textarea id="h" name="h" rows="3" maxlength="${HOMEWORK_MAX}"></textarea>`
         return page('Log this lesson?', `
 <h1>Log ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)}?</h1>
 <p class="muted">${esc(when)}</p>
 <p>${esc(effect)}</p>
-${form('Log it', 'log')}`)
+${form('Log it', 'log', boxes)}`)
     }
 
     const recording = lesson.video_url
@@ -220,12 +237,18 @@ ${form('Remove it', 'remove')}`)
 export async function POST(request: Request) {
     let token: string | null = null
     let shownMessage: string | null = null
+    let typedNotes = ''
+    let typedHomework = ''
     try {
         const form = await request.formData()
         const t = form.get('t')
         token = typeof t === 'string' ? t : null
         const m = form.get('m')
         shownMessage = typeof m === 'string' ? m : null
+        const n = form.get('n')
+        const h = form.get('h')
+        typedNotes = typeof n === 'string' ? n.trim().slice(0, NOTES_MAX) : ''
+        typedHomework = typeof h === 'string' ? h.trim().slice(0, HOMEWORK_MAX) : ''
     } catch {
         token = null
     }
@@ -301,7 +324,7 @@ export async function POST(request: Request) {
     }
 
     if (claims.a === 'log' && isTooOldForUsualLog(lesson.date)) {
-        const quiet = await logOldLessonQuietly(client, lesson.id)
+        const quiet = await logOldLessonQuietly(client, lesson.id, { notes: typedNotes || undefined, homework: typedHomework || undefined })
         if (!quiet.ok && quiet.changed) {
             await record('nothing: changed while confirming', lesson.student_id)
             return message('Already handled', 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.')
@@ -322,8 +345,10 @@ export async function POST(request: Request) {
             client,
             adminId: (admin?.id as string) || lesson.student_id,
             lessonId: lesson.id,
-            // Keep anything already written on the lesson; the email has no notes box.
-            notes: lesson.notes || '',
+            // What was typed on the confirm page (#753), else whatever the lesson
+            // already had. Empty homework leaves the field untouched.
+            notes: typedNotes || lesson.notes || '',
+            homework: typedHomework || undefined,
             completedSource: 'admin_ui',
             // Serverless: finish the usual emails before the response ends the function.
             awaitNotifications: true,

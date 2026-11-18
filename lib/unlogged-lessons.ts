@@ -176,7 +176,8 @@ export const MISSED_IT_NOTE = `<b>I missed it</b> is for a lesson you missed: it
 /** What the buttons do, for the footer of any email that carries them. */
 export function unloggedButtonsNote(n: number): string {
     const these = n === 1 ? 'this lesson' : 'these lessons'
-    return `Nobody logged ${these}, so no credit was taken. <b>Log it</b> if it happened: that takes 1 credit, the usual log. ` +
+    return `Nobody logged ${these}, so no credit was taken. <b>Log it</b> if it happened: that takes 1 credit, the usual log ` +
+        `(1 family gets the usual lesson email; its page has optional boxes for notes and homework). ` +
         `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. ${MISSED_IT_NOTE} ` +
         `Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
 }

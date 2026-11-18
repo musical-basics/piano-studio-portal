@@ -432,7 +432,8 @@ export function buildCreditCheckEmail(
         parts.push(blocks.html)
         parts.push(`<p style="color:#666;font-size:13px">Nobody logged ${u === 1 ? 'this lesson' : 'these lessons'}, so no credit was taken. ` +
             (blocks.buttons
-                ? `<b>Log it</b> if it happened: that takes 1 credit (a lesson over a week old is logged quietly: no email to the family, no next lesson booked). ` +
+                ? `<b>Log it</b> if it happened: that takes 1 credit, with optional notes and homework on its page ` +
+                  `(a lesson over a week old is logged quietly: no email to the family, no next lesson booked). ` +
                   `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. ${MISSED_IT_NOTE} ` +
                   `Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
                 : `Log or remove ${u === 1 ? 'it' : 'them'} in the <a href="${baseUrl}/admin">admin dashboard</a>.`) +
