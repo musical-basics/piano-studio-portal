@@ -52,6 +52,9 @@ cat > "$PLIST" <<EOF
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
   <key>RunAtLoad</key><false/>
+  <!-- heavy runs share the Mac (command center rule 1.11): low CPU and disk priority -->
+  <key>Nice</key><integer>15</integer>
+  <key>LowPriorityIO</key><true/>
   <key>StandardOutPath</key><string>${LOG}</string>
   <key>StandardErrorPath</key><string>${LOG}</string>
 </dict>
