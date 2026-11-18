@@ -20,6 +20,12 @@ files are mirrored incrementally to ~/Backups/piano-studio/storage/.
 Retention (prune): one archive a day for 7 days, one a week for the 4 weeks
 before that, one a month for the 12 months before that, one a year forever.
 
+Second copy (decision #536): the archives, kept by the same rules, and the
+storage mirror also go to Dropbox, "/Studio Backups" in the Dropbox the lesson
+recordings use (STUDIO_BACKUP_DROPBOX_DIR for another folder,
+STUDIO_BACKUP_DROPBOX=off to skip). A Dropbox failure leaves the run OK and
+the email says so.
+
 If the Management API token is refused, the rows are still dumped (they need
 only the service key) from the table list remembered from the last good run,
 and the archive is named -PARTIAL so it can never pass for a whole one. Every
@@ -49,6 +55,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+import time
 import traceback
 import urllib.error
 import urllib.parse
@@ -437,6 +444,163 @@ def mirror_storage(pat, key):
     return fetched, skipped, len(manifest)
 
 
+# ---------------------------------------------------------- dropbox copy ---
+#
+# Decision #536: a dead Mac or disk must not take every backup with it, so each
+# run also copies the archives and the storage mirror to the Dropbox the lesson
+# recordings use (the portal's Dropbox app). A Dropbox failure never fails the
+# backup: the run stays OK locally and the email says what went wrong. Whatever
+# a failed night missed is sent the next night (both sides are compared).
+
+DROPBOX_ROOT = (os.environ.get("STUDIO_BACKUP_DROPBOX_DIR") or "/Studio Backups").rstrip("/")
+DROPBOX_KEYS = ("DROPBOX_REFRESH_TOKEN", "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET")
+DROPBOX_CHUNK = 64 * 1024 * 1024  # files/upload takes up to 150 MB; bigger ones go in sessions
+DROPBOX_SENT = ".dropbox-sent.json"
+
+
+class Dropbox:
+    def __init__(self):
+        missing = [k for k in DROPBOX_KEYS if not secret(k, required=False)]
+        if missing:
+            raise RuntimeError(f"{', '.join(missing)} missing from the Keychain (service {KEYCHAIN_SERVICE})")
+        body = urllib.parse.urlencode({
+            "grant_type": "refresh_token", "refresh_token": secret("DROPBOX_REFRESH_TOKEN"),
+            "client_id": secret("DROPBOX_CLIENT_ID"), "client_secret": secret("DROPBOX_CLIENT_SECRET"),
+        }).encode()
+        try:
+            self.token = http_json("https://api.dropboxapi.com/oauth2/token", data=body, timeout=30,
+                                   headers={"Content-Type": "application/x-www-form-urlencoded"})["access_token"]
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Dropbox refused the refresh token (HTTP {e.code} "
+                               f"{e.read().decode(errors='replace')[:120]})") from None
+
+    def _call(self, url, data, headers, timeout=300):
+        """Retries rate limits (Dropbox answers 429 to bursts of writes) and 5xx."""
+        for attempt in range(5):
+            req = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {self.token}", **headers})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    return json.loads(res.read() or b"null")
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode(errors="replace")[:200]
+                if (e.code == 429 or e.code >= 500) and attempt < 4:
+                    time.sleep(min(60, int(float(e.headers.get("Retry-After") or 2 ** (attempt + 1)))))
+                    continue
+                raise RuntimeError(f"HTTP {e.code} {detail}") from None
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                if attempt < 4:
+                    time.sleep(2 ** (attempt + 1))
+                    continue
+                raise RuntimeError(f"network: {e}") from None
+
+    def rpc(self, endpoint, args):
+        return self._call(f"https://api.dropboxapi.com/2/{endpoint}", json.dumps(args).encode(),
+                          {"Content-Type": "application/json"}, timeout=60)
+
+    def _content(self, endpoint, args, data):
+        # ensure_ascii keeps the header ASCII, which Dropbox-API-Arg requires.
+        return self._call(f"https://content.dropboxapi.com/2/{endpoint}", data, {
+            "Content-Type": "application/octet-stream", "Dropbox-API-Arg": json.dumps(args, ensure_ascii=True)})
+
+    def upload(self, src, dest):
+        commit = {"path": dest, "mode": "overwrite", "mute": True}
+        size = src.stat().st_size
+        with src.open("rb") as f:
+            if size <= DROPBOX_CHUNK:
+                return self._content("files/upload", commit, f.read())
+            session = self._content("files/upload_session/start", {"close": False}, f.read(DROPBOX_CHUNK))["session_id"]
+            offset = DROPBOX_CHUNK
+            while size - offset > DROPBOX_CHUNK:
+                self._content("files/upload_session/append_v2",
+                              {"cursor": {"session_id": session, "offset": offset}, "close": False},
+                              f.read(DROPBOX_CHUNK))
+                offset += DROPBOX_CHUNK
+            return self._content("files/upload_session/finish",
+                                 {"cursor": {"session_id": session, "offset": offset}, "commit": commit}, f.read())
+
+    def files_in(self, folder):
+        """{name: size} of the files directly in folder ({} if it doesn't exist yet)."""
+        try:
+            res = self.rpc("files/list_folder", {"path": folder, "limit": 2000})
+        except RuntimeError as e:
+            if "not_found" in str(e):
+                return {}
+            raise
+        entries = res["entries"]
+        while res.get("has_more"):
+            res = self.rpc("files/list_folder/continue", {"cursor": res["cursor"]})
+            entries += res["entries"]
+        return {e["name"]: e.get("size") for e in entries if e.get(".tag") == "file"}
+
+    def delete(self, path):
+        self.rpc("files/delete_v2", {"path": path})
+
+
+def dropbox_safe(path):
+    """Dropbox refuses a name ending in a space or a dot (Storage has a
+    'sheet_music ' folder next to 'sheet_music'), so on Dropbox those
+    characters, and leading spaces, become '_'. The local mirror keeps the
+    real names."""
+    def fix(part):
+        core = part.rstrip(" .")
+        body = core.lstrip(" ")
+        return "_" * (len(core) - len(body)) + body + "_" * (len(part) - len(core))
+    return "/".join(fix(p) for p in path.split("/"))
+
+
+def dropbox_copy():
+    """Sends the archives and new storage files; prunes the Dropbox archives
+    with the same keep-rules (gfs_plan) as the local ones. Returns a summary
+    line. Raises with the reason when anything could not be copied."""
+    dbx = Dropbox()
+    remote = dbx.files_in(DROPBOX_ROOT)
+    local = {p.name: p for p, _, _ in restore_points(BACKUP_ROOT)}
+    points = []
+    for name in set(remote) | set(local):
+        m = ARCHIVE_RE.fullmatch(name)
+        if m:
+            points.append((name, datetime.datetime.fromisoformat(f"{m[1]}T{m[2]}:{m[3]}"), not m[4]))
+    keep = gfs_plan(points, datetime.date.today())
+    sent = pruned = 0
+    for name in sorted(local):
+        if name in keep and remote.get(name) != local[name].stat().st_size:
+            dbx.upload(local[name], f"{DROPBOX_ROOT}/{name}")
+            sent += 1
+    for name in sorted(remote):
+        if ARCHIVE_RE.fullmatch(name) and name not in keep:
+            dbx.delete(f"{DROPBOX_ROOT}/{name}")
+            pruned += 1
+
+    # Storage files: what the local mirror holds that Dropbox doesn't have yet,
+    # remembered per Dropbox folder so a test folder can't mark files as sent.
+    mirror_path, sent_path = STORAGE_ROOT / ".manifest.json", STORAGE_ROOT / DROPBOX_SENT
+    mirror = json.loads(mirror_path.read_text()) if mirror_path.exists() else {}
+    record = json.loads(sent_path.read_text()) if sent_path.exists() else {}
+    done = record.get("files", {}) if record.get("folder") == DROPBOX_ROOT else {}
+    files = nbytes = 0
+    failed = []
+    try:
+        for okey, stamp in sorted(mirror.items()):
+            src = STORAGE_ROOT / okey
+            if done.get(okey) == stamp or not src.exists():
+                continue
+            try:
+                dbx.upload(src, f"{DROPBOX_ROOT}/storage/{dropbox_safe(okey)}")
+                done[okey] = stamp
+                files += 1
+                nbytes += src.stat().st_size
+            except Exception as e:
+                failed.append(f"{okey}: {e}")
+    finally:
+        sent_path.write_text(json.dumps({"folder": DROPBOX_ROOT, "files": done}, indent=1, sort_keys=True))
+    on_dropbox = len([n for n in keep if n in remote or n in local])
+    summary = (f"{sent} archive{'s' * (sent != 1)} sent, {pruned} pruned, {on_dropbox} kept there; "
+               f"{files} storage file{'s' * (files != 1)} sent ({nbytes / 1e6:.1f} MB), {len(done)} there in all")
+    if failed:
+        raise RuntimeError(f"{len(failed)} storage file(s) not sent, first: {failed[0][:150]} ({summary})")
+    return summary
+
+
 # -------------------------------------------------------------- retention ---
 
 ARCHIVE_RE = re.compile(rf"{PREFIX}-(\d{{4}}-\d{{2}}-\d{{2}})-(\d{{2}})(\d{{2}})(-PARTIAL)?\.tar\.gz")
@@ -595,8 +759,19 @@ def main():
     size_mb = out.stat().st_size / 1e6
     kept = prune()  # may remove this very archive: a PARTIAL loses to a complete one from the same day
     write_heartbeat(key)  # a PARTIAL still checks in: it emails its own warning
+    print(f"backup ok -> {out} ({len(tables)} tables, {total} rows)")
+
+    dropbox_failed = None
+    dropbox_line = "Dropbox: off for this run (STUDIO_BACKUP_DROPBOX=off)"
+    if os.environ.get("STUDIO_BACKUP_DROPBOX", "on").lower() not in ("off", "0", "no"):
+        try:
+            dropbox_line = f"Dropbox: {dropbox_copy()} ({DROPBOX_ROOT})"
+            print(dropbox_line)
+        except Exception as e:
+            dropbox_failed = str(e)
+            dropbox_line = f"Dropbox copy failed: {e}"
+            print(f"WARNING: {dropbox_line}", file=sys.stderr)
     secs = (datetime.datetime.now() - started).total_seconds()
-    print(f"backup ok -> {out} ({len(tables)} tables, {total} rows, {secs:.0f}s)")
 
     lines = [
         f"Backed up {len(tables)} tables, {total:,} rows"
@@ -607,6 +782,12 @@ def main():
     ]
     if storage:
         lines.append(f"Files:   {storage[2]} mirrored ({storage[0]} new or changed this run)")
+    if dropbox_failed:
+        lines[0:0] = [f"Dropbox copy failed: {dropbox_failed}",
+                      "The backup on the Mac is fine; the second copy in Dropbox is behind until a night "
+                      "where it works (it then catches up by itself).", ""]
+    else:
+        lines.append(dropbox_line)
     lines += [
         f"Kept:    {sum(kept.values())} archives ({kept['daily']} daily, {kept['weekly']} weekly, "
         f"{kept['monthly']} monthly, {kept['yearly']} yearly)",
@@ -619,6 +800,8 @@ def main():
             f"remembered table list, but this archive has no sign-in tables, no schema snapshot and no "
             f"file mirror, and misses any table added since the last good run. Sign in again with the "
             f"Supabase CLI (supabase login) to refresh the token.\n\n" + "\n".join(lines)))
+    elif dropbox_failed:  # mailed even with success mail off: nobody would notice otherwise
+        alert(f"Studio backup OK, but the Dropbox copy failed: {dropbox_failed[:60]}", "\n".join(lines))
     elif os.environ.get("STUDIO_BACKUP_SUCCESS_MAIL", "on").lower() not in ("off", "0", "no"):
         alert(f"Studio backup OK: {len(tables)} tables, {total:,} rows", "\n".join(lines))
 

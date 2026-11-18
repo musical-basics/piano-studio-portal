@@ -43,6 +43,10 @@ store() {
 }
 store SUPABASE_SERVICE_KEY || { echo "missing SUPABASE_SERVICE_KEY: the backup cannot run" >&2; exit 1; }
 store RESEND_API_KEY || echo "warning: no RESEND_API_KEY, runs will not email" >&2
+# The portal's Dropbox app (same as the lesson recordings): the second copy in "/Studio Backups".
+for k in DROPBOX_REFRESH_TOKEN DROPBOX_CLIENT_ID DROPBOX_CLIENT_SECRET; do
+  store "$k" || echo "warning: no $k, the Dropbox copy will report itself failed" >&2
+done
 
 # write_agent LABEL SCRIPT LOG SCHEDULE-DICT EXTRA-ENV
 write_agent() {
