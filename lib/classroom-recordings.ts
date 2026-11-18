@@ -2,6 +2,7 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock, shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { notifyRecordingReady } from '@/lib/recording-ready-email'
+import { logLessonCore } from '@/lib/core/lessons'
 
 /**
  * Hand-off from the classroom app (classroom.musicalbasics.com, same Supabase
@@ -16,8 +17,15 @@ import { notifyRecordingReady } from '@/lib/recording-ready-email'
  * lesson had already been logged. Matching by the recording's own start time
  * fixes both, and running it from a cron means a missed call can't lose a video.
  *
- * Only `video_url` is written. Attaching a recording never logs a lesson or
- * touches credits (that is the Zoom webhook's job).
+ * Attaching writes only `video_url`. Since 2026-11-18 (Lionel's #537) the
+ * automatic hand-off also LOGS the lesson, the same logging he does by hand
+ * (logLessonCore: one credit, next week booked, lesson email), but only when
+ * all of these hold, so nothing can be charged twice or charged by a backfill:
+ *   - the recording carries a start stamp and ran 20 minutes or more;
+ *   - the lesson is still 'scheduled' (re-read right before logging), so a
+ *     lesson already logged by Zoom or by hand is never touched;
+ *   - the lesson started within the last 7 days.
+ * Attaching a recording by hand (the admin page) never logs.
  */
 
 // LiveKit egress (the classroom's recorder since 2026-07-02) names the file when
@@ -40,11 +48,18 @@ const MIN_BYTES_WITHOUT_START = 100 * 1024 * 1024
 // Only email "your recording is ready" for lessons from the last two days, so a
 // sweep that catches up on old recordings never emails about them.
 const NOTIFY_WITHIN_MS = 48 * 60 * MINUTE
+// Auto-logging: a classroom video this long is a lesson that happened.
+export const AUTO_LOG_MIN_MINUTES = 20
+// Never auto-log an old lesson: a sweep catching up on old recordings must not
+// suddenly charge credits for lessons long past.
+const AUTO_LOG_WITHIN_MS = 7 * 24 * 60 * MINUTE
 
 export type ClassroomAttachResult = {
     scanned: number
     attached: { recordingId: string; lessonId: string; date: string; time: string; emailed: boolean }[]
     skipped: { recordingId: string; reason: string }[]
+    /** Lessons logged (or, in a dry run, that would be logged) because their classroom video is 20+ minutes. */
+    logged: { recordingId: string; lessonId: string; date: string; time: string; minutes: number; creditDeducted: boolean }[]
 }
 
 export type ClassroomAttachOptions = {
@@ -73,6 +88,26 @@ export function recordingMinutes(rec: { url: string; created_at: string }): numb
     const stopMs = Date.parse(rec.created_at)
     if (startMs === null || !(stopMs > startMs)) return null
     return (stopMs - startMs) / MINUTE
+}
+
+/** Why the hand-off would NOT log this lesson, or null when it should. */
+function autoLogBlockReason(lesson: LessonRow, minutes: number | null, now: Date): string | null {
+    if (minutes === null) return 'no start stamp, length unknown'
+    if (minutes < AUTO_LOG_MIN_MINUTES) return `video is ${Math.round(minutes)} min, under ${AUTO_LOG_MIN_MINUTES}`
+    if (lesson.status !== 'scheduled') return `lesson is already ${lesson.status}`
+    if (now.getTime() - lessonStartMs(lesson) > AUTO_LOG_WITHIN_MS) return 'lesson is more than 7 days old'
+    return null
+}
+
+async function studioAdminId(supabase: DbClient): Promise<string | null> {
+    const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'admin')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    return data?.id ?? null
 }
 
 function lessonStartMs(lesson: LessonRow): number {
@@ -123,7 +158,8 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
     const now = opts.now ?? new Date()
     const days = opts.days ?? 14
     const notify = opts.notify ?? true
-    const result: ClassroomAttachResult = { scanned: 0, attached: [], skipped: [] }
+    const result: ClassroomAttachResult = { scanned: 0, attached: [], skipped: [], logged: [] }
+    let adminId: string | null | undefined
 
     let query = supabase
         .from('classroom_recordings')
@@ -191,9 +227,17 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
         }
 
         const recent = now.getTime() - lessonStartMs(lesson) < NOTIFY_WITHIN_MS
+        const minutes = recordingMinutes(rec)
+        const logBlock = autoLogBlockReason(lesson, minutes, now)
         if (opts.dryRun) {
             result.attached.push({ recordingId: rec.id, lessonId: lesson.id, date: lesson.date, time: lesson.time, emailed: false })
             log(`[dry run] would attach ${rec.id} to lesson ${lesson.id} (${lesson.date} ${lesson.time})`)
+            if (logBlock) {
+                log(`[dry run] would not log lesson ${lesson.id}: ${logBlock}`)
+            } else {
+                result.logged.push({ recordingId: rec.id, lessonId: lesson.id, date: lesson.date, time: lesson.time, minutes: Math.round(minutes!), creditDeducted: false })
+                log(`[dry run] would LOG lesson ${lesson.id} (${Math.round(minutes!)} min classroom video)`)
+            }
             continue
         }
 
@@ -221,9 +265,77 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
         if (emailed) await notifyRecordingReady(supabase, rec.student_id, lesson.date)
         result.attached.push({ recordingId: rec.id, lessonId: lesson.id, date: lesson.date, time: lesson.time, emailed })
         log(`attached ${rec.id} to lesson ${lesson.id} (${lesson.date} ${lesson.time})${emailed ? ', emailed' : ''}`)
+
+        if (logBlock) {
+            log(`not logging lesson ${lesson.id}: ${logBlock}`)
+            continue
+        }
+        const logged = await autoLogLesson(supabase, lesson, log, async () => {
+            if (adminId === undefined) adminId = await studioAdminId(supabase)
+            return adminId
+        })
+        if (logged) {
+            result.logged.push({ recordingId: rec.id, lessonId: lesson.id, date: lesson.date, time: lesson.time, minutes: Math.round(minutes!), creditDeducted: logged.creditDeducted })
+        }
     }
 
     return result
+}
+
+/**
+ * Log a lesson whose 20+ minute classroom video just landed on it: the same
+ * logLessonCore Lionel's "Log" button runs. Re-reads the lesson first and only
+ * goes ahead while it is still 'scheduled' with no credit taken, so a lesson the
+ * Zoom webhook or Lionel logged in the meantime is left alone.
+ */
+async function autoLogLesson(
+    supabase: DbClient,
+    lesson: LessonRow,
+    log: (msg: string) => void,
+    getAdminId: () => Promise<string | null>,
+): Promise<{ creditDeducted: boolean } | null> {
+    const { data: fresh, error } = await supabase
+        .from('lessons')
+        .select('status, credit_snapshot_before, credit_snapshot')
+        .eq('id', lesson.id)
+        .maybeSingle()
+    if (error || !fresh) {
+        log(`not logging lesson ${lesson.id}: re-read failed (${error?.message ?? 'lesson gone'})`)
+        return null
+    }
+    if (fresh.status !== 'scheduled' || fresh.credit_snapshot_before !== null || fresh.credit_snapshot !== null) {
+        log(`not logging lesson ${lesson.id}: it was logged meanwhile (${fresh.status})`)
+        return null
+    }
+
+    const adminId = await getAdminId()
+    if (!adminId) {
+        log(`not logging lesson ${lesson.id}: no admin profile found`)
+        return null
+    }
+
+    try {
+        const res = await logLessonCore({
+            client: supabase,
+            adminId,
+            lessonId: lesson.id,
+            notes: '',
+            // 'system' = logged by the portal itself (the column's check
+            // constraint has no separate value for the classroom).
+            completedSource: 'system',
+            // Wait for the emails: a serverless function may stop once it returns.
+            awaitNotifications: true,
+        })
+        if ('error' in res) {
+            log(`logging lesson ${lesson.id} failed: ${res.error}`)
+            return null
+        }
+        log(`logged lesson ${lesson.id} (${lesson.date} ${lesson.time}): ${res.message}`)
+        return { creditDeducted: res.credit_deducted }
+    } catch (err: any) {
+        log(`logging lesson ${lesson.id} threw: ${err?.message ?? err}`)
+        return null
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -5,11 +5,13 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
-// Attaches classroom (LiveKit) recordings to the lessons they were recorded in.
+// Attaches classroom (LiveKit) recordings to the lessons they were recorded in,
+// and logs the lesson (one credit) when its video is 20+ minutes, the lesson is
+// still unlogged and from the last 7 days (see lib/classroom-recordings.ts).
 // The classroom also calls the lesson-recording webhook when it saves one; this
 // sweep catches any call that never arrived. Idempotent: a recording already on
 // a lesson is skipped. Manual runs: ?days=N to look further back, ?dry=1 to
-// report without writing.
+// report without writing (result.logged = what it would log).
 export async function GET(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
