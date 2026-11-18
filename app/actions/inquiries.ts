@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { Resend } from "resend"
 import { revalidatePath } from "next/cache"
 import { getInquiryAdmin, sendInquiryReplyCore } from "@/lib/core/inquiries"
@@ -9,7 +10,9 @@ import type { Inquiry, InquiryMessage } from "@/types/admin"
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function submitInquiry(formData: FormData) {
-    const supabase = await createClient()
+    // Public form (visitor not signed in): write with the server key so the
+    // CRM tables never need to be open to the public key.
+    const supabase = createAdminClient()
 
     const name = formData.get("name") as string
     const email = formData.get("email") as string

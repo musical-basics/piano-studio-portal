@@ -1,6 +1,7 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { Resend } from "resend"
 import { TrialInquiryAutoResponse } from "@/components/emails/trial-inquiry-autoresponse"
 import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
@@ -18,7 +19,9 @@ interface TrialInquiryInput {
 }
 
 export async function submitTrialInquiry(input: TrialInquiryInput) {
-    const supabase = await createClient()
+    // Public form (visitor not signed in): write with the server key so the
+    // CRM tables never need to be open to the public key.
+    const supabase = createAdminClient()
 
     const { name, email, age, timezone, availability, experience, goals } = input
 
@@ -154,7 +157,9 @@ export async function submitWaitlistSignup(input: WaitlistInput) {
         return { success: false, error: "Please enter a valid email address." }
     }
 
-    const supabase = await createClient()
+    // Public form (visitor not signed in): write with the server key so the
+    // CRM tables never need to be open to the public key.
+    const supabase = createAdminClient()
     try {
         const { data: student, error: dbError } = await supabase
             .from("crm_students")
