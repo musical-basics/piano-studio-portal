@@ -14,7 +14,7 @@ export async function getStudentLessonHistory(studentId: string) {
     // Fetch the student's completed lessons, most recent first
     const { data: lessons, error } = await supabase
         .from('lessons')
-        .select('id, date, time, duration, status, notes, credit_snapshot, credit_snapshot_before, video_url, sheet_music_url')
+        .select('id, date, time, duration, status, notes, credit_snapshot, credit_snapshot_before, free_reason, video_url, sheet_music_url')
         .eq('student_id', studentId)
         .eq('status', 'completed')
         .order('date', { ascending: false })

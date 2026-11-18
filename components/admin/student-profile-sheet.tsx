@@ -29,6 +29,8 @@ type LessonHistory = {
     notes: string | null
     credit_snapshot: number | null
     credit_snapshot_before: number | null
+    /** Set when logged free (#756): the optional reason, '' for none. */
+    free_reason?: string | null
     video_url: string | null
     sheet_music_url: string | null
 }
@@ -280,8 +282,15 @@ export function StudentProfileSheet({ student, open, onOpenChange }: StudentProf
                                         </div>
                                     </div>
 
-                                    {/* Credit row */}
-                                    {(lesson.credit_snapshot !== null || lesson.credit_snapshot_before !== null) && (
+                                    {/* Credit row. A free lesson (#756) took nothing. */}
+                                    {typeof lesson.free_reason === 'string' && (
+                                        <div className="flex items-center gap-2 text-xs bg-violet-50 dark:bg-violet-950/30 rounded px-2 py-1.5">
+                                            <span className="font-semibold text-violet-700 dark:text-violet-300">Free, no credit taken</span>
+                                            {lesson.free_reason && <span className="text-muted-foreground truncate">({lesson.free_reason})</span>}
+                                            <span className="ml-auto font-mono font-semibold">{lesson.credit_snapshot ?? '?'}</span>
+                                        </div>
+                                    )}
+                                    {typeof lesson.free_reason !== 'string' && (lesson.credit_snapshot !== null || lesson.credit_snapshot_before !== null) && (
                                         <div className="flex items-center gap-2 text-xs bg-muted/50 rounded px-2 py-1.5">
                                             <span className="text-muted-foreground font-medium">Credits:</span>
                                             <span className="font-mono font-semibold">

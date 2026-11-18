@@ -35,6 +35,7 @@ import { MISSED_IT_NOTE, formatClock, unloggedLessonBlocks, type UnloggedLesson 
  *     older, the June 2026 pattern (check it was not already paid for).
  *
  * Teacher accounts are left out entirely (#734, isUntrackedTeacherAccount).
+ * Lessons logged free (#756, lessons.free_reason set) are left alone.
  * Since #736 the same email also lists every past lesson still unlogged
  * (findPastUnloggedLessons), with the morning email's buttons.
  */
@@ -294,7 +295,7 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
 
     const { data: monthRows, error: lessonError } = await client
         .from('lessons')
-        .select('id, student_id, date, time, status, credit_snapshot_before, credit_snapshot')
+        .select('id, student_id, date, time, status, credit_snapshot_before, credit_snapshot, free_reason')
         .gte('date', first)
         .lt('date', next)
         // Cancelling deletes the row; 'cancelled' is only ever a no-show, which forfeits a credit.
@@ -326,7 +327,8 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
         }
     }
     const studentIds = involved.filter(id => !untracked.has(id))
-    const monthLessons = (monthRows || []).filter(l => !untracked.has(l.student_id as string))
+    // Lessons logged free (#756) took no credit on purpose: nothing to match.
+    const monthLessons = (monthRows || []).filter(l => !untracked.has(l.student_id as string) && l.free_reason == null)
 
     // Each involved student's whole credit history (a few rows a week), so
     // matching by balance can run in time order from the start.
@@ -348,13 +350,13 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
     if (studentIds.length) {
         const { data, error } = await client
             .from('lessons')
-            .select('id, student_id, date, time, status, credit_snapshot_before, credit_snapshot')
+            .select('id, student_id, date, time, status, credit_snapshot_before, credit_snapshot, free_reason')
             .in('student_id', studentIds)
             .not('credit_snapshot_before', 'is', null)
             .or(`date.lt.${first},date.gte.${next}`)
             .limit(5000)
         if (error) throw new Error(`other lessons query failed: ${error.message}`)
-        otherRows.push(...(data || []))
+        otherRows.push(...(data || []).filter(l => l.free_reason == null))
     }
 
     const toLesson = (l: any, inMonth: boolean): CheckLesson => {

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -104,6 +105,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // Kept separate from notes so the student portal can surface "what do I
     // practice this week" on its own Homework tab.
     const [lessonHomework, setLessonHomework] = useState("")
+    // "Free, don't take a credit" in the log dialog (#756).
+    const [logFree, setLogFree] = useState(false)
+    const [logFreeReason, setLogFreeReason] = useState("")
     const [videoUrl, setVideoUrl] = useState("")
     const [sheetMusicUrl, setSheetMusicUrl] = useState("")
     const [scheduleDate, setScheduleDate] = useState("")
@@ -207,6 +211,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setSheetMusicUrl(lesson.sheet_music_url || '')
         setLessonNotes(lesson.notes || '')
         setLessonHomework((lesson as any).homework || '')
+        setLogFree(false)
+        setLogFreeReason('')
         setShowLogLessonModal(true)
     }
 
@@ -218,6 +224,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setLogTime("12:00")
         setLogDuration(60)
         setLessonHomework("")
+        setLogFree(false)
+        setLogFreeReason("")
         setShowLogLessonModal(true)
     }
 
@@ -228,6 +236,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setIsLoading(true)
 
         let result;
+        const free = logFree ? { reason: logFreeReason.trim() } : null
 
         try {
             if (selectedLesson) {
@@ -237,7 +246,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     lessonNotes,
                     videoUrl || undefined,
                     sheetMusicUrl || undefined,
-                    lessonHomework
+                    lessonHomework,
+                    free
                 )
             } else if (selectedStudentForLog) {
                 console.log('Calling logPastLesson', selectedStudentForLog.id)
@@ -251,7 +261,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     lessonNotes,
                     videoUrl || undefined,
                     sheetMusicUrl || undefined,
-                    lessonHomework
+                    lessonHomework,
+                    free
                 )
             }
         } catch (e) {
@@ -294,11 +305,13 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson. Credit deducted.${autoScheduleMsg}`
+                description: `Successfully logged lesson. ${free ? "Free: no credit taken." : "Credit deducted."}${autoScheduleMsg}`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
             setLessonHomework("")
+            setLogFree(false)
+            setLogFreeReason("")
             setVideoUrl("")
             setSheetMusicUrl("")
             setSelectedLesson(null)
@@ -1147,12 +1160,38 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         </div>
                     </div>
 
+                    {/* Free lesson (#756): logged, but no credit taken. */}
+                    <div className="rounded-md border p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                            <Checkbox
+                                id="log-free"
+                                checked={logFree}
+                                onCheckedChange={(v) => setLogFree(v === true)}
+                            />
+                            <Label htmlFor="log-free" className="text-sm font-medium cursor-pointer">
+                                Free, don&apos;t take a credit
+                            </Label>
+                        </div>
+                        {logFree && (
+                            <Input
+                                id="log-free-reason"
+                                placeholder="Reason (optional, only you see it)"
+                                value={logFreeReason}
+                                onChange={(e) => setLogFreeReason(e.target.value)}
+                                maxLength={300}
+                            />
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                            The family still gets the usual lesson email. Nothing is sent about it being free. The credit check leaves it alone.
+                        </p>
+                    </div>
+
                     <div className="flex gap-3 justify-end">
                         <Button variant="outline" onClick={() => setShowLogLessonModal(false)} disabled={isLoading}>
                             Cancel
                         </Button>
                         <Button onClick={handleSaveLesson} disabled={isLoading}>
-                            {isLoading ? 'Saving...' : 'Save Lesson'}
+                            {isLoading ? 'Saving...' : logFree ? 'Save Lesson (free)' : 'Save Lesson'}
                         </Button>
                     </div>
                 </DialogContent>

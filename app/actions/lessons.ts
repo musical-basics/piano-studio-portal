@@ -83,7 +83,9 @@ export async function logLesson(
     notes: string,
     videoUrl?: string,
     sheetMusicUrl?: string,
-    homework?: string
+    homework?: string,
+    /** "Free, don't take a credit" in the log dialog (#756), with its optional reason. */
+    free?: { reason?: string } | null
 ) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -110,6 +112,7 @@ export async function logLesson(
         videoUrl,
         sheetMusicUrl,
         completedSource: 'admin_ui',
+        free: free ?? null,
     })
 }
 
@@ -117,6 +120,7 @@ export async function logLesson(
 /**
  * Log a past lesson directly (ad-hoc) without scheduling it first
  * Creates a lesson with status 'completed' and deducts 1 credit
+ * (none when `free` is given, #756: both snapshots keep the balance)
  */
 export async function logPastLesson(
     studentId: string,
@@ -126,7 +130,8 @@ export async function logPastLesson(
     notes: string,
     videoUrl?: string,
     sheetMusicUrl?: string,
-    homework?: string
+    homework?: string,
+    free?: { reason?: string } | null
 ) {
     const supabase = await createClient()
 
@@ -163,6 +168,7 @@ export async function logPastLesson(
         notes,
         video_url: videoUrl || null,
         sheet_music_url: sheetMusicUrl || null,
+        ...(free ? { free_reason: (free.reason || '').trim() } : {}),
     }, homework ?? null)
 
     if (createError) {
@@ -172,15 +178,17 @@ export async function logPastLesson(
     // Deduct 1 credit and save snapshots
     if (student) {
         const startingBalance = student.credits
-        const newBalance = startingBalance - 1
+        const newBalance = free ? startingBalance : startingBalance - 1
 
-        const { error: creditError } = await supabase
-            .from('profiles')
-            .update({ credits: newBalance })
-            .eq('id', studentId)
+        if (!free) {
+            const { error: creditError } = await supabase
+                .from('profiles')
+                .update({ credits: newBalance })
+                .eq('id', studentId)
 
-        if (creditError) {
-            console.error('Failed to deduct credit after logging lesson:', creditError)
+            if (creditError) {
+                console.error('Failed to deduct credit after logging lesson:', creditError)
+            }
         }
 
         // Save credit snapshots to the lesson

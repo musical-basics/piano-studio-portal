@@ -1010,7 +1010,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                     {/* Credit Receipt Footer */}
                                                     {lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null && (
                                                         <div className="text-xs text-muted-foreground mt-2 pt-2 border-t">
-                                                            Credits spent: 1 • Remaining: {lesson.credit_snapshot}
+                                                            {typeof (lesson as any).free_reason === 'string' ? 'Free lesson' : 'Credits spent: 1'} • Remaining: {lesson.credit_snapshot}
                                                         </div>
                                                     )}
                                                     <Clock className="h-5 w-5 text-muted-foreground" />
@@ -1280,8 +1280,16 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                 </span>
                                             </div>
 
-                                            {/* Credit trail */}
-                                            {(lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null) && (
+                                            {/* Credit trail. A free lesson (#756) took nothing. */}
+                                            {typeof (lesson as any).free_reason === 'string' && lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null && (
+                                                <div className="flex items-center gap-1.5 text-xs bg-muted/50 rounded px-2 py-1.5">
+                                                    <span className="text-muted-foreground font-medium">Credits:</span>
+                                                    <span className="font-semibold text-violet-700 dark:text-violet-300">Free lesson, none used</span>
+                                                    <span className="text-muted-foreground">→</span>
+                                                    <span className="font-mono font-semibold">{lesson.credit_snapshot}</span>
+                                                </div>
+                                            )}
+                                            {typeof (lesson as any).free_reason !== 'string' && (lesson.credit_snapshot !== undefined && lesson.credit_snapshot !== null) && (
                                                 <div className="flex items-center gap-1.5 text-xs bg-muted/50 rounded px-2 py-1.5">
                                                     <span className="text-muted-foreground font-medium">Credits:</span>
                                                     <span className="font-mono font-semibold">

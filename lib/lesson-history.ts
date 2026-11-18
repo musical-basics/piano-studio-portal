@@ -9,13 +9,15 @@ import { studioWallClockToISO } from '@/lib/studio-timezone'
  *   - Counted: logged (status 'completed'), or a no-show ('cancelled'), which
  *     forfeits the lesson. "Left after" is the balance the log recorded
  *     (credit_snapshot), when it recorded one.
+ *   - Free: logged with "Free, don't take a credit" (#756, free_reason set).
+ *     Nothing was taken; "Left after" is the unchanged balance.
  *   - Not counted: over, but never logged, so nothing was taken for it.
  *   - Upcoming: not over yet.
  * Cancelled lessons are deleted, so they never show. Notes, recordings and how
  * a lesson was logged stay out of this view on purpose.
  */
 
-export type LessonHistoryStatus = 'counted' | 'not_counted' | 'upcoming'
+export type LessonHistoryStatus = 'counted' | 'free' | 'not_counted' | 'upcoming'
 
 export type LessonHistoryRow = {
     id: string
@@ -34,6 +36,7 @@ export type LessonHistory = {
     rows: LessonHistoryRow[]
     booked: number
     counted: number
+    free: number
     notCounted: number
     upcoming: number
     /** profiles.credits now. */
@@ -47,6 +50,7 @@ type SourceLesson = {
     duration?: number | null
     status: string
     credit_snapshot?: number | null
+    free_reason?: string | null
 }
 
 export function formatLessonClock(time: string): string {
@@ -57,6 +61,7 @@ export function formatLessonClock(time: string): string {
 }
 
 export function lessonHistoryStatus(lesson: SourceLesson, now: Date = new Date()): LessonHistoryStatus {
+    if (lesson.status === 'completed' && typeof lesson.free_reason === 'string') return 'free'
     if (lesson.status === 'completed' || lesson.status === 'cancelled') return 'counted'
     const time = String(lesson.time).slice(0, 5)
     const endMs = Date.parse(studioWallClockToISO(lesson.date, time)) + (lesson.duration || 60) * 60_000
@@ -76,7 +81,7 @@ export function buildLessonHistory(lessons: SourceLesson[], creditsNow: number |
                 clock: formatLessonClock(String(l.time).slice(0, 5)),
                 duration: l.duration || 60,
                 status,
-                leftAfter: status === 'counted' && typeof l.credit_snapshot === 'number' ? l.credit_snapshot : null,
+                leftAfter: (status === 'counted' || status === 'free') && typeof l.credit_snapshot === 'number' ? l.credit_snapshot : null,
             }
         })
 
@@ -84,6 +89,7 @@ export function buildLessonHistory(lessons: SourceLesson[], creditsNow: number |
         rows,
         booked: rows.length,
         counted: rows.filter(r => r.status === 'counted').length,
+        free: rows.filter(r => r.status === 'free').length,
         notCounted: rows.filter(r => r.status === 'not_counted').length,
         upcoming: rows.filter(r => r.status === 'upcoming').length,
         leftNow: typeof creditsNow === 'number' ? creditsNow : null,

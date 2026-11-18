@@ -352,6 +352,11 @@ export type LogLessonArgs = {
     sheetMusicUrl?: string
     awaitNotifications?: boolean
     completedSource?: 'agent_log' | 'zoom_webhook' | 'admin_ui' | 'system'
+    /**
+     * Log it free (#756): no credit taken. Both snapshots hold the current
+     * balance and lessons.free_reason keeps the optional reason ('' for none).
+     */
+    free?: { reason?: string | null } | null
 }
 
 export async function logLessonCore({
@@ -364,6 +369,7 @@ export async function logLessonCore({
     sheetMusicUrl,
     awaitNotifications = false,
     completedSource = 'agent_log',
+    free = null,
 }: LogLessonArgs) {
     // Credit deduction is a privileged cross-user write on `profiles`. When this
     // is called from the admin UI, `client` is the admin's own RLS-scoped session,
@@ -406,6 +412,7 @@ export async function logLessonCore({
             ...(videoUrl ? { video_url: videoUrl } : {}),
             ...(sheetMusicUrl ? { sheet_music_url: sheetMusicUrl } : {}),
             completed_source: completedSource,
+            ...(free && needsCredit ? { free_reason: (free.reason || '').trim() } : {}),
         },
         homework,
     )
@@ -435,19 +442,21 @@ export async function logLessonCore({
 
         const startingCredits = Number(studentCredits.credits ?? 0)
         previousCredits = startingCredits
-        newCredits = startingCredits - 1
+        newCredits = free ? startingCredits : startingCredits - 1
 
-        const { error: creditError } = await supabaseAdmin
-            .from('profiles')
-            .update({ credits: newCredits })
-            .eq('id', lesson.student_id)
+        if (!free) {
+            const { error: creditError } = await supabaseAdmin
+                .from('profiles')
+                .update({ credits: newCredits })
+                .eq('id', lesson.student_id)
 
-        if (creditError) {
-            console.error('logLessonCore: failed to deduct credit:', creditError)
-            return { error: 'Failed to deduct student credit: ' + creditError.message }
+            if (creditError) {
+                console.error('logLessonCore: failed to deduct credit:', creditError)
+                return { error: 'Failed to deduct student credit: ' + creditError.message }
+            }
+
+            creditDeducted = true
         }
-
-        creditDeducted = true
 
         const { error: snapshotError } = await supabaseAdmin
             .from('lessons')
@@ -551,7 +560,9 @@ export async function logLessonCore({
         credit_repaired: creditRepaired,
         previous_credits: previousCredits,
         new_credits: newCredits,
-        message: creditRepaired
+        message: free && needsCredit
+            ? `Lesson logged free. No credit taken (balance ${newCredits}).`
+            : creditRepaired
             ? `Lesson was already completed (via Zoom) but had no credit snapshot. Credit repaired (${previousCredits} -> ${newCredits}).`
             : creditDeducted
             ? `Lesson logged. Credit deducted (${previousCredits} -> ${newCredits}).`

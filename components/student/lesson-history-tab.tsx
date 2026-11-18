@@ -13,6 +13,10 @@ const STATUS: Record<LessonHistoryStatus, { label: string; className: string }> 
         label: "Counted",
         className: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
     },
+    free: {
+        label: "Free",
+        className: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
+    },
     not_counted: {
         label: "Not counted",
         className: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
@@ -120,6 +124,9 @@ export function LessonHistoryTab({ history }: { history: LessonHistory }) {
 
             <div className="text-xs text-muted-foreground space-y-1">
                 <p><b>Counted</b>: the lesson used one lesson from your balance. <b>Left after</b> is what your balance was after it.</p>
+                {history.free > 0 && (
+                    <p><b>Free</b>: the lesson was held at no charge to your balance.</p>
+                )}
                 <p><b>Not counted</b>: nothing was taken from your balance for this lesson.</p>
                 <p>A number below zero means lessons taken ahead of your next payment.</p>
             </div>
