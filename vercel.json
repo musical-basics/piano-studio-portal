@@ -21,6 +21,10 @@
             "schedule": "5,35 * * * *"
         },
         {
+            "path": "/api/cron/classroom-server-watch",
+            "schedule": "*/5 * * * *"
+        },
+        {
             "path": "/api/cron/unlogged-lessons",
             "schedule": "30 13 * * *"
         },
