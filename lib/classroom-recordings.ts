@@ -67,6 +67,14 @@ export function recordingStartMs(url: string): number | null {
     return m ? Number(m[1]) : null
 }
 
+/** Stop minus start, in minutes; null without a start stamp (length unknown). */
+export function recordingMinutes(rec: { url: string; created_at: string }): number | null {
+    const startMs = recordingStartMs(rec.url)
+    const stopMs = Date.parse(rec.created_at)
+    if (startMs === null || !(stopMs > startMs)) return null
+    return (stopMs - startMs) / MINUTE
+}
+
 function lessonStartMs(lesson: LessonRow): number {
     return Date.parse(studioWallClockToISO(lesson.date, String(lesson.time).slice(0, 5)))
 }
@@ -216,4 +224,148 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
     }
 
     return result
+}
+
+// ---------------------------------------------------------------------------
+// Admin page: every classroom recording, newest first, with where it went.
+
+type LessonRef = { lessonId: string; date: string; time: string }
+
+export type AdminRecordingStatus =
+    | ({ kind: 'attached' } & LessonRef)
+    | { kind: 'too_short' }
+    /** A lesson fits but the hand-off hasn't attached it (file not ready yet, or an old file judged too small). */
+    | ({ kind: 'not_attached_yet' } & LessonRef)
+    /** A lesson fits but already has a different video. */
+    | ({ kind: 'lesson_has_other_video' } & LessonRef)
+    /** No lesson at that time; `nearest` is the closest of the student's lessons without a video (within a week). */
+    | { kind: 'no_lesson'; nearest: LessonRef | null }
+
+export type AdminRecordingRow = {
+    id: string
+    studentId: string
+    studentName: string | null
+    url: string
+    /** When recording started (egress stamp), else when it stopped. */
+    recordedAt: string
+    hasStartStamp: boolean
+    /** Stop minus start; null without a start stamp. */
+    minutes: number | null
+    status: AdminRecordingStatus
+}
+
+const NEAREST_WITHIN_DAYS = 7
+
+function lessonRef(lesson: { id: string; date: string; time: string }): LessonRef {
+    return { lessonId: lesson.id, date: lesson.date, time: String(lesson.time).slice(0, 5) }
+}
+
+export async function listClassroomRecordingsForAdmin(client?: DbClient, limit = 300): Promise<AdminRecordingRow[]> {
+    const supabase = client ?? createAdminClient()
+
+    const { data: rows, error } = await supabase
+        .from('classroom_recordings')
+        .select('id, student_id, url, created_at, size_bytes')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+    if (error) throw new Error(`classroom_recordings query failed: ${error.message}`)
+    const recordings = ((rows || []) as RecordingRow[]).filter(r => r.url)
+    if (recordings.length === 0) return []
+
+    // A recording "went on" a lesson when that lesson's video_url is its url.
+    const { data: onLessons, error: onError } = await supabase
+        .from('lessons')
+        .select('id, date, time, video_url')
+        .in('video_url', recordings.map(r => r.url))
+    if (onError) throw new Error(`lessons lookup failed: ${onError.message}`)
+    const lessonByUrl = new Map<string, { id: string; date: string; time: string }>()
+    for (const l of onLessons || []) if (!lessonByUrl.has(l.video_url)) lessonByUrl.set(l.video_url, l)
+
+    const studentIds = [...new Set(recordings.map(r => r.student_id).filter(id => UUID_RE.test(id || '')))]
+    const names = new Map<string, string | null>()
+    if (studentIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', studentIds)
+        for (const p of profiles || []) names.set(p.id, p.name)
+    }
+
+    return Promise.all(recordings.map(async (rec): Promise<AdminRecordingRow> => {
+        const startMs = recordingStartMs(rec.url)
+        const anchorMs = startMs ?? Date.parse(rec.created_at)
+        const minutes = recordingMinutes(rec)
+        const base = {
+            id: rec.id,
+            studentId: rec.student_id,
+            studentName: names.get(rec.student_id) ?? null,
+            url: rec.url,
+            recordedAt: new Date(anchorMs).toISOString(),
+            hasStartStamp: startMs !== null,
+            minutes,
+        }
+
+        const on = lessonByUrl.get(rec.url)
+        if (on) return { ...base, status: { kind: 'attached', ...lessonRef(on) } }
+        if (minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES) return { ...base, status: { kind: 'too_short' } }
+        if (!UUID_RE.test(rec.student_id || '')) return { ...base, status: { kind: 'no_lesson', nearest: null } }
+
+        const anchorDate = isoToStudioWallClock(new Date(anchorMs).toISOString()).localDate
+        const { data: lessons } = await supabase
+            .from('lessons')
+            .select('id, date, time, duration, status, video_url')
+            .eq('student_id', rec.student_id)
+            .gte('date', shiftDateStr(anchorDate, -NEAREST_WITHIN_DAYS))
+            .lte('date', shiftDateStr(anchorDate, NEAREST_WITHIN_DAYS))
+        const candidates = ((lessons || []) as LessonRow[]).filter(l => l.status !== 'cancelled')
+
+        const match = matchLesson(rec, candidates)
+        if (match) {
+            return { ...base, status: { kind: match.video_url ? 'lesson_has_other_video' : 'not_attached_yet', ...lessonRef(match) } }
+        }
+
+        let nearest: LessonRow | null = null
+        for (const l of candidates) {
+            if (l.video_url) continue
+            if (!nearest || Math.abs(lessonStartMs(l) - anchorMs) < Math.abs(lessonStartMs(nearest) - anchorMs)) nearest = l
+        }
+        return { ...base, status: { kind: 'no_lesson', nearest: nearest ? lessonRef(nearest) : null } }
+    }))
+}
+
+/**
+ * Admin one-click attach: put a recording on a lesson. Sets that lesson's
+ * video_url only, and only when it has none: no logging, no credits, no email.
+ */
+export async function attachRecordingToLessonByHand(
+    recordingId: string,
+    lessonId: string,
+    client?: DbClient,
+): Promise<{ success: true; date: string; time: string } | { error: string }> {
+    const supabase = client ?? createAdminClient()
+
+    const { data: rec } = await supabase
+        .from('classroom_recordings')
+        .select('id, student_id, url')
+        .eq('id', recordingId)
+        .maybeSingle()
+    if (!rec?.url) return { error: 'Recording not found' }
+
+    const { data: lesson } = await supabase
+        .from('lessons')
+        .select('id, student_id, date, time, video_url')
+        .eq('id', lessonId)
+        .maybeSingle()
+    if (!lesson) return { error: 'Lesson not found' }
+    if (lesson.student_id !== rec.student_id) return { error: "That lesson is another student's" }
+
+    const { data: elsewhere } = await supabase.from('lessons').select('date').eq('video_url', rec.url).limit(1)
+    if (elsewhere && elsewhere.length > 0) return { error: `This recording is already on the lesson of ${elsewhere[0].date}` }
+
+    const { data: updated, error } = await supabase
+        .from('lessons')
+        .update({ video_url: rec.url })
+        .eq('id', lessonId)
+        .is('video_url', null)
+        .select('id')
+    if (error) return { error: `Could not attach: ${error.message}` }
+    if (!updated || updated.length === 0) return { error: 'That lesson already has a video' }
+    return { success: true, date: lesson.date, time: String(lesson.time).slice(0, 5) }
 }

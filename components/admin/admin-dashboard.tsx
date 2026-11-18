@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone } from "lucide-react"
+import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone, Film } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -36,6 +36,7 @@ import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
+import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -804,6 +805,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             <Music className="h-4 w-4" />
                             <span className="hidden sm:inline">Completed</span>
                         </TabsTrigger>
+                        <TabsTrigger value="recordings" className="gap-2">
+                            <Film className="h-4 w-4" />
+                            <span className="hidden sm:inline">Classroom recordings</span>
+                        </TabsTrigger>
                         <TabsTrigger value="messages" className="gap-2 relative">
                             <MessageCircle className="h-4 w-4" />
                             <span className="hidden sm:inline">Messages</span>
@@ -895,6 +900,16 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         <CompletedTab
                             lessons={completedLessons}
                             onEdit={handleEditLesson}
+                        />
+                    </TabsContent>
+
+                    {/* Classroom (LiveKit) recordings and the lesson each went on */}
+                    <TabsContent value="recordings" className="space-y-4">
+                        <ClassroomRecordingsTab
+                            onOpenDay={(date) => {
+                                showScheduleForDate(date)
+                                setActiveTab("dashboard")
+                            }}
                         />
                     </TabsContent>
 
