@@ -169,9 +169,11 @@ async function studioInbox(client: DbClient): Promise<string> {
  */
 export async function sendCronAlert(
     client: DbClient,
-    { subject, lines, to: toOverride, footer }: {
+    { subject, lines, to: toOverride, footer, html: bodyHtml }: {
         subject: string
         lines: string[]
+        /** Replaces the bulleted list of lines, for alerts that need their own layout. */
+        html?: string
         /** Fixed recipient instead of the admin profile's inbox. */
         to?: string
         /** Replaces the reminder-specific footer for alerts about other jobs. */
@@ -192,7 +194,7 @@ export async function sendCronAlert(
             subject,
             html: `
                 <p><strong>${subject}</strong></p>
-                <ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>
+                ${bodyHtml ?? `<ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`}
                 ${footer !== undefined ? `<p style="color:#666;font-size:13px">${footer}</p>` : `<p style="color:#666;font-size:13px">
                     Students may not have received their lesson notices. To send them now:<br>
                     <code>npx tsx scripts/send_reminders_now.ts --date=YYYY-MM-DD --send</code>
