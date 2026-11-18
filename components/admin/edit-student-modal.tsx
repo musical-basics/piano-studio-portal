@@ -310,12 +310,17 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                                 <SelectValue placeholder="Select timezone" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="America/Los_Angeles">PT (Pacific Time)</SelectItem>
+                                <SelectItem value="America/Los_Angeles">PT (Pacific Time, US)</SelectItem>
+                                {/* B.C. stays on UTC-7 all year since Nov 2026; Etc/GMT+7 is UTC-7 (sign inverted). */}
+                                <SelectItem value="Etc/GMT+7">Vancouver / B.C. (UTC-7 all year)</SelectItem>
+                                <SelectItem value="America/Phoenix">Arizona (MST all year)</SelectItem>
                                 <SelectItem value="America/Denver">MT (Mountain Time)</SelectItem>
                                 <SelectItem value="America/Chicago">CT (Central Time)</SelectItem>
                                 <SelectItem value="America/New_York">ET (Eastern Time)</SelectItem>
                                 <SelectItem value="Europe/London">UK Time</SelectItem>
                                 <SelectItem value="Europe/Paris">Central Europe Time</SelectItem>
+                                <SelectItem value="Europe/Berlin">Germany</SelectItem>
+                                <SelectItem value="Asia/Jerusalem">Israel</SelectItem>
                                 <SelectItem value="Australia/Sydney">AET (Australian Eastern Time)</SelectItem>
                             </SelectContent>
                         </Select>

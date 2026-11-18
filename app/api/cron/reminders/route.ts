@@ -11,6 +11,7 @@ import {
     cronSource, withRetry, ALERT_COOLDOWN_MINUTES,
 } from '@/lib/cron-alerts'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
+import { formatLessonTimeForFamily } from '@/lib/family-time'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -128,6 +129,9 @@ export async function GET(request: Request) {
             }
 
             const timeLabel = lessonTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            // What the family reads: "5:30pm EST (2:30pm your time)" when their own
+            // zone is set and differs (Lionel's #729). timeLabel stays for the alerts.
+            const familyTimeLabel = formatLessonTimeForFamily(lesson.date, lesson.time, lesson.profiles?.timezone)
             const dayLabel = new Date(`${lesson.date}T00:00:00`).toLocaleDateString('en-US', {
                 weekday: 'long', month: 'long', day: 'numeric',
             })
@@ -152,7 +156,7 @@ export async function GET(request: Request) {
             // Wording follows the real time remaining, not the notice key: a
             // recovered 24h notice must not tell someone "see you tomorrow"
             // about a lesson starting in an hour.
-            const { phrase, variant } = describeWhen(diffMinutes, timeLabel, dayLabel)
+            const { phrase, variant } = describeWhen(diffMinutes, familyTimeLabel, dayLabel)
             const subject = diffMinutes <= 25
                 ? 'Lesson Starting Soon!'
                 : confirmNudge
@@ -176,7 +180,7 @@ export async function GET(request: Request) {
                 subject,
                 react: LessonReminderEmail({
                     studentName: lesson.profiles.name || 'Student',
-                    time: timeLabel,
+                    time: familyTimeLabel,
                     zoomLink: lesson.zoom_link,
                     classroomLink,
                     variant,

@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
 import { studioNow, studioToday, studioTzAbbr } from '@/lib/studio-timezone'
+import { formatLessonTimeForFamily } from '@/lib/family-time'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
@@ -100,15 +101,17 @@ async function sendAutoScheduledLessonEmail({
         const formattedDate = formatDateLong(date)
         const formattedTime = formatStudioTime(time, date)
         const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
+        // The family's copy also shows their own clock (Lionel's #729); the teacher's stays Eastern.
+        const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
 
         await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: studentEmail,
-            subject: emailSubject,
+            subject: `Lesson Scheduled for ${student.name} on ${formattedDate} at ${familyTime}`,
             react: LessonScheduledEmail({
                 studentName: student.name || 'Student',
                 date: formattedDate,
-                time: formattedTime,
+                time: familyTime,
                 duration,
                 zoomLink: zoomLink || null,
                 recipientName: student.name || 'Student',
@@ -717,15 +720,17 @@ export async function scheduleLessonCore({
             const formattedDate = formatDateLong(date)
             const formattedTime = formatStudioTime(time, date)
             const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
+            // The family's copy also shows their own clock (Lionel's #729); the teacher's stays Eastern.
+            const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
 
             await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
                 to: scheduledStudentEmail,
-                subject: emailSubject,
+                subject: `Lesson Scheduled for ${student.name} on ${formattedDate} at ${familyTime}`,
                 react: LessonScheduledEmail({
                     studentName: student.name || 'Student',
                     date: formattedDate,
-                    time: formattedTime,
+                    time: familyTime,
                     duration,
                     zoomLink,
                     recipientName: student.name || 'Student',
@@ -951,9 +956,10 @@ export async function rescheduleLessonCore({
 
                 const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                 const oldDateStr = formatDateLong(lesson.date)
-                const oldTimeStr = formatStudioTime(lesson.time, lesson.date)
+                // Both times also in the family's own clock (Lionel's #729).
+                const oldTimeStr = formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone)
                 const newDateStr = formatDateLong(newDate)
-                const newTimeStr = formatStudioTime(newTime, newDate)
+                const newTimeStr = formatLessonTimeForFamily(newDate, newTime, student.timezone)
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
