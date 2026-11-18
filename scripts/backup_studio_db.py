@@ -74,7 +74,15 @@ SCHEMA_QUERIES = {
                data_type, udt_name, is_nullable, column_default
         from information_schema.columns
         where table_schema in ('public','storage')
+           or (table_schema = 'auth' and table_name in ('users','identities'))
         order by table_schema, table_name, ordinal_position""",
+    # Which tables have row-level security on. Without it a rebuilt database
+    # would leave every table open to the public (anon) key.
+    "rls": """
+        select c.relname as table, c.relrowsecurity as enabled, c.relforcerowsecurity as forced
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind = 'r'
+        order by 1""",
     "constraints": """
         select n.nspname as schema, c.relname as table, con.conname as name,
                con.contype as type, pg_get_constraintdef(con.oid) as def
@@ -292,6 +300,7 @@ def mgmt_query(pat, sql):
 
 
 TABLE_CACHE = "table-list.json"
+MANIFEST = "manifest.json"
 
 
 def discover_tables(pat):
@@ -513,6 +522,7 @@ def main():
         print(f"public.{t}: {n} rows")
 
     storage = None
+    live = {}
     if pat:
         try:
             for t in AUTH_TABLES:
@@ -524,13 +534,21 @@ def main():
             # message), so only a real gap is an error.
             written = {t: expected[f"public.{t}.json"] for t, _ in tables}
             written.update({f"auth.{t}": expected[f"auth.{t}.json"] for t in AUTH_TABLES})
-            short = [f"{t}: {written[t]} of {n}" for t, n in live_counts(pat, tables).items()
+            live = live_counts(pat, tables)
+            short = [f"{t}: {written[t]} of {n}" for t, n in live.items()
                      if t in written and n - written[t] > 5]
             if short:
                 raise RuntimeError("rows missing against the live count: " + "; ".join(short))
         except Exception as e:
             shutil.rmtree(tmp, ignore_errors=True)
             die(f"sign-in tables / schema: {e}")
+
+    # The archive's own record of what it holds, which the monthly restore test
+    # (scripts/restore_test_studio_db.py) checks the rebuilt database against.
+    (tmp / MANIFEST).write_text(json.dumps({
+        "made": started.isoformat(timespec="seconds"), "host": socket.gethostname(),
+        "partial": bool(degraded), "rows": expected, "live_counts": live,
+    }, indent=1))
 
     tag = "-PARTIAL" if degraded else ""
     out = BACKUP_ROOT / f"{PREFIX}-{stamp}{tag}.tar.gz"
