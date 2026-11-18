@@ -33,7 +33,7 @@ import { logLessonCore } from '@/lib/core/lessons'
 // (`..._partN.mp4`, `.webm`) stamped the name at upload, i.e. when it stopped, so
 // their stamp is not a start time and they are matched by save time instead.
 const START_MS_RE = /_(\d{13})\.mp4$/i
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MINUTE = 60_000
 
 // A recording may start a little before the slot (teacher gets set up) and any
@@ -44,7 +44,7 @@ const LATE_START_MS = 10 * MINUTE
 const LATE_STOP_MS = 90 * MINUTE
 // Rows without a start stamp are judged by size instead of length. Classroom
 // recordings run ~23 MB a minute, so this is roughly 4-5 minutes.
-const MIN_BYTES_WITHOUT_START = 100 * 1024 * 1024
+export const MIN_BYTES_WITHOUT_START = 100 * 1024 * 1024
 // Only email "your recording is ready" for lessons from the last two days, so a
 // sweep that catches up on old recordings never emails about them.
 const NOTIFY_WITHIN_MS = 48 * 60 * MINUTE

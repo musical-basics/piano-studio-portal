@@ -6,6 +6,7 @@ import NewRecordingEmail from '@/components/emails/new-recording-email'
 import { formatRecordingName } from '@/lib/format-recording-name'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { isClassroomCopyName } from '@/lib/classroom-dropbox-copies'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,6 +88,9 @@ export async function GET(request: Request) {
             const res = await dbx.filesListFolder({ path: folderPath })
             const videoFiles = res.result.entries.filter(e => {
                 if (e['.tag'] !== 'file') return false
+                // Classroom copies (lib/classroom-dropbox-copies.ts): the classroom
+                // hand-off already emails about those, and old ones are backfilled.
+                if (isClassroomCopyName(e.name)) return false
                 const lower = e.name.toLowerCase()
                 return VIDEO_EXTENSIONS.some(ext => lower.endsWith(ext))
             }) as any[]

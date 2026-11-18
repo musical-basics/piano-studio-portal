@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { attachClassroomRecordings } from '@/lib/classroom-recordings'
+import { syncClassroomDropboxCopies } from '@/lib/classroom-dropbox-copies'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -26,8 +27,21 @@ export async function POST(req: Request) {
             days: 3,
             log: (msg) => console.log(`[Webhook/lesson-recording] ${msg}`),
         })
+        // Copy into the student's Dropbox folder (Dropbox fetches the file itself).
+        // A failure here leaves it queued for the cron, never fails the attach.
+        let dropbox: unknown
+        try {
+            dropbox = await syncClassroomDropboxCopies({
+                studentId,
+                days: 3,
+                log: (msg) => console.log(`[Webhook/lesson-recording] dropbox: ${msg}`),
+            })
+        } catch (err: any) {
+            dropbox = { error: err?.message || String(err) }
+            console.error('[Webhook/lesson-recording] dropbox copy failed:', err?.message || err)
+        }
         // A recording whose file isn't in R2 yet is skipped here; the cron picks it up.
-        return NextResponse.json({ success: true, result })
+        return NextResponse.json({ success: true, result, dropbox })
     } catch (err: any) {
         console.error('[Webhook/lesson-recording] Failed:', err?.message || err)
         return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })

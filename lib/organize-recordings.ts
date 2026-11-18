@@ -18,6 +18,7 @@ import {
     MIN_LESSON_AUDIO_BYTES,
     MIN_LESSON_RECORDING_MINUTES,
 } from '@/lib/zoom-recordings'
+import { isClassroomCopyName } from '@/lib/classroom-dropbox-copies'
 
 const DEFAULT_SOURCE_DIR = process.env.DROPBOX_SOURCE_PATH || '/Apps/ZBackup-App/lionel@musicalbasics.com'
 const DEST_ROOT = '/Lesson Recordings'
@@ -117,7 +118,8 @@ export async function organizeZBackupRecordings(opts: OrganizeOptions = {}): Pro
     async function destHasDate(destFolder: string, formattedDate: string): Promise<boolean> {
         try {
             const res = await dbx.filesListFolder({ path: `${DEST_ROOT}/${destFolder}` })
-            return res.result.entries.some(e => e['.tag'] === 'file' && e.name.includes(formattedDate))
+            // Classroom copies don't count: they are a different video of that day.
+            return res.result.entries.some(e => e['.tag'] === 'file' && e.name.includes(formattedDate) && !isClassroomCopyName(e.name))
         } catch (err: any) {
             const summary = err?.error?.error_summary || ''
             if (typeof summary === 'string' && summary.includes('path/not_found')) return false
