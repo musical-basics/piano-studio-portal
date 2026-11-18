@@ -21,6 +21,10 @@
             "schedule": "5,35 * * * *"
         },
         {
+            "path": "/api/cron/unlogged-lessons",
+            "schedule": "30 13 * * *"
+        },
+        {
             "path": "/api/cron/auto-schedule-lessons",
             "schedule": "0 15 * * *"
         },
