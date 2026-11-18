@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 
@@ -28,6 +28,8 @@ interface DashboardTabProps {
     onReschedule: (lesson: LessonWithStudent) => void
     onNoShow: (lesson: TodayLesson) => void
     onCancel: (lessonId: string, studentName: string) => void
+    /** The teacher missed this lesson: credit, apology, remove (asks first). */
+    onMissed?: (lesson: TodayLesson) => void
     onRemind: (lesson: TodayLesson) => void
     onMessage: (studentId: string) => void
     isLoading?: boolean
@@ -46,6 +48,7 @@ export function DashboardTab({
     onReschedule,
     onNoShow,
     onCancel,
+    onMissed,
     onRemind,
     onMessage,
     isLoading = false
@@ -341,6 +344,19 @@ export function DashboardTab({
                                             <XCircle className="h-4 w-4 mr-1" />
                                             No-Show
                                         </Button>
+                                        {onMissed && lesson.date <= studioToday() && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-destructive hover:text-destructive"
+                                                onClick={() => onMissed(lesson)}
+                                                disabled={isLoading}
+                                                title="I missed this lesson: $15 Account Credit, an apology, and the lesson is removed (asks first)"
+                                            >
+                                                <CalendarX className="h-4 w-4 mr-1" />
+                                                I missed this
+                                            </Button>
+                                        )}
                                         <Button
                                             size="sm"
                                             variant="secondary"

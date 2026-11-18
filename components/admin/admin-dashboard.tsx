@@ -35,6 +35,7 @@ import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
+import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -140,6 +141,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const editFileInputRef = useRef<HTMLInputElement>(null)
 
     // Manual Reminder State
+    // "I missed this": the lesson whose confirm dialog is open
+    const [missedLessonId, setMissedLessonId] = useState<string | null>(null)
+
     const [showReminderModal, setShowReminderModal] = useState(false)
     const [lessonForReminder, setLessonForReminder] = useState<TodayLesson | null>(null)
 
@@ -849,12 +853,19 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onReschedule={handleReschedule}
                             onNoShow={handleMarkNoShow}
                             onCancel={handleCancelLesson}
+                            onMissed={(lesson) => setMissedLessonId(lesson.id)}
                             onRemind={(lesson) => {
                                 setLessonForReminder(lesson)
                                 setShowReminderModal(true)
                             }}
                             isLoading={isLoading}
                             onMessage={handleJumpToMessage}
+                        />
+
+                        <MissedLessonDialog
+                            lessonId={missedLessonId}
+                            onClose={() => setMissedLessonId(null)}
+                            onDone={() => setCalendarVersion(v => v + 1)}
                         />
 
                         {/* Student Roster */}

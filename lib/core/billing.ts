@@ -104,6 +104,10 @@ export type IssueAccountCreditArgs = {
     createdBy: string
     /** Set false to apply the credit silently (the caller will explain it themselves). */
     notify?: boolean
+    /** Extra tags on the Stripe balance transaction, so a caller can find its own credit again. */
+    metadata?: Record<string, string>
+    /** Stripe idempotency key: a repeat call with the same key (within 24h) returns the first credit instead of adding another. */
+    idempotencyKey?: string
 }
 
 export type IssueAccountCreditResult =
@@ -130,6 +134,8 @@ export async function issueAccountCreditCore({
     description,
     createdBy,
     notify = true,
+    metadata,
+    idempotencyKey,
 }: IssueAccountCreditArgs): Promise<IssueAccountCreditResult> {
     const amount = Math.round(amountCents)
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -163,8 +169,8 @@ export async function issueAccountCreditCore({
             amount: -amount,
             currency: 'usd',
             description,
-            metadata: { studentId, issuedBy: createdBy },
-        } as any)
+            metadata: { ...metadata, studentId, issuedBy: createdBy },
+        } as any, idempotencyKey ? { idempotencyKey } : undefined)
     } catch (err: any) {
         console.error('issueAccountCreditCore: Stripe balance transaction failed:', err?.message)
         return { error: `Stripe rejected the credit: ${err?.message ?? 'unknown error'}` }
