@@ -6,6 +6,7 @@ import { getStudentResources } from "@/app/actions/resources"
 import { getLatestAnnouncement } from "@/app/actions/announcements"
 import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
+import { buildLessonHistory } from "@/lib/lesson-history"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -64,6 +65,10 @@ export default async function StudentPage() {
   if (lessonsError) {
     console.error("Lessons fetch error:", lessonsError)
   }
+
+  // The Lesson history tab (#737), from the same rows. This read uses the
+  // signed-in family's own session, so row security limits it to their lessons.
+  const history = buildLessonHistory(lessons || [], profile.credits ?? null)
 
   // Find next scheduled lesson
   const now = new Date()
@@ -124,6 +129,7 @@ export default async function StudentPage() {
         resources={resources}
         latestAnnouncement={latestAnnouncement}
         unreadCount={unreadCount || 0}
+        history={history}
       />
     </>
   )

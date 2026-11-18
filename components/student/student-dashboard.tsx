@@ -34,6 +34,7 @@ import {
     Play,
     Repeat,
     Gift,
+    History,
 } from "lucide-react"
 import {
     mockEvents,
@@ -49,6 +50,8 @@ import type { BillingSummary } from "@/app/actions/billing"
 import { BillingActivity } from "./billing-activity"
 import { MessagesPanel } from "./messages-panel"
 import { HomeworkTab } from "./homework-tab"
+import { LessonHistoryTab } from "./lesson-history-tab"
+import type { LessonHistory } from "@/lib/lesson-history"
 import { getMyUnreadCount } from "@/app/messages/actions"
 import { ChatWidget } from "./chat-widget"
 import { logout } from "@/app/login/actions"
@@ -100,6 +103,8 @@ export interface StudentDashboardProps {
     latestAnnouncement?: { id: string; subject: string; body: string; created_at: string } | null
     /** Unread messages from the teacher, counted on the server at render time. */
     unreadCount?: number
+    /** The Lesson history tab, built on the server from the family's own lessons. */
+    history?: LessonHistory
 }
 
 // Category badge colors
@@ -111,7 +116,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0 }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -872,11 +877,17 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     {/* My Library */}
                     <div className="lg:col-span-2 space-y-6">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                            <TabsList className="grid w-full grid-cols-5 mb-6">
+                            <TabsList className={`grid w-full ${history ? "grid-cols-6" : "grid-cols-5"} mb-6`}>
                                 <TabsTrigger value="lessons" className="gap-2">
                                     <Music className="h-4 w-4" />
                                     <span className="hidden sm:inline">Lessons</span>
                                 </TabsTrigger>
+                                {history && (
+                                    <TabsTrigger value="history" className="gap-2">
+                                        <History className="h-4 w-4" />
+                                        <span className="hidden sm:inline">History</span>
+                                    </TabsTrigger>
+                                )}
                                 <TabsTrigger value="homework" className="gap-2">
                                     <ClipboardList className="h-4 w-4" />
                                     <span className="hidden sm:inline">Homework</span>
@@ -1124,6 +1135,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     </div>
                                 )}
                             </TabsContent>
+
+                            {history && (
+                                <TabsContent value="history" className="space-y-4">
+                                    <LessonHistoryTab history={history} />
+                                </TabsContent>
+                            )}
 
                             <TabsContent value="homework" className="space-y-4">
                                 <HomeworkTab lessons={completedLessons} studentId={profile.id} />
