@@ -10,8 +10,8 @@ const auth = new google.auth.JWT({
 const calendar = google.calendar({ version: 'v3', auth })
 
 // Google needs both ends as studio wall-clock strings to pair with timeZone
-// America/Los_Angeles. Going through a Date and toISOString() would hand it the
-// UTC instant instead, which then gets re-read as Pacific and stretches the
+// STUDIO_TZ. Going through a Date and toISOString() would hand it the
+// UTC instant instead, which then gets re-read as studio time and stretches the
 // event by the whole UTC offset -- so add the minutes to the wall clock directly.
 export function addMinutesToWallClock(date: string, time: string, minutes: number) {
     const [h, m] = time.split(':').map(Number)
@@ -69,6 +69,42 @@ export async function createGoogleCalendarEvent(
     } catch (error) {
         console.error('❌ Google Calendar Error:', error)
         return null // Return null so the app doesn't crash if Google fails
+    }
+}
+
+/**
+ * Move a lesson's existing event to a new slot. Only the start and end change, so
+ * anything edited on the event by hand (title, notes, color) stays.
+ *
+ * Returns 'updated' when Google has the new time, 'missing' when the event is gone
+ * (deleted on the calendar), so the caller can create a fresh one, and 'failed' for
+ * anything else, where creating another event could leave a duplicate.
+ */
+export async function updateGoogleCalendarEvent(
+    eventId: string,
+    date: string, // YYYY-MM-DD, studio wall clock
+    time: string, // HH:MM, studio wall clock
+    durationMinutes: number,
+): Promise<'updated' | 'missing' | 'failed'> {
+    try {
+        const hhmm = time.slice(0, 5)
+        const response = await calendar.events.patch({
+            calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+            eventId,
+            requestBody: {
+                start: { dateTime: `${date}T${hhmm}:00`, timeZone: STUDIO_TZ },
+                end: { dateTime: addMinutesToWallClock(date, hhmm, durationMinutes), timeZone: STUDIO_TZ },
+            },
+        })
+        // A patch on an event deleted from the calendar can still succeed but
+        // leaves it deleted; treat that the same as not found.
+        if (response.data.status === 'cancelled') return 'missing'
+        return 'updated'
+    } catch (error: any) {
+        const status = error?.code ?? error?.response?.status
+        if (status === 404 || status === 410) return 'missing'
+        console.error('❌ Google Calendar update error:', error?.message || error)
+        return 'failed'
     }
 }
 

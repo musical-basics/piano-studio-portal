@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { checkAvailability } from '@/app/actions/lessons'
+import { moveLessonCalendarEvent } from '@/lib/core/lessons'
 
 export type MakeupSlot = {
     id: string
@@ -189,6 +190,22 @@ export async function claimMakeupSlot(slotId: string, lessonId: string) {
         console.error('Update lesson error:', updateLessonError)
         return { error: 'Failed to reschedule lesson: ' + updateLessonError.message }
     }
+
+    // Move the studio calendar event too (non-blocking), same as every other reschedule.
+    const { data: studentProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .single()
+    await moveLessonCalendarEvent({
+        client: supabaseAdmin,
+        lessonId,
+        googleEventId: lesson.google_event_id,
+        studentName: studentProfile?.name,
+        date,
+        time,
+        duration: lesson.duration || 60,
+    })
 
     // Revalidate paths to refresh UI
     revalidatePath('/student')

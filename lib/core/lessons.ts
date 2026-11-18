@@ -7,7 +7,7 @@ import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
 import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
 import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
-import { createGoogleCalendarEvent, deleteGoogleCalendarEvent } from '@/lib/google-calendar'
+import { createGoogleCalendarEvent, deleteGoogleCalendarEvent, updateGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendMessageCore } from '@/lib/core/messages'
 import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
@@ -783,6 +783,55 @@ export async function scheduleLessonCore({
     }
 }
 
+/**
+ * Put a moved lesson's event on the studio Google Calendar at its new slot. Every
+ * path that changes a lesson's date, time or length calls this after saving the
+ * row. If the lesson has no event (or it was deleted on the calendar), a new one is
+ * created and its id saved on the lesson. Never throws: a calendar hiccup must not
+ * undo or fail the reschedule itself.
+ */
+export async function moveLessonCalendarEvent({
+    client,
+    lessonId,
+    googleEventId,
+    studentName,
+    date,
+    time,
+    duration,
+}: {
+    client: DbClient
+    lessonId: string
+    googleEventId?: string | null
+    studentName?: string | null
+    date: string
+    time: string
+    duration: number
+}): Promise<{ eventId: string | null; action: 'updated' | 'created' | 'failed' }> {
+    try {
+        if (googleEventId) {
+            const result = await updateGoogleCalendarEvent(googleEventId, date, time, duration)
+            if (result === 'updated') return { eventId: googleEventId, action: 'updated' }
+            if (result === 'failed') {
+                console.error(`moveLessonCalendarEvent: event ${googleEventId} for lesson ${lessonId} not moved (non-blocking)`)
+                return { eventId: googleEventId, action: 'failed' }
+            }
+            // 'missing': the event was deleted on the calendar, so make a new one.
+        }
+
+        const newId = await createGoogleCalendarEvent(studentName || 'Student', date, time.slice(0, 5), duration)
+        if (!newId) {
+            console.error(`moveLessonCalendarEvent: no calendar event created for lesson ${lessonId} (non-blocking)`)
+            return { eventId: null, action: 'failed' }
+        }
+        const { error } = await client.from('lessons').update({ google_event_id: newId }).eq('id', lessonId)
+        if (error) console.error(`moveLessonCalendarEvent: event ${newId} created but not saved on lesson ${lessonId}:`, error.message)
+        return { eventId: newId, action: 'created' }
+    } catch (e) {
+        console.error('moveLessonCalendarEvent failed (non-blocking):', e)
+        return { eventId: googleEventId ?? null, action: 'failed' }
+    }
+}
+
 export type RescheduleLessonArgs = {
     client: DbClient
     adminId: string
@@ -804,7 +853,7 @@ export async function rescheduleLessonCore({
 }: RescheduleLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, date, time, zoom_meeting_id')
+        .select('student_id, date, time, zoom_meeting_id, google_event_id')
         .eq('id', lessonId)
         .single()
 
@@ -855,22 +904,34 @@ export async function rescheduleLessonCore({
         return { error: updateError.message }
     }
 
+    const { data: studentForUpdates } = await client
+        .from('profiles')
+        .select('name')
+        .eq('id', lesson.student_id)
+        .single()
+
     const zoomMeetingId = (lesson as any).zoom_meeting_id
     if (zoomMeetingId) {
         try {
             const { updateZoomMeeting } = await import('@/lib/zoom')
             const startDateTime = `${newDate}T${newTime}:00`
-            const { data: studentForZoom } = await client
-                .from('profiles')
-                .select('name')
-                .eq('id', lesson.student_id)
-                .single()
-            const topic = studentForZoom?.name ? `${studentForZoom.name} - Piano Lesson` : 'Piano Lesson'
+            const topic = studentForUpdates?.name ? `${studentForUpdates.name} - Piano Lesson` : 'Piano Lesson'
             await updateZoomMeeting(zoomMeetingId, topic, startDateTime, newDuration)
         } catch (e) {
             console.error('rescheduleLessonCore: Zoom update failed (non-blocking):', e)
         }
     }
+
+    // The studio calendar moves with the lesson (Lionel's #728). Non-blocking.
+    await moveLessonCalendarEvent({
+        client,
+        lessonId,
+        googleEventId: (lesson as any).google_event_id,
+        studentName: studentForUpdates?.name,
+        date: newDate,
+        time: newTime,
+        duration: newDuration,
+    })
 
     if (resend) {
         try {
