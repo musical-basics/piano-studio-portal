@@ -461,14 +461,8 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         const ampm = h >= 12 ? 'PM' : 'AM'
         const displayHour = h % 12 || 12
         const time = `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`
-        const tzLabels: Record<string, string> = {
-            'America/Los_Angeles': 'Pacific Time',
-            'America/Denver': 'Mountain Time',
-            'America/Chicago': 'Central Time',
-            'America/New_York': 'Eastern Time',
-        }
-        const tz = profile.timezone ? (tzLabels[profile.timezone] || profile.timezone) : null
-        return `${profile.lesson_day}s at ${time}${tz ? ` (${tz})` : ''}`
+        // lesson_time is studio wall-clock (Eastern), not the student's own zone.
+        return `${profile.lesson_day}s at ${time} ${studioTzAbbr()}`
     })()
 
     const [currentDate, setCurrentDate] = useState("")
