@@ -831,12 +831,23 @@ export async function rescheduleLessonCore({
         return { error: 'This time slot is already booked by another student.' }
     }
 
+    // A new date or time needs its own notices: the reminder cron skips any notice
+    // already marked sent, so flags left over from the old slot would leave the
+    // moved lesson with no reminders at all.
+    const moved = lesson.date !== newDate || String(lesson.time).slice(0, 5) !== newTime.slice(0, 5)
     const { error: updateError } = await client
         .from('lessons')
         .update({
             date: newDate,
             time: newTime,
             duration: newDuration,
+            ...(moved ? {
+                reminder_48h_sent: false,
+                reminder_24h_sent: false,
+                reminder_12h_sent: false,
+                reminder_15m_sent: false,
+                reminder_2h_sent: false,
+            } : {}),
         })
         .eq('id', lessonId)
 
