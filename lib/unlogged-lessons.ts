@@ -135,6 +135,7 @@ export type UnloggedEmailKind = 'morning' | 'tonight'
 const BUTTON = 'display:inline-block;padding:11px 18px;margin:0 8px 6px 0;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;line-height:1.2'
 const LOG_STYLE = `${BUTTON};background:#15803d;color:#ffffff;border:1px solid #15803d`
 const REMOVE_STYLE = `${BUTTON};background:#ffffff;color:#b91c1c;border:1px solid #b91c1c`
+const MISSED_STYLE = `${BUTTON};background:#ffffff;color:#92400e;border:1px solid #b45309`
 
 /**
  * The lessons as email blocks, each with its one-time buttons (#441). Falls back
@@ -149,24 +150,35 @@ export function unloggedLessonBlocks(
     const blocks = lessons.map((lesson, i) => {
         const log = signLessonAction({ lessonId: lesson.id, action: 'log', date: lesson.date, time: lesson.time }, now)
         const remove = signLessonAction({ lessonId: lesson.id, action: 'remove', date: lesson.date, time: lesson.time }, now)
+        // "I missed it" (#752) only once the lesson is over.
+        const missed = lessonEndMs(lesson) <= now.getTime()
+            ? signLessonAction({ lessonId: lesson.id, action: 'missed', date: lesson.date, time: lesson.time }, now)
+            : null
         if (!log || !remove) {
             buttons = false
             return `<li>${lines[i]}</li>`
         }
+        const missedButton = missed ? `<a href="${escapeHtml(lessonActionUrl(missed, baseUrl))}" style="${MISSED_STYLE}">I missed it</a>` : ''
         return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px">
 <div style="font-size:15px;margin:0 0 10px">${lines[i]}</div>
-<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>
+<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>${missedButton}
 </div>`
     })
     const html = buttons ? blocks.join('\n') : `<ul>${blocks.join('')}</ul>`
     return { lines, html, buttons }
 }
 
+/** The "I missed it" button (#752), for the footers. */
+export const MISSED_IT_NOTE = `<b>I missed it</b> is for a lesson you missed: it removes the lesson (no cancellation email), ` +
+    `puts $15 Account Credit on the family's next purchase and sends your apology. Each press: 1 family, 1 portal message ` +
+    `(with the usual email notice, and a text if they opted in). Its page shows the exact message first.`
+
 /** What the buttons do, for the footer of any email that carries them. */
 export function unloggedButtonsNote(n: number): string {
     const these = n === 1 ? 'this lesson' : 'these lessons'
     return `Nobody logged ${these}, so no credit was taken. <b>Log it</b> if it happened: that takes 1 credit, the usual log. ` +
-        `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
+        `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. ${MISSED_IT_NOTE} ` +
+        `Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
 }
 
 /**

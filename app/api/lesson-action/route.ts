@@ -4,6 +4,8 @@ import { logLessonCore } from '@/lib/core/lessons'
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
 import { studioTzAbbr } from '@/lib/studio-timezone'
 import { QUIET_LOG_AFTER_DAYS, isTooOldForUsualLog, logOldLessonQuietly } from '@/lib/late-lesson-log'
+import { lessonEndMs } from '@/lib/unlogged-lessons'
+import { MISSED_LESSON_CREDIT_CENTS, getMissedLessonPreviewCore, missedLessonCore } from '@/lib/core/missed-lesson'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +23,12 @@ export const dynamic = 'force-dynamic'
  *             lib/late-lesson-log.ts).
  *   - remove: deletes the lessons row and nothing else. No email or message to
  *             the family (the cancel flow, which emails them, is not used).
+ *   - missed: "I missed it" (#752), the admin "I missed this" button
+ *             (lib/core/missed-lesson.ts): $15 Account Credit, one apology in
+ *             the family's portal chat, lesson removed without the cancellation
+ *             email. The page shows the exact message; the POST carries it
+ *             back and the core refuses if it would now read differently. That
+ *             core is safe to repeat, so a failed press gives the link back.
  * Both re-check at POST time that the lesson is still unlogged and still at the
  * date and time the email showed; otherwise they say so and change nothing.
  */
@@ -64,6 +72,10 @@ function page(title: string, bodyHtml: string, status = 200): Response {
   button { display: block; width: 100%; margin-top: 16px; padding: 14px; font-size: 17px; font-weight: 600; border: 0; border-radius: 8px; color: #fff; cursor: pointer; }
   .log { background: #15803d; }
   .remove { background: #b91c1c; }
+  .missed { background: #b45309; }
+  .quote { white-space: pre-wrap; background: #f5f5f4; border-left: 3px solid #d6d3d1; border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; font-size: 16px; }
+  ul.effects { margin: 0 0 12px; padding-left: 20px; }
+  ul.effects li { margin: 0 0 4px; }
   a { color: #1d4ed8; }
 </style></head>
 <body><div class="card">${bodyHtml}</div></body></html>`
@@ -137,6 +149,7 @@ async function usedOutcome(client: DbClient, tokenId: string): Promise<{ used: b
 function alreadyUsed(outcome: string | null): Response {
     const did = outcome?.startsWith('logged') ? ' It logged the lesson.'
         : outcome?.startsWith('removed') ? ' It removed the lesson.'
+        : outcome?.startsWith('missed') ? ' It sent the apology, added the credit and removed the lesson.'
         : ''
     return message('This link was already used', `Each button works once.${did} Nothing changed this time.`)
 }
@@ -157,8 +170,30 @@ export async function GET(request: Request) {
 
     const clock = formatClock(String(lesson.time).slice(0, 5))
     const when = `${longDay(lesson.date)}, ${clock} ${studioTzAbbr(lesson.date)}, ${lesson.duration || 60} min`
-    const form = (label: string, cls: string) =>
-        `<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token!)}"><button class="${cls}" type="submit">${esc(label)}</button></form>`
+    const form = (label: string, cls: string, extra = '') =>
+        `<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token!)}">${extra}<button class="${cls}" type="submit">${esc(label)}</button></form>`
+
+    if (claims.a === 'missed') {
+        if (lessonEndMs({ date: lesson.date, time: String(lesson.time).slice(0, 5), duration: lesson.duration || 60 }) > Date.now()) {
+            return message('Not over yet', "This lesson hasn't finished yet, so it can't be marked missed. Nothing changed.")
+        }
+        const preview = await getMissedLessonPreviewCore(lesson.id)
+        if ('error' in preview) return message('Nothing changed', preview.error)
+        const dollars = `$${MISSED_LESSON_CREDIT_CENTS / 100}`
+        const sends = `Sends 1 message to this family (portal chat, with the usual email notice${preview.alsoTexts ? ', and a text' : ''})`
+        const credit = preview.alreadyCredited ? `${dollars} Account Credit was already added by an earlier press (not added again)` : `+${dollars} Account Credit`
+        return page('You missed this lesson?', `
+<h1>You missed ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)}?</h1>
+<p class="muted">${esc(when)}</p>
+<p>The message, exactly:</p>
+<div class="quote">${esc(preview.message)}</div>
+<ul class="effects">
+<li>${esc(sends)}</li>
+<li>${esc(credit)}</li>
+<li>Removes the lesson (no cancellation email)</li>
+</ul>
+${form('Send apology and remove lesson', 'missed', `<input type="hidden" name="m" value="${esc(preview.message)}">`)}`)
+    }
 
     if (claims.a === 'log') {
         const effect = isTooOldForUsualLog(lesson.date)
@@ -184,10 +219,13 @@ ${form('Remove it', 'remove')}`)
 
 export async function POST(request: Request) {
     let token: string | null = null
+    let shownMessage: string | null = null
     try {
         const form = await request.formData()
         const t = form.get('t')
         token = typeof t === 'string' ? t : null
+        const m = form.get('m')
+        shownMessage = typeof m === 'string' ? m : null
     } catch {
         token = null
     }
@@ -234,6 +272,33 @@ export async function POST(request: Request) {
     }
     const { lesson, studentName } = checked
     const label = `${weekday(lesson.date)}'s ${formatClock(String(lesson.time).slice(0, 5))} lesson for ${studentName}`
+
+    if (claims.a === 'missed') {
+        const giveBack = () => client.from('lesson_action_link_uses').delete().eq('token_id', claims.j)
+        if (lessonEndMs({ date: lesson.date, time: String(lesson.time).slice(0, 5), duration: lesson.duration || 60 }) > Date.now()) {
+            await giveBack()
+            return message('Not over yet', "This lesson hasn't finished yet, so it can't be marked missed. Nothing changed.")
+        }
+        if (!shownMessage) {
+            await giveBack()
+            return message('Nothing changed', 'The message to send was missing. Open the button in the email again.', 400)
+        }
+        const { data: admin } = await client.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
+        if (!admin?.id) {
+            await giveBack()
+            return message('Something went wrong', 'The studio account could not be found, so nothing was sent. Nothing changed.', 503)
+        }
+        const result = await missedLessonCore({ adminId: admin.id as string, lessonId: lesson.id, expectedMessage: shownMessage })
+        if ('error' in result) {
+            // The core never credits or sends twice, so the same link may try again.
+            await giveBack()
+            console.error(`[lesson-action] missed failed for ${lesson.id}: ${result.error}`)
+            return message('Not finished', result.error, 500)
+        }
+        await record(`missed: ${result.summary}`, lesson.student_id)
+        console.log(`[lesson-action] missed ${lesson.id} from email: ${result.summary}`)
+        return message('Done', `${label}: ${result.summary}`)
+    }
 
     if (claims.a === 'log' && isTooOldForUsualLog(lesson.date)) {
         const quiet = await logOldLessonQuietly(client, lesson.id)

@@ -3,7 +3,7 @@ import { sendCronAlert } from '@/lib/cron-alerts'
 import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { LINK_TTL_DAYS, appBaseUrl } from '@/lib/lesson-action-links'
-import { formatClock, unloggedLessonBlocks, type UnloggedLesson } from '@/lib/unlogged-lessons'
+import { MISSED_IT_NOTE, formatClock, unloggedLessonBlocks, type UnloggedLesson } from '@/lib/unlogged-lessons'
 
 /**
  * Monthly credit check (#443): every lesson logged in a month, lined up with
@@ -433,7 +433,8 @@ export function buildCreditCheckEmail(
         parts.push(`<p style="color:#666;font-size:13px">Nobody logged ${u === 1 ? 'this lesson' : 'these lessons'}, so no credit was taken. ` +
             (blocks.buttons
                 ? `<b>Log it</b> if it happened: that takes 1 credit (a lesson over a week old is logged quietly: no email to the family, no next lesson booked). ` +
-                  `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
+                  `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. ${MISSED_IT_NOTE} ` +
+                  `Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
                 : `Log or remove ${u === 1 ? 'it' : 'them'} in the <a href="${baseUrl}/admin">admin dashboard</a>.`) +
             `</p>`)
     }
