@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logLessonCore } from '@/lib/core/lessons'
+import { getSingleAdmin } from '@/lib/core/admin'
 import {
     downloadFromZoom,
     getDropboxClient,
@@ -140,7 +141,10 @@ export async function POST(req: Request) {
         log(`Lesson ${lesson.id} already has video_url but is ${lesson.status}; completing it.`)
         const logResult = await logLessonCore({
             client: supabase as any,
-            adminId: lesson.student_id,
+            // The teacher's profile: logLessonCore emails the "lesson scheduled"
+            // copy for next week to this profile. Passing the student here sent
+            // the family that copy a second time and Lionel never got his.
+            adminId: (await getSingleAdmin(supabase as any))?.id || lesson.student_id,
             lessonId: lesson.id,
             notes: '',
             completedSource: 'zoom_webhook',
@@ -205,7 +209,10 @@ export async function POST(req: Request) {
         // (notes left empty — the teacher will fill them in later via the agent)
         const logResult = await logLessonCore({
             client: supabase as any,
-            adminId: lesson.student_id, // best available actor for auto-completions
+            // The teacher's profile: logLessonCore emails the "lesson scheduled"
+            // copy for next week to this profile. Passing the student here sent
+            // the family that copy a second time and Lionel never got his.
+            adminId: (await getSingleAdmin(supabase as any))?.id || lesson.student_id,
             lessonId: lesson.id,
             notes: '',
             completedSource: 'zoom_webhook',
