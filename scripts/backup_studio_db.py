@@ -23,7 +23,9 @@ before that, one a month for the 12 months before that, one a year forever.
 If the Management API token is refused, the rows are still dumped (they need
 only the service key) from the table list remembered from the last good run,
 and the archive is named -PARTIAL so it can never pass for a whole one. Every
-run emails OK or FAILED to the studio inbox (the admin profile's email).
+run emails OK or FAILED to the studio inbox (the admin profile's email), and
+every finished run (OK or PARTIAL) stamps cron_heartbeats 'studio-backup', which
+the portal's daily watchdog checks (decision #438).
 
 Secrets: environment first (the launchd agent's plist), then the repo's
 .env.local. The Management API token comes from SUPABASE_PAT or, failing that,
@@ -240,6 +242,30 @@ def alert_body(reason):
         newest_backup_line(), "",
         f"Log: {BACKUP_ROOT / 'backup.log'}",
     ])
+
+
+HEARTBEAT_JOB = "studio-backup"
+
+
+def write_heartbeat(key):
+    """Stamps cron_heartbeats.last_run_at for HEARTBEAT_JOB, so the portal's
+    daily watchdog (app/api/cron/backup-watchdog, decision #438) can email when
+    the Mac stops backing up. Never raises: a missed stamp costs at most one
+    false "backup is late" email, never the backup itself."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    try:
+        req = urllib.request.Request(
+            f"{SUPABASE_URL}/rest/v1/cron_heartbeats?on_conflict=job",
+            data=json.dumps([{"job": HEARTBEAT_JOB, "last_run_at": now}]).encode(),
+            headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "Prefer": "resolution=merge-duplicates,return=minimal"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+        print(f"heartbeat: {HEARTBEAT_JOB} at {now}")
+    except Exception as e:
+        print(f"WARNING: heartbeat not written ({e}); the portal may report the backup as late",
+              file=sys.stderr)
 
 
 def die(msg):
@@ -527,6 +553,7 @@ def main():
 
     size_mb = out.stat().st_size / 1e6
     kept = prune()  # may remove this very archive: a PARTIAL loses to a complete one from the same day
+    write_heartbeat(key)  # a PARTIAL still checks in: it emails its own warning
     secs = (datetime.datetime.now() - started).total_seconds()
     print(f"backup ok -> {out} ({len(tables)} tables, {total} rows, {secs:.0f}s)")
 
