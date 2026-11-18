@@ -3,6 +3,7 @@ import { verifyLessonAction, type LessonActionClaims } from '@/lib/lesson-action
 import { logLessonCore } from '@/lib/core/lessons'
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
 import { studioTzAbbr } from '@/lib/studio-timezone'
+import { QUIET_LOG_AFTER_DAYS, isTooOldForUsualLog, logOldLessonQuietly } from '@/lib/late-lesson-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,10 @@ export const dynamic = 'force-dynamic'
  * same token, and only the POST acts:
  *   - log:    logLessonCore, the same path the admin dashboard uses, so the
  *             credit, snapshots, ledger row, next-week booking and lesson-notes
- *             email all behave exactly as a normal log.
+ *             email all behave exactly as a normal log. A lesson over a week
+ *             old (the monthly credit check lists those) is logged quietly
+ *             instead: credit and snapshots, no email, no booking (see
+ *             lib/late-lesson-log.ts).
  *   - remove: deletes the lessons row and nothing else. No email or message to
  *             the family (the cancel flow, which emails them, is not used).
  * Both re-check at POST time that the lesson is still unlogged and still at the
@@ -157,10 +161,13 @@ export async function GET(request: Request) {
         `<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token!)}"><button class="${cls}" type="submit">${esc(label)}</button></form>`
 
     if (claims.a === 'log') {
+        const effect = isTooOldForUsualLog(lesson.date)
+            ? `This takes 1 credit. The lesson is over ${QUIET_LOG_AFTER_DAYS} days old, so it is logged quietly: no email to the family and no next lesson booked.`
+            : 'This takes 1 credit, the same as logging it in admin.'
         return page('Log this lesson?', `
 <h1>Log ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)}?</h1>
 <p class="muted">${esc(when)}</p>
-<p>This takes 1 credit, the same as logging it in admin.</p>
+<p>${esc(effect)}</p>
 ${form('Log it', 'log')}`)
     }
 
@@ -227,6 +234,22 @@ export async function POST(request: Request) {
     }
     const { lesson, studentName } = checked
     const label = `${weekday(lesson.date)}'s ${formatClock(String(lesson.time).slice(0, 5))} lesson for ${studentName}`
+
+    if (claims.a === 'log' && isTooOldForUsualLog(lesson.date)) {
+        const quiet = await logOldLessonQuietly(client, lesson.id)
+        if (!quiet.ok && quiet.changed) {
+            await record('nothing: changed while confirming', lesson.student_id)
+            return message('Already handled', 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.')
+        }
+        if (!quiet.ok) {
+            await record(`failed: ${quiet.error}`, lesson.student_id)
+            console.error(`[lesson-action] quiet log failed for ${lesson.id}: ${quiet.error}`)
+            return message('Logging did not finish', `The portal said: ${quiet.error}. Please check this lesson in the admin dashboard before trying again.`, 500)
+        }
+        await record(`logged quietly: credits ${quiet.previousCredits} -> ${quiet.newCredits}`, lesson.student_id)
+        console.log(`[lesson-action] logged old lesson ${lesson.id} quietly from email (credits ${quiet.previousCredits} -> ${quiet.newCredits})`)
+        return message('Logged', `${label} is logged and 1 credit was taken (${quiet.newCredits} left). Nobody was emailed and no lesson was booked.`)
+    }
 
     if (claims.a === 'log') {
         const { data: admin } = await client.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()

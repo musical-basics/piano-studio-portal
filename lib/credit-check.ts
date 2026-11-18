@@ -1,7 +1,9 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
-import { formatClock } from '@/lib/unlogged-lessons'
+import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
+import { LINK_TTL_DAYS, appBaseUrl } from '@/lib/lesson-action-links'
+import { formatClock, unloggedLessonBlocks, type UnloggedLesson } from '@/lib/unlogged-lessons'
 
 /**
  * Monthly credit check (#443): every lesson logged in a month, lined up with
@@ -31,6 +33,10 @@ import { formatClock } from '@/lib/unlogged-lessons'
  *     to match and not given back (for example a lesson logged, then deleted).
  *   - charged_late: a credit taken that month for a lesson more than a month
  *     older, the June 2026 pattern (check it was not already paid for).
+ *
+ * Teacher accounts are left out entirely (#734, isUntrackedTeacherAccount).
+ * Since #736 the same email also lists every past lesson still unlogged
+ * (findPastUnloggedLessons), with the morning email's buttons.
  */
 
 export type CreditFindingKind = 'not_charged' | 'charged_twice' | 'charge_without_lesson' | 'charged_late'
@@ -303,10 +309,24 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
         .limit(5000)
     if (monthLedgerError) throw new Error(`credit_transactions query failed: ${monthLedgerError.message}`)
 
-    const studentIds = [...new Set([
+    const involved = [...new Set([
         ...(monthRows || []).map(l => l.student_id as string),
         ...(monthLedger || []).map(r => r.student_id as string),
     ])]
+
+    // Names, and which accounts are teachers nobody tracks credits for (#734).
+    const names = new Map<string, string>()
+    const untracked = new Set<string>()
+    if (involved.length) {
+        const { data, error } = await client.from('profiles').select('id, name, credits').in('id', involved)
+        if (error) throw new Error(`profiles query failed: ${error.message}`)
+        for (const p of data || []) {
+            names.set(p.id as string, (p.name as string) || 'Unknown student')
+            if (isUntrackedTeacherAccount(p)) untracked.add(p.id as string)
+        }
+    }
+    const studentIds = involved.filter(id => !untracked.has(id))
+    const monthLessons = (monthRows || []).filter(l => !untracked.has(l.student_id as string))
 
     // Each involved student's whole credit history (a few rows a week), so
     // matching by balance can run in time order from the start.
@@ -337,13 +357,6 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
         otherRows.push(...(data || []))
     }
 
-    const names = new Map<string, string>()
-    if (studentIds.length) {
-        const { data, error } = await client.from('profiles').select('id, name').in('id', studentIds)
-        if (error) throw new Error(`profiles query failed: ${error.message}`)
-        for (const p of data || []) names.set(p.id as string, (p.name as string) || 'Unknown student')
-    }
-
     const toLesson = (l: any, inMonth: boolean): CheckLesson => {
         const time = String(l.time).slice(0, 5)
         return {
@@ -359,7 +372,7 @@ export async function checkCredits(client: DbClient, month: string): Promise<Cre
         }
     }
     const lessons = [
-        ...(monthRows || []).map(l => toLesson(l, true)),
+        ...monthLessons.map(l => toLesson(l, true)),
         ...otherRows.map(l => toLesson(l, false)),
     ]
     const ledger: LedgerRow[] = ledgerRows.map(r => ({
@@ -391,21 +404,53 @@ export function describeFinding(f: CreditFinding): string {
     return `${escapeHtml(f.studentName)}${lesson}: ${escapeHtml(f.detail)}`
 }
 
-export function buildCreditCheckEmail(report: CreditCheckReport): { subject: string; lines: string[]; footer: string } {
+export function buildCreditCheckEmail(
+    report: CreditCheckReport,
+    unlogged: UnloggedLesson[] = [],
+    { now = new Date(), baseUrl = appBaseUrl() }: { now?: Date; baseUrl?: string } = {},
+): { subject: string; lines: string[]; html: string; footer: string } {
     const n = report.findings.length
+    const u = unlogged.length
     const name = monthName(report.month)
-    return {
-        subject: `Credit check for ${name}: ${n} thing${n === 1 ? '' : 's'} to look at`,
-        lines: report.findings.map(describeFinding),
-        footer: `Every lesson logged in ${name} (${report.lessonsChecked}) was lined up with the credit history (${credits(report.creditsTaken)} taken). ` +
+    const things = `${n} thing${n === 1 ? '' : 's'} to look at`
+    const notLogged = `${u} past lesson${u === 1 ? '' : 's'} not logged`
+    const subject = `Credit check for ${name}: ${[n ? things : '', u ? notLogged : ''].filter(Boolean).join(', ') || things}`
+    const lines = report.findings.map(describeFinding)
+
+    const parts: string[] = []
+    if (n) {
+        parts.push(`<ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`)
+        parts.push(`<p style="color:#666;font-size:13px">Every lesson logged in ${name} (${report.lessonsChecked}) was lined up with the credit history (${credits(report.creditsTaken)} taken). ` +
             `Purchases, free trials, credits given back and changes with a note are fine and not listed. ` +
-            `Nothing here was changed: fix a credit in the admin dashboard if it needs it. This email comes only when something doesn't match.`,
+            `Nothing here was changed: fix a credit in the admin dashboard if it needs it.</p>`)
+    } else {
+        parts.push(`<p>Every lesson logged in ${name} (${report.lessonsChecked}) matches the credit history (${credits(report.creditsTaken)} taken).</p>`)
+    }
+    if (u) {
+        const blocks = unloggedLessonBlocks(unlogged, { now, baseUrl, withDate: true })
+        parts.push(`<p style="margin:22px 0 10px"><strong>Past lessons still not logged (${u}), oldest first</strong></p>`)
+        parts.push(blocks.html)
+        parts.push(`<p style="color:#666;font-size:13px">Nobody logged ${u === 1 ? 'this lesson' : 'these lessons'}, so no credit was taken. ` +
+            (blocks.buttons
+                ? `<b>Log it</b> if it happened: that takes 1 credit (a lesson over a week old is logged quietly: no email to the family, no next lesson booked). ` +
+                  `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
+                : `Log or remove ${u === 1 ? 'it' : 'them'} in the <a href="${baseUrl}/admin">admin dashboard</a>.`) +
+            `</p>`)
+    }
+
+    return {
+        subject,
+        lines,
+        html: parts.join('\n'),
+        footer: `This email comes on the 1st only when something doesn't match or a past lesson is still unlogged.`,
     }
 }
 
-/** Emails the studio inbox when the month has mismatches. No email when it is clean. */
-export async function alertCreditCheck(client: DbClient, report: CreditCheckReport): Promise<boolean> {
-    if (report.findings.length === 0) return false
-    return sendCronAlert(client, buildCreditCheckEmail(report))
+/**
+ * Emails the studio inbox when the month has mismatches or past lessons are
+ * still unlogged. No email when both are clean.
+ */
+export async function alertCreditCheck(client: DbClient, report: CreditCheckReport, unlogged: UnloggedLesson[] = []): Promise<boolean> {
+    if (report.findings.length === 0 && unlogged.length === 0) return false
+    return sendCronAlert(client, buildCreditCheckEmail(report, unlogged))
 }
-

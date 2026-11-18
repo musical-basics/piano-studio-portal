@@ -1,6 +1,7 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
-import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { isoToStudioWallClock, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { LINK_TTL_DAYS, appBaseUrl, lessonActionUrl, signLessonAction } from '@/lib/lesson-action-links'
 import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile } from '@/lib/zoom-recordings'
 
@@ -15,7 +16,10 @@ import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile 
  * Each lesson in the email carries two one-time buttons (#441): "Log it" and
  * "Didn't happen" (see app/api/lesson-action). Since #538 the same email also
  * goes out at 11pm about that day's lessons, leaving out those Zoom will log
- * itself.
+ * itself. Since #736 the monthly credit check lists every older one still
+ * unlogged (findPastUnloggedLessons).
+ *
+ * Teacher accounts are left out of all of these (#734, isUntrackedTeacherAccount).
  */
 
 export type UnloggedLesson = {
@@ -44,32 +48,62 @@ export async function findUnloggedLessons(client: DbClient, date: string): Promi
         .in('status', UNLOGGED_STATUSES)
         .order('time', { ascending: true })
     if (error) throw new Error(`lessons query failed: ${error.message}`)
-    if (!lessons || lessons.length === 0) return []
+    return withStudents(client, lessons || [])
+}
 
+/** A past lesson is listed in the monthly check once it is this many days old. */
+export const PAST_UNLOGGED_MIN_DAYS = 2
+
+/**
+ * Every lesson more than two days old that is still unlogged, from any date,
+ * oldest first (#736: the monthly credit check lists them). The two-day wait
+ * leaves recent ones to the 8:30am and 11pm emails and to Zoom.
+ */
+export async function findPastUnloggedLessons(client: DbClient, now: Date = new Date()): Promise<UnloggedLesson[]> {
+    const cutoffMs = now.getTime() - PAST_UNLOGGED_MIN_DAYS * 24 * 60 * 60 * 1000
+    const lastDate = isoToStudioWallClock(new Date(cutoffMs).toISOString()).localDate
+    const { data: lessons, error } = await client
+        .from('lessons')
+        .select('id, date, time, duration, status, student_id, zoom_meeting_id, video_url')
+        .lte('date', lastDate)
+        .in('status', UNLOGGED_STATUSES)
+        .order('date', { ascending: true })
+        .order('time', { ascending: true })
+        .limit(1000)
+    if (error) throw new Error(`lessons query failed: ${error.message}`)
+    const found = await withStudents(client, lessons || [])
+    return found.filter(l => Date.parse(studioWallClockToISO(l.date, l.time)) < cutoffMs)
+}
+
+/** Adds each lesson's student and drops the teacher accounts (#734). */
+async function withStudents(client: DbClient, lessons: any[]): Promise<UnloggedLesson[]> {
+    if (lessons.length === 0) return []
     const ids = [...new Set(lessons.map(l => l.student_id as string))]
     const { data: students, error: studentError } = await client
         .from('profiles')
-        .select('id, name, status, dropbox_recording_folder')
+        .select('id, name, status, dropbox_recording_folder, credits')
         .in('id', ids)
     if (studentError) throw new Error(`profiles query failed: ${studentError.message}`)
     const byId = new Map((students || []).map(s => [s.id as string, s]))
 
-    return lessons.map(l => {
-        const s = byId.get(l.student_id as string)
-        const meeting = l.zoom_meeting_id ? String(l.zoom_meeting_id).replace(/\D/g, '') : ''
-        return {
-            id: l.id as string,
-            date: l.date as string,
-            time: String(l.time).slice(0, 5),
-            duration: (l.duration as number) || 60,
-            status: l.status as string,
-            studentName: (s?.name as string) || 'Unknown student',
-            accountStatus: (s?.status as string) ?? null,
-            zoomMeetingId: meeting || null,
-            hasVideo: !!l.video_url,
-            hasDropboxFolder: !!s?.dropbox_recording_folder,
-        }
-    })
+    return lessons
+        .filter(l => !isUntrackedTeacherAccount(byId.get(l.student_id as string)))
+        .map(l => {
+            const s = byId.get(l.student_id as string)
+            const meeting = l.zoom_meeting_id ? String(l.zoom_meeting_id).replace(/\D/g, '') : ''
+            return {
+                id: l.id as string,
+                date: l.date as string,
+                time: String(l.time).slice(0, 5),
+                duration: (l.duration as number) || 60,
+                status: l.status as string,
+                studentName: (s?.name as string) || 'Unknown student',
+                accountStatus: (s?.status as string) ?? null,
+                zoomMeetingId: meeting || null,
+                hasVideo: !!l.video_url,
+                hasDropboxFolder: !!s?.dropbox_recording_folder,
+            }
+        })
 }
 
 export function formatClock(time: string): string {
@@ -83,11 +117,17 @@ function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }
 
-export function describeUnlogged(lesson: UnloggedLesson): string {
+function shortDay(date: string): string {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** One lesson as a line of the email. `withDate` for lists that span many days. */
+export function describeUnlogged(lesson: UnloggedLesson, { withDate = false }: { withDate?: boolean } = {}): string {
     const zone = studioTzAbbr(studioWallClockToISO(lesson.date, lesson.time))
     const account = lesson.accountStatus && lesson.accountStatus !== 'active' ? ` (account: ${lesson.accountStatus})` : ''
     const half = lesson.status === 'logging' ? ', logging started but never finished' : ''
-    return `${escapeHtml(lesson.studentName)}${account}: ${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}`
+    const day = withDate ? `${shortDay(lesson.date)}, ` : ''
+    return `${escapeHtml(lesson.studentName)}${account}: ${day}${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}`
 }
 
 export type UnloggedEmailKind = 'morning' | 'tonight'
@@ -95,6 +135,39 @@ export type UnloggedEmailKind = 'morning' | 'tonight'
 const BUTTON = 'display:inline-block;padding:11px 18px;margin:0 8px 6px 0;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;line-height:1.2'
 const LOG_STYLE = `${BUTTON};background:#15803d;color:#ffffff;border:1px solid #15803d`
 const REMOVE_STYLE = `${BUTTON};background:#ffffff;color:#b91c1c;border:1px solid #b91c1c`
+
+/**
+ * The lessons as email blocks, each with its one-time buttons (#441). Falls back
+ * to a plain list when links cannot be signed (no CRON_SECRET).
+ */
+export function unloggedLessonBlocks(
+    lessons: UnloggedLesson[],
+    { now = new Date(), baseUrl = appBaseUrl(), withDate = false }: { now?: Date; baseUrl?: string; withDate?: boolean } = {},
+): { lines: string[]; html: string; buttons: boolean } {
+    const lines = lessons.map(l => describeUnlogged(l, { withDate }))
+    let buttons = true
+    const blocks = lessons.map((lesson, i) => {
+        const log = signLessonAction({ lessonId: lesson.id, action: 'log', date: lesson.date, time: lesson.time }, now)
+        const remove = signLessonAction({ lessonId: lesson.id, action: 'remove', date: lesson.date, time: lesson.time }, now)
+        if (!log || !remove) {
+            buttons = false
+            return `<li>${lines[i]}</li>`
+        }
+        return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px">
+<div style="font-size:15px;margin:0 0 10px">${lines[i]}</div>
+<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>
+</div>`
+    })
+    const html = buttons ? blocks.join('\n') : `<ul>${blocks.join('')}</ul>`
+    return { lines, html, buttons }
+}
+
+/** What the buttons do, for the footer of any email that carries them. */
+export function unloggedButtonsNote(n: number): string {
+    const these = n === 1 ? 'this lesson' : 'these lessons'
+    return `Nobody logged ${these}, so no credit was taken. <b>Log it</b> if it happened: that takes 1 credit, the usual log. ` +
+        `<b>Didn't happen</b> removes it quietly: no credit, nobody is told. Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days.`
+}
 
 /**
  * Subject, body and footer of the unlogged-lessons email, without sending it,
@@ -113,22 +186,7 @@ export function buildUnloggedEmail(
     const subject = kind === 'tonight'
         ? `Tonight: ${n} lesson${plural} from today not logged yet`
         : `${n} lesson${plural} from ${day} not logged yet`
-    const lines = lessons.map(describeUnlogged)
-
-    let buttons = true
-    const blocks = lessons.map((lesson, i) => {
-        const log = signLessonAction({ lessonId: lesson.id, action: 'log', date: lesson.date, time: lesson.time }, now)
-        const remove = signLessonAction({ lessonId: lesson.id, action: 'remove', date: lesson.date, time: lesson.time }, now)
-        if (!log || !remove) {
-            buttons = false
-            return `<li>${lines[i]}</li>`
-        }
-        return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px">
-<div style="font-size:15px;margin:0 0 10px">${lines[i]}</div>
-<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>
-</div>`
-    })
-    const html = buttons ? blocks.join('\n') : `<ul>${blocks.join('')}</ul>`
+    const { lines, html, buttons } = unloggedLessonBlocks(lessons, { now, baseUrl })
 
     const admin = `${baseUrl}/admin`
     const these = n === 1 ? 'this lesson' : 'these lessons'
@@ -136,7 +194,7 @@ export function buildUnloggedEmail(
         ? 'This email comes only on evenings with a lesson from today still unlogged. Lessons Zoom recorded are left out, since Zoom logs those itself. The 8:30am email is the backstop.'
         : 'This email comes only on mornings with something unlogged.'
     const footer = buttons
-        ? `Nobody logged ${these}, so no credit was taken. <b>Log it</b> if it happened: that takes 1 credit, the usual log. <b>Didn't happen</b> removes it quietly: no credit, nobody is told. Each button asks you to confirm, works once, and expires in ${LINK_TTL_DAYS} days. The <a href="${admin}">admin dashboard</a> works too. ${when}`
+        ? `${unloggedButtonsNote(n)} The <a href="${admin}">admin dashboard</a> works too. ${when}`
         : `Nobody logged ${these}, so no credit was taken. If it happened, log it in the <a href="${admin}">admin dashboard</a> (that takes the credit). If it didn't, cancel it there. ${when}`
 
     return { subject, lines, html, footer, buttons }
