@@ -12,7 +12,15 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { familyMoveStatesCore, type FamilyMoveState } from "@/lib/core/move-requests"
 import { studioStartMs } from "@/lib/move-requests"
 
-export default async function StudentPage() {
+export default async function StudentPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string | string[] }>
+}) {
+  // ?tab=history opens the History tab (the monthly statement email links there, #936).
+  const askedTab = (await searchParams)?.tab
+  const initialTab = askedTab === "history" ? "history" : undefined
+
   const supabase = await createClient()
 
   // Check authentication
@@ -165,6 +173,7 @@ export default async function StudentPage() {
         movableLessons={movableLessons}
         moveStates={moveStates}
         isAdminPreview={Boolean(impersonatingId)}
+        initialTab={initialTab}
       />
     </>
   )

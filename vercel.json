@@ -41,6 +41,10 @@
             "schedule": "0 14 1 * *"
         },
         {
+            "path": "/api/cron/monthly-statements",
+            "schedule": "0 15 1 * *"
+        },
+        {
             "path": "/api/cron/backup-watchdog",
             "schedule": "0 14 * * *"
         },

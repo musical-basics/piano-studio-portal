@@ -134,6 +134,20 @@ export const PORTAL_JOBS: JobInfo[] = [
         },
     },
     {
+        job: 'monthly-statements',
+        name: 'Monthly family statements',
+        what: "On the 1st, emails each active family a short summary of last month: lessons held, lessons left, and the next payment date if they're on a plan. Never twice in a month.",
+        group: 'lessons',
+        summarize: b => {
+            if (b?.off) return 'Off (MONTHLY_STATEMENTS=off), nothing sent'
+            const sent = Number(b?.sent) || 0
+            const parts = [sent ? `${plural(sent, 'family', 'families')} emailed` : 'No statements sent']
+            if (b?.alreadySent) parts.push(`${b.alreadySent} already had theirs`)
+            if (b?.failed) parts.push(`${b.failed} failed`)
+            return parts.join(', ')
+        },
+    },
+    {
         job: 'new-recordings',
         name: 'New recording emails',
         what: "Emails a family when a new lesson recording appears in their Dropbox folder.",

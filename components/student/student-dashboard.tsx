@@ -123,6 +123,8 @@ export interface StudentDashboardProps {
     moveStates?: Record<string, FamilyMoveState>
     /** An admin is previewing this student: a request can't be sent as them. */
     isAdminPreview?: boolean
+    /** The tab to open on, from ?tab= (only "history" for now, #936). */
+    initialTab?: "history"
 }
 
 // Category badge colors
@@ -134,7 +136,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, movableLessons = [], moveStates = {}, isAdminPreview = false }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -157,7 +159,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
     // Real unread count, seeded from the server render. The badge used to be
     // hardcoded to 1, so the portal claimed a new message forever.
-    const [activeTab, setActiveTab] = useState("lessons")
+    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : "lessons")
     const [unreadMessages, setUnreadMessages] = useState(unreadCount)
 
     // Subscription state drives the renewal banner. `undefined` means "not looked
@@ -197,6 +199,15 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     useEffect(() => {
         setUnreadMessages(unreadCount)
     }, [unreadCount])
+
+    // Opened from the monthly statement's "History tab" link (?tab=history):
+    // the tabs sit below the balance cards, so bring them into view once.
+    useEffect(() => {
+        if (initialTab === "history" && history) {
+            document.getElementById("student-tabs")?.scrollIntoView({ block: "start" })
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     // While the student is on another tab nothing is polling the thread, so the
     // badge would go stale until a reload. The Messages tab does its own 5s poll
@@ -968,7 +979,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 <div className="grid lg:grid-cols-3 gap-8">
                     {/* My Library */}
                     <div className="lg:col-span-2 space-y-6">
-                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <Tabs id="student-tabs" value={activeTab} onValueChange={setActiveTab} className="w-full scroll-mt-4">
                             <TabsList className={`grid w-full ${history ? "grid-cols-7" : "grid-cols-6"} mb-6`}>
                                 <TabsTrigger value="lessons" className="gap-2">
                                     <Music className="h-4 w-4" />
