@@ -270,6 +270,14 @@ export const MAC_JOBS: JobInfo[] = [
         intervalMinutes: 31 * 24 * 60,
     },
     {
+        job: 'lesson-transcripts',
+        name: 'Lesson transcripts',
+        what: 'Writes a text transcript of each lesson recording, saved next to the video in Dropbox, so you can search what was said (Recordings tab). Newest first, 1:30 to 6am, when the Mac is awake.',
+        group: 'mac',
+        schedule: 'Nightly 1:30am',
+        intervalMinutes: 24 * 60,
+    },
+    {
         job: 'family-watch',
         name: 'Family message watcher',
         what: 'Watches for new family messages so a reply gets drafted for your OK.',

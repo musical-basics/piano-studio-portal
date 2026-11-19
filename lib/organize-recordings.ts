@@ -119,7 +119,10 @@ export async function organizeZBackupRecordings(opts: OrganizeOptions = {}): Pro
         try {
             const res = await dbx.filesListFolder({ path: `${DEST_ROOT}/${destFolder}` })
             // Classroom copies don't count: they are a different video of that day.
-            return res.result.entries.some(e => e['.tag'] === 'file' && e.name.includes(formattedDate) && !isClassroomCopyName(e.name))
+            // Only videos count: the Mac's overnight transcripts (#953) sit next to
+            // them as "<video name> - transcript.txt" and must not block a recording.
+            return res.result.entries.some(e => e['.tag'] === 'file' && e.name.includes(formattedDate)
+                && /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(e.name) && !isClassroomCopyName(e.name))
         } catch (err: any) {
             const summary = err?.error?.error_summary || ''
             if (typeof summary === 'string' && summary.includes('path/not_found')) return false
