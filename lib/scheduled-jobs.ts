@@ -94,6 +94,22 @@ export const PORTAL_JOBS: JobInfo[] = [
         summarize: b => len(b?.unlogged) ? `${plural(len(b.unlogged), 'lesson')} unlogged${b.emailed ? ', emailed you' : ''}` : 'Nothing unlogged',
     },
     {
+        job: 'calendar-sync',
+        name: 'Calendar check',
+        what: "Compares the next 14 days of lessons with your Google Calendar and fixes missing events, wrong times and events left behind for removed lessons, then emails you what it fixed. Only ever changes events the portal made.",
+        group: 'lessons',
+        summarize: b => {
+            const c = b?.counts ?? {}
+            const fixed = (Number(c.created) || 0) + (Number(c.linked) || 0) + (Number(c.retimed) || 0) + (Number(c.deleted) || 0)
+            const checked = Number(b?.checked) || 0
+            const parts = [fixed ? `${plural(fixed, 'event')} fixed` : checked ? `${checked === 1 ? 'The 1 lesson' : `All ${checked} lessons`} matched` : 'No lessons in the next 14 days']
+            if (c.errors) parts.push(`${plural(c.errors, 'problem')}`)
+            if (c.leftAlone) parts.push(`${c.leftAlone} left alone to check`)
+            if (b?.emailed) parts.push('emailed you')
+            return parts.join(', ')
+        },
+    },
+    {
         job: 'weekly-summary',
         name: 'Weekly summary',
         what: "Emails you last week's lessons, videos and credits, and families down to 0 lessons.",
