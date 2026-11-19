@@ -4,6 +4,7 @@ import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { LINK_TTL_DAYS, appBaseUrl } from '@/lib/lesson-action-links'
 import { MISSED_IT_NOTE, formatClock, unloggedLessonBlocks, type UnloggedLesson } from '@/lib/unlogged-lessons'
+import { paymentCheckCount, paymentCheckHtml, paymentCheckNeedsEmail, type PaymentCheckReport } from '@/lib/payment-check'
 
 /**
  * Monthly credit check (#443): every lesson logged in a month, lined up with
@@ -37,7 +38,9 @@ import { MISSED_IT_NOTE, formatClock, unloggedLessonBlocks, type UnloggedLesson 
  * Teacher accounts are left out entirely (#734, isUntrackedTeacherAccount).
  * Lessons logged free (#756, lessons.free_reason set) are left alone.
  * Since #736 the same email also lists every past lesson still unlogged
- * (findPastUnloggedLessons), with the morning email's buttons.
+ * (findPastUnloggedLessons), with the morning email's buttons. Since #757 it
+ * also lines up the month's Stripe payments with the lessons each family got
+ * (lib/payment-check.ts).
  */
 
 export type CreditFindingKind = 'not_charged' | 'charged_twice' | 'charge_without_lesson' | 'charged_late'
@@ -409,9 +412,9 @@ export function describeFinding(f: CreditFinding): string {
 export function buildCreditCheckEmail(
     report: CreditCheckReport,
     unlogged: UnloggedLesson[] = [],
-    { now = new Date(), baseUrl = appBaseUrl() }: { now?: Date; baseUrl?: string } = {},
+    { now = new Date(), baseUrl = appBaseUrl(), payments = null }: { now?: Date; baseUrl?: string; payments?: PaymentCheckReport | null } = {},
 ): { subject: string; lines: string[]; html: string; footer: string } {
-    const n = report.findings.length
+    const n = report.findings.length + paymentCheckCount(payments)
     const u = unlogged.length
     const name = monthName(report.month)
     const things = `${n} thing${n === 1 ? '' : 's'} to look at`
@@ -420,7 +423,7 @@ export function buildCreditCheckEmail(
     const lines = report.findings.map(describeFinding)
 
     const parts: string[] = []
-    if (n) {
+    if (report.findings.length) {
         parts.push(`<ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`)
         parts.push(`<p style="color:#666;font-size:13px">Every lesson logged in ${name} (${report.lessonsChecked}) was lined up with the credit history (${credits(report.creditsTaken)} taken). ` +
             `Purchases, free trials, credits given back and changes with a note are fine and not listed. ` +
@@ -428,6 +431,7 @@ export function buildCreditCheckEmail(
     } else {
         parts.push(`<p>Every lesson logged in ${name} (${report.lessonsChecked}) matches the credit history (${credits(report.creditsTaken)} taken).</p>`)
     }
+    if (payments) parts.push(paymentCheckHtml(payments, name))
     if (u) {
         const blocks = unloggedLessonBlocks(unlogged, { now, baseUrl, withDate: true })
         parts.push(`<p style="margin:22px 0 10px"><strong>Past lessons still not logged (${u}), oldest first</strong></p>`)
@@ -451,10 +455,16 @@ export function buildCreditCheckEmail(
 }
 
 /**
- * Emails the studio inbox when the month has mismatches or past lessons are
- * still unlogged. No email when both are clean.
+ * Emails the studio inbox when the month has mismatches (lessons vs credits,
+ * or payments vs lessons added) or past lessons are still unlogged. No email
+ * when all of it is clean.
  */
-export async function alertCreditCheck(client: DbClient, report: CreditCheckReport, unlogged: UnloggedLesson[] = []): Promise<boolean> {
-    if (report.findings.length === 0 && unlogged.length === 0) return false
-    return sendCronAlert(client, buildCreditCheckEmail(report, unlogged))
+export async function alertCreditCheck(
+    client: DbClient,
+    report: CreditCheckReport,
+    unlogged: UnloggedLesson[] = [],
+    payments: PaymentCheckReport | null = null,
+): Promise<boolean> {
+    if (report.findings.length === 0 && unlogged.length === 0 && !paymentCheckNeedsEmail(payments)) return false
+    return sendCronAlert(client, buildCreditCheckEmail(report, unlogged, { payments }))
 }

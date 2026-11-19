@@ -4,6 +4,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import { studioToday } from '@/lib/studio-timezone'
 import { alertCreditCheck, checkCredits, previousMonth } from '@/lib/credit-check'
 import { findPastUnloggedLessons } from '@/lib/unlogged-lessons'
+import { checkPayments } from '@/lib/payment-check'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,8 +14,11 @@ export const dynamic = 'force-dynamic'
 // email lists every lesson over two days old that is still unlogged, from any
 // date, with Log it / Didn't happen buttons (#736). Read-only; silent when
 // everything matches and nothing is unlogged. Teacher accounts are left out
-// (#734). Manual runs: ?month=YYYY-MM for another month (the unlogged list is
-// always as of now), ?dry=1 to report without emailing.
+// (#734). It also lines up the month's Stripe payments with the lessons added
+// to each family: a payment that added no lessons (or the wrong number), and
+// lessons added with no payment and no reason (#757, lib/payment-check.ts).
+// Manual runs: ?month=YYYY-MM for another month (the unlogged list is always
+// as of now), ?dry=1 to report without emailing.
 export async function GET(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -29,10 +33,13 @@ export async function GET(request: Request) {
         const client = createAdminClient()
         const report = await checkCredits(client, month)
         const unlogged = await findPastUnloggedLessons(client)
-        const emailed = dryRun ? false : await alertCreditCheck(client, report, unlogged)
+        const payments = await checkPayments(client, month)
+        const emailed = dryRun ? false : await alertCreditCheck(client, report, unlogged, payments)
         console.log(
             `[Cron/credit-check] ${month}: ${report.lessonsChecked} lessons, ${report.creditsTaken} credits taken, ` +
-            `${report.findings.length} to look at, ${unlogged.length} past lessons unlogged${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`,
+            `${report.findings.length} to look at, ${unlogged.length} past lessons unlogged, ` +
+            `${payments.error ? 'payments not checked' : `${payments.payments} payments, ${payments.findings.length} payment mismatches`}` +
+            `${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`,
         )
         return NextResponse.json({
             success: true,
@@ -52,6 +59,22 @@ export async function GET(request: Request) {
                 detail: f.detail,
             })),
             unlogged: unlogged.map(l => ({ id: l.id, date: l.date, time: l.time, status: l.status })),
+            payments: {
+                error: payments.error ?? null,
+                payments: payments.payments,
+                paidCents: payments.paidCents,
+                additions: payments.additions,
+                lessonsAdded: payments.lessonsAdded,
+                paidFor: payments.paidFor,
+                otherPaid: payments.otherPaid,
+                labelled: payments.labelled,
+                givenBack: payments.givenBack,
+                findings: payments.findings.map(f => ({
+                    kind: f.kind,
+                    at: new Date(f.atMs).toISOString(),
+                    detail: f.detail,
+                })),
+            },
         })
     } catch (err: any) {
         const detail = err?.message || String(err)
