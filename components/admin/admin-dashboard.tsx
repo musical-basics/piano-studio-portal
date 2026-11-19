@@ -44,6 +44,8 @@ import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
 import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
+import { MoveRequestsCard } from "@/components/admin/move-requests-card"
+import type { PendingMoveRequest } from "@/lib/core/move-requests"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -72,9 +74,11 @@ export interface AdminDashboardProps {
     pricingPlans: PricingPlan[]
     /** Past lessons nobody logged, for the red "N unlogged" badge (#760). */
     unloggedLessons?: AdminUnloggedLesson[]
+    /** Families asking to move a lesson, waiting for Approve or Decline (#878). */
+    moveRequests?: PendingMoveRequest[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [] }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [] }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -917,6 +921,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsList>
 
                     <TabsContent value="dashboard" className="space-y-8">
+                        {/* Families asking to move a lesson (#878): Approve / Decline */}
+                        <MoveRequestsCard
+                            requests={moveRequests}
+                            onChanged={() => setCalendarVersion(v => v + 1)}
+                        />
+
                         {/* Daily Schedule */}
                         <DashboardTab
                             date={dayViewDate}

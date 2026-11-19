@@ -44,6 +44,8 @@ import { MakeupScheduler } from "./makeup-scheduler"
 import { RecordingConsentDialog } from "./recording-consent-dialog"
 import { PracticeTab } from "./practice-tab"
 import { CancellationModal } from "./cancellation-modal"
+import { MoveRequestDialog, MoveRequestStatus } from "./move-request"
+import type { FamilyMoveState } from "@/lib/core/move-requests"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
 import { createBalancePaymentSession, getSubscriptionSummary } from "@/app/actions/stripe"
@@ -111,6 +113,12 @@ export interface StudentDashboardProps {
     history?: LessonHistory
     /** Moments Lionel marked in classroom recordings (#874), by lesson id. */
     markersByLesson?: Record<string, RecordingMarker[]>
+    /** Upcoming lessons not started yet, soonest first: each can be asked to move (#878). */
+    movableLessons?: { id: string; date: string; time: string; duration: number }[]
+    /** The latest move request worth showing, by lesson id. */
+    moveStates?: Record<string, FamilyMoveState>
+    /** An admin is previewing this student: a request can't be sent as them. */
+    isAdminPreview?: boolean
 }
 
 // Category badge colors
@@ -122,7 +130,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {} }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, movableLessons = [], moveStates = {}, isAdminPreview = false }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -214,6 +222,8 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
     const [showMakeupScheduler, setShowMakeupScheduler] = useState(false)
     const [showCancellationModal, setShowCancellationModal] = useState(false)
+    // "Request a different time" (#878): the lesson whose free times are open.
+    const [moveLessonId, setMoveLessonId] = useState<string | null>(null)
     const [selectedLesson, setSelectedLesson] = useState<UILesson | null>(null)
     const [showLessonDetail, setShowLessonDetail] = useState(false)
     const [showPurchaseModal, setShowPurchaseModal] = useState(false)
@@ -732,11 +742,49 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                         <CalendarClock className="h-5 w-5 mr-2" />
                                         Reschedule
                                     </Button> */}
+                                    {nextLesson.id && movableLessons.some(l => l.id === nextLesson.id) && moveStates[nextLesson.id]?.status !== "pending" && (
+                                        <Button size="lg" variant="outline" onClick={() => setMoveLessonId(nextLesson.id!)}>
+                                            <CalendarClock className="h-5 w-5 mr-2" />
+                                            Request a different time
+                                        </Button>
+                                    )}
                                     <Button size="lg" variant="destructive" onClick={handleCancel}>
                                         <CalendarX className="h-5 w-5 mr-2" />
                                         Cancel
                                     </Button>
                                 </div>
+
+                                {nextLesson.id && (
+                                    <MoveRequestStatus state={moveStates[nextLesson.id]} isPreview={isAdminPreview} />
+                                )}
+
+                                {/* The other upcoming lessons, each with its own "Request a different time" (#878). */}
+                                {movableLessons.some(l => l.id !== nextLesson.id) && (
+                                    <div className="space-y-3" data-testid="also-coming-up">
+                                        <Separator />
+                                        <p className="text-sm font-medium text-muted-foreground">Also coming up</p>
+                                        {movableLessons.filter(l => l.id !== nextLesson.id).map(l => (
+                                            <div key={l.id} className="space-y-2 rounded-md border p-3">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <Calendar className="h-4 w-4 text-primary shrink-0" />
+                                                        <div>
+                                                            <p className="font-medium">{formatDate(l.date)}</p>
+                                                            <LocalTimeDisplay date={l.date} time={l.time} />
+                                                        </div>
+                                                    </div>
+                                                    {moveStates[l.id]?.status !== "pending" && (
+                                                        <Button size="sm" variant="outline" onClick={() => setMoveLessonId(l.id)}>
+                                                            <CalendarClock className="h-4 w-4 mr-2" />
+                                                            Request a different time
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                <MoveRequestStatus state={moveStates[l.id]} isPreview={isAdminPreview} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className="text-center py-8">
@@ -1346,6 +1394,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 onOpenChange={setShowMakeupScheduler}
                 lessonId={nextLesson?.id}
                 onSuccess={() => window.location.reload()}
+            />
+
+            <MoveRequestDialog
+                lessonId={moveLessonId}
+                onClose={() => setMoveLessonId(null)}
+                isPreview={isAdminPreview}
             />
 
             <CancellationModal

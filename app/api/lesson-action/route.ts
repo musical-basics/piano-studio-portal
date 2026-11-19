@@ -1,5 +1,6 @@
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
-import { verifyLessonAction, type LessonActionClaims } from '@/lib/lesson-action-links'
+import { MOVE_ACTIONS, verifyLessonAction, type LessonActionClaims } from '@/lib/lesson-action-links'
+import { approveMoveRequestCore, declineMoveRequestCore, loadPendingMoveRequest, moveSlotStillFree } from '@/lib/core/move-requests'
 import { logLessonCore } from '@/lib/core/lessons'
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
 import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
@@ -41,6 +42,13 @@ export const dynamic = 'force-dynamic'
  *             who joined, as a last look before confirming.
  * Both re-check at POST time that the lesson is still unlogged and still at the
  * date and time the email showed; otherwise they say so and change nothing.
+ *
+ *   - approve_move / decline_move (#878): a family's request to move a
+ *             lesson (lib/core/move-requests.ts). Approve runs the usual
+ *             reschedule (Zoom, calendar, the usual "Lesson Rescheduled"
+ *             email); Decline sends nothing. Both re-check the request itself
+ *             (still pending, lesson still where it was, times still ahead,
+ *             and for Approve the picked time still free).
  */
 
 type LessonRow = {
@@ -189,8 +197,102 @@ function alreadyUsed(outcome: string | null): Response {
         : outcome?.startsWith('removed') ? ' It removed the lesson.'
         : outcome?.startsWith('missed') ? ' It sent the apology, added the credit and removed the lesson.'
         : outcome?.startsWith('no-show') ? ' It marked the lesson a no-show and took 1 credit.'
+        : outcome?.startsWith('moved') ? " It approved the family's request and moved the lesson."
+        : outcome?.startsWith('declined') ? " It declined the family's request (nothing was sent)."
         : ''
     return message('This link was already used', `Each button works once.${did} Nothing changed this time.`)
+}
+
+// ---------------------------------------------------------------------------
+// Approve / Decline a family's request to move a lesson (#878). The request,
+// not the lesson's logged state, decides what is possible here, so these skip
+// checkLesson: lib/core/move-requests.ts re-checks that the lesson is still
+// where it was, both times are still ahead, and (Approve) the picked time is
+// still free.
+// ---------------------------------------------------------------------------
+
+async function moveGet(client: DbClient, claims: LessonActionClaims, token: string): Promise<Response> {
+    const loaded = await loadPendingMoveRequest(client, claims.r!)
+    if (!loaded.ok) return message(loaded.closed ? 'Nothing to do' : 'Something went wrong', loaded.error, loaded.closed ? 200 : 503)
+    const { request, pending } = loaded
+    if (request.lesson_id !== claims.l) return badLink('invalid')
+
+    const form = (label: string, cls: string) =>
+        `<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token)}"><button class="${cls}" type="submit">${esc(label)}</button></form>`
+    const when = `${esc(pending.fromLabel)} &rarr; ${esc(pending.toLabel)}, ${pending.duration} min`
+
+    if (claims.a === 'decline_move') {
+        return page('Decline this request?', `
+<h1>Decline ${esc(pending.studentName)}'s request?</h1>
+<p class="muted">They asked to move ${esc(pending.fromLabel)} to ${esc(pending.toLabel)}.</p>
+<ul class="effects">
+<li>The lesson stays at ${esc(pending.fromLabel)}</li>
+<li>Sends nothing: no email, portal message or text. The family sees in the portal that the lesson stays at its time.</li>
+</ul>
+${form('Decline', 'remove')}`)
+    }
+
+    const free = await moveSlotStillFree(client, request)
+    if (free === false) {
+        return message('That time is no longer free', `${pending.toLabel} has another lesson or event now (or is outside your hours), so this request can't be approved. Nothing changed. Decline it here or in the admin dashboard.`)
+    }
+    return page('Approve this move?', `
+<h1>Move ${esc(pending.studentName)}'s lesson?</h1>
+<p class="muted">${when}</p>
+<ul class="effects">
+<li>Moves the lesson to ${esc(pending.toLabel)}; the Zoom meeting and the calendar event follow</li>
+<li>Sends 1 family the usual "Lesson Rescheduled" email, nothing else</li>
+</ul>
+${free === null ? '<p class="warn">Your schedule could not be checked just now; the button checks again before moving.</p>' : ''}
+${form('Approve move', 'log')}`)
+}
+
+async function movePost(
+    client: DbClient,
+    claims: LessonActionClaims,
+    record: (outcome: string, studentId?: string) => PromiseLike<unknown>,
+    giveBack: () => PromiseLike<unknown>,
+): Promise<Response> {
+    const { data: req } = await client.from('lesson_move_requests').select('student_id, lesson_id').eq('id', claims.r!).maybeSingle()
+    if (req && req.lesson_id !== claims.l) {
+        await giveBack()
+        return badLink('invalid')
+    }
+    const studentId = (req?.student_id as string) || undefined
+
+    if (claims.a === 'decline_move') {
+        const result = await declineMoveRequestCore({ client, requestId: claims.r!, via: 'email' })
+        if ('error' in result) {
+            if (result.closed) {
+                await record(`nothing: ${result.error}`, studentId)
+                return message('Nothing changed', result.error)
+            }
+            await giveBack()
+            return message('Not finished', result.error, 500)
+        }
+        await record('declined', studentId)
+        return message('Declined', result.summary)
+    }
+
+    const { data: admin } = await client.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
+    if (!admin?.id) {
+        await giveBack()
+        return message('Something went wrong', 'The studio account could not be found, so nothing was moved. Nothing changed.', 503)
+    }
+    const result = await approveMoveRequestCore({ client, adminId: admin.id as string, requestId: claims.r!, via: 'email' })
+    if ('error' in result) {
+        if (result.closed) {
+            await record(`nothing: ${result.error}`, studentId)
+            return message('Not moved', result.error)
+        }
+        // Nothing moved and the request is still open, so the link may try again.
+        await giveBack()
+        console.error(`[lesson-action] approve move failed for ${claims.r}: ${result.error}`)
+        return message('Not moved', result.error, 500)
+    }
+    await record(`moved: ${result.summary}`, studentId)
+    console.log(`[lesson-action] approved move request ${claims.r} from email`)
+    return message('Moved', result.summary)
 }
 
 export async function GET(request: Request) {
@@ -202,6 +304,8 @@ export async function GET(request: Request) {
     const client = createAdminClient()
     const used = await usedOutcome(client, claims.j)
     if (used.used) return alreadyUsed(used.outcome)
+
+    if (MOVE_ACTIONS.includes(claims.a)) return moveGet(client, claims, token!)
 
     const checked = await checkLesson(client, claims)
     if (!checked.ok) return checked.response
@@ -336,6 +440,10 @@ export async function POST(request: Request) {
             .update({ outcome, ...(studentId ? { student_id: studentId } : {}) })
             .eq('token_id', claims.j)
             .then(({ error }) => { if (error) console.error('[lesson-action] outcome not saved:', error.message) })
+
+    if (MOVE_ACTIONS.includes(claims.a)) {
+        return movePost(client, claims, record, () => client.from('lesson_action_link_uses').delete().eq('token_id', claims.j))
+    }
 
     const checked = await checkLesson(client, claims)
     if (!checked.ok) {

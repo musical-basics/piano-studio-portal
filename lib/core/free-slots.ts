@@ -41,21 +41,27 @@ function slotLabel(date: string, time: string): string {
 }
 
 /**
- * Every free start time from today through `days - 1` days ahead (studio dates)
- * that fits a lesson of `duration` minutes inside the set hours without
- * touching another lesson or event.
+ * Every free start time from `fromDate` (default today) through `days - 1` days
+ * after it (studio dates) that fits a lesson of `duration` minutes inside the set
+ * hours without touching another lesson or event. Days before today give nothing.
  */
 export async function findFreeSlotsCore({
     client,
     duration,
     days = 7,
     ignoreLessonIds = [],
+    fromDate,
+    minNoticeMinutes = MIN_NOTICE_MINUTES,
 }: {
     client: DbClient
     duration: number
     days?: number
     /** Lessons not to count as busy (the missed lesson itself, which is about to go). */
     ignoreLessonIds?: string[]
+    /** First studio date to look at (YYYY-MM-DD); default today. */
+    fromDate?: string
+    /** A slot today must start at least this many minutes from now (default 60). */
+    minNoticeMinutes?: number
 }): Promise<{ slots: FreeSlot[] } | { error: string }> {
     const { data: admin, error: adminError } = await client
         .from('profiles')
@@ -68,7 +74,9 @@ export async function findFreeSlotsCore({
     if (!hours.some(h => h.enabled)) return { error: 'No available hours are set (Profile Settings), so there are no free slots to offer.' }
 
     const today = studioToday()
-    const last = shiftDateStr(today, days - 1)
+    const start = fromDate && fromDate > today ? fromDate : today
+    const last = shiftDateStr(fromDate || today, days - 1)
+    if (last < start) return { slots: [] }
 
     const busy = new Map<string, Array<[number, number]>>()
     const addBusy = (date: string, start: number, end: number) => {
@@ -79,7 +87,7 @@ export async function findFreeSlotsCore({
     const { data: lessons, error: lessonsError } = await client
         .from('lessons')
         .select('id, date, time, duration, status')
-        .gte('date', today)
+        .gte('date', start)
         .lte('date', last)
         .neq('status', 'cancelled')
     if (lessonsError) return { error: `Could not read the schedule: ${lessonsError.message}` }
@@ -92,7 +100,7 @@ export async function findFreeSlotsCore({
     const { data: events, error: eventsError } = await client
         .from('events')
         .select('start_time, duration_minutes, duration')
-        .gte('start_time', studioWallClockToISO(shiftDateStr(today, -1), '00:00'))
+        .gte('start_time', studioWallClockToISO(shiftDateStr(start, -1), '00:00'))
         .lt('start_time', studioWallClockToISO(shiftDateStr(last, 1), '00:00'))
     if (eventsError) return { error: `Could not read events: ${eventsError.message}` }
     for (const e of events || []) {
@@ -106,23 +114,22 @@ export async function findFreeSlotsCore({
     }
 
     const now = isoToStudioWallClock(new Date().toISOString())
-    const earliestToday = toMin(now.localTime) + MIN_NOTICE_MINUTES
+    const earliestToday = toMin(now.localTime) + minNoticeMinutes
 
     const slots: FreeSlot[] = []
-    for (let i = 0; i < days; i++) {
-        const date = shiftDateStr(today, i)
+    for (let date = start; date <= last; date = shiftDateStr(date, 1)) {
         const set = hours.find(h => h.enabled && h.day === WEEKDAYS[weekdayOfDateStr(date)])
         if (!set) continue
         const open = toMin(set.start)
         const close = toMin(set.end)
         const taken = busy.get(date) || []
         // First start on the hour or half hour at or after opening.
-        let start = Math.ceil(open / STEP_MINUTES) * STEP_MINUTES
-        for (; start + duration <= close; start += STEP_MINUTES) {
-            if (date === today && start < earliestToday) continue
-            const end = start + duration
-            if (taken.some(([s, e]) => start < e && end > s)) continue
-            const time = toHHMM(start)
+        let from = Math.ceil(open / STEP_MINUTES) * STEP_MINUTES
+        for (; from + duration <= close; from += STEP_MINUTES) {
+            if (date === today && from < earliestToday) continue
+            const end = from + duration
+            if (taken.some(([s, e]) => from < e && end > s)) continue
+            const time = toHHMM(from)
             slots.push({ date, time, label: slotLabel(date, time) })
         }
     }

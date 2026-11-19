@@ -6,6 +6,8 @@ import { LINK_TTL_DAYS, appBaseUrl, lessonActionUrl, signLessonAction } from '@/
 import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile } from '@/lib/zoom-recordings'
 import { attendanceNote, looksLikeNoShow, zoomAttendance, type ZoomAttendance } from '@/lib/zoom-attendance'
 import { autoLoggedSection, findAutoLoggedLessons, type AutoLoggedLesson } from '@/lib/auto-logged-lessons'
+import { moveRequestsSection } from '@/lib/move-requests-email'
+import type { PendingMoveRequest } from '@/lib/core/move-requests'
 
 /**
  * Lessons from a given studio day that nobody logged. A lesson takes its credit
@@ -27,6 +29,10 @@ import { autoLoggedSection, findAutoLoggedLessons, type AutoLoggedLesson } from 
  * (#793, lib/auto-logged-lessons.ts), and asks Zoom who joined each unlogged
  * Zoom lesson (#797, lib/zoom-attendance.ts): a lesson only Lionel joined is
  * marked "No-show?" with a one-tap No-Show button.
+ *
+ * Since #878 it also lists families asking to move a lesson, with one-tap
+ * Approve / Decline buttons (lib/move-requests-email.ts), and goes out on a
+ * morning with only those too.
  */
 
 export type UnloggedLesson = {
@@ -256,7 +262,7 @@ export function buildUnloggedEmail(
     return { subject, lines, html, footer, buttons }
 }
 
-const MORNING_WHEN = 'This email comes only on mornings with a lesson unlogged or logged automatically.'
+const MORNING_WHEN = 'This email comes only on mornings with a lesson unlogged or logged automatically, or a family asking to move a lesson.'
 
 /** Emails the studio inbox about the day's unlogged lessons. No email when there are none. */
 export async function alertUnloggedLessons(
@@ -328,51 +334,62 @@ export async function addZoomAttendance(client: DbClient, lessons: UnloggedLesso
 
 export type MorningEmail = { subject: string; lines: string[]; html: string; footer: string }
 
-/** The whole morning email, without sending it (dry runs render this). */
+/**
+ * The whole morning email, without sending it (dry runs render this). Families
+ * asking to move a lesson (#878) come first: they wait on Lionel's answer.
+ */
 export function buildMorningEmail(
     date: string,
     unlogged: UnloggedLesson[],
     autoLogged: AutoLoggedLesson[],
-    { now = new Date(), baseUrl = appBaseUrl() }: { now?: Date; baseUrl?: string } = {},
+    { now = new Date(), baseUrl = appBaseUrl(), moveRequests = [] }: { now?: Date; baseUrl?: string; moveRequests?: PendingMoveRequest[] } = {},
 ): MorningEmail {
     const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
         weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC',
     })
     const n = unlogged.length
     const m = autoLogged.length
+    const k = moveRequests.length
     const auto = autoLoggedSection(autoLogged, date, { baseUrl })
+    const moves = moveRequestsSection(moveRequests, { now, baseUrl, heading: n > 0 || m > 0 })
+    const movesSubject = k ? `${k === 1 ? '1 family asks' : `${k} families ask`} to move a lesson` : ''
     const admin = `${baseUrl}/admin`
 
     if (n === 0) {
+        const autoSubject = m ? `${m} lesson${m === 1 ? '' : 's'} logged automatically on ${day}` : ''
         return {
-            subject: `${m} lesson${m === 1 ? '' : 's'} logged automatically on ${day}`,
-            lines: auto.lines,
-            html: auto.html,
-            footer: `Everything from ${day} is logged. The <a href="${admin}">admin dashboard</a> has the rest. ${MORNING_WHEN}`,
+            subject: [movesSubject, autoSubject].filter(Boolean).join('; '),
+            lines: [...moves.lines, ...auto.lines],
+            html: [moves.html, m ? auto.html : ''].filter(Boolean).join('\n'),
+            footer: `${m ? `Everything from ${day} is logged.` : `Nothing from ${day} is waiting to be logged.`} The <a href="${admin}">admin dashboard</a> has the rest. ${MORNING_WHEN}`,
         }
     }
 
     const unloggedEmail = buildUnloggedEmail(date, unlogged, { kind: 'morning', now, baseUrl })
     const noShows = unlogged.filter(suggestsNoShow).length
-    const subject = unloggedEmail.subject +
+    const subject = (k ? `${movesSubject}; ` : '') +
+        unloggedEmail.subject +
         (noShows ? ` (${noShows} No-show?)` : '') +
         (m ? `, ${m} logged automatically` : '')
-    const html = m
-        ? `<h3 style="font-size:16px;margin:4px 0 8px">Not logged yet (${n})</h3>\n${unloggedEmail.html}\n${auto.html}`
+    const unloggedHtml = m || k
+        ? `<h3 style="font-size:16px;margin:4px 0 8px">Not logged yet (${n})</h3>\n${unloggedEmail.html}`
         : unloggedEmail.html
-    return { subject, lines: [...unloggedEmail.lines, ...auto.lines], html, footer: unloggedEmail.footer }
+    const html = [moves.html, unloggedHtml, m ? auto.html : ''].filter(Boolean).join('\n')
+    return { subject, lines: [...moves.lines, ...unloggedEmail.lines, ...auto.lines], html, footer: unloggedEmail.footer }
 }
 
 export type MorningRun = {
     unlogged: UnloggedLesson[]
     autoLogged: AutoLoggedLesson[]
+    moveRequests: PendingMoveRequest[]
     email: MorningEmail | null
     emailed: boolean
 }
 
 /**
  * The 8:30am email about `date` (yesterday): sent when there is an unlogged
- * lesson or an automatic log to show. `dryRun` builds it without sending.
+ * lesson, an automatic log, or a family's move request (#878) to show.
+ * `dryRun` builds it without sending.
  */
 export async function runMorningEmail(
     client: DbClient,
@@ -382,10 +399,21 @@ export async function runMorningEmail(
     const unlogged = await findUnloggedLessons(client, date)
     await addZoomAttendance(client, unlogged, now)
     const autoLogged = await findAutoLoggedLessons(client, date)
-    if (unlogged.length === 0 && autoLogged.length === 0) return { unlogged, autoLogged, email: null, emailed: false }
-    const email = buildMorningEmail(date, unlogged, autoLogged, { now })
+    let moveRequests: PendingMoveRequest[] = []
+    try {
+        // Loaded lazily: the reschedule code it brings is only needed here.
+        const { listPendingMoveRequestsCore } = await import('@/lib/core/move-requests')
+        moveRequests = await listPendingMoveRequestsCore(client)
+    } catch (e) {
+        // The rest of the email still goes out; admin shows the requests.
+        console.error('[unlogged-lessons] move requests lookup failed:', e instanceof Error ? e.message : e)
+    }
+    if (unlogged.length === 0 && autoLogged.length === 0 && moveRequests.length === 0) {
+        return { unlogged, autoLogged, moveRequests, email: null, emailed: false }
+    }
+    const email = buildMorningEmail(date, unlogged, autoLogged, { now, moveRequests })
     const emailed = dryRun ? false : await sendCronAlert(client, email)
-    return { unlogged, autoLogged, email, emailed }
+    return { unlogged, autoLogged, moveRequests, email, emailed }
 }
 
 // ---------------------------------------------------------------------------

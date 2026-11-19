@@ -5,6 +5,8 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
  * (Lionel's #441), so a lesson can be cleared from a phone without opening admin.
  * Since #752 also "I missed it" (the admin "I missed this" button by link),
  * and since #797 "No-Show", offered when Zoom shows the student never joined.
+ * Since #878 also "Approve" and "Decline" for a family's request to move a
+ * lesson (lib/core/move-requests.ts); those links also carry the request id.
  *
  * A link carries the lesson, the action, the date and time the email showed,
  * an expiry and a random token id, signed with an HMAC. The key is derived from
@@ -17,9 +19,12 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
  * their own. It shows a confirm page whose button POSTs.
  */
 
-export type LessonAction = 'log' | 'remove' | 'missed' | 'noshow'
+export type LessonAction = 'log' | 'remove' | 'missed' | 'noshow' | 'approve_move' | 'decline_move'
 
-const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed', 'noshow']
+const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed', 'noshow', 'approve_move', 'decline_move']
+
+/** The actions about a family's move request (#878); their links carry `r`. */
+export const MOVE_ACTIONS: readonly LessonAction[] = ['approve_move', 'decline_move']
 
 export const LINK_TTL_DAYS = 7
 
@@ -34,6 +39,8 @@ export type LessonActionClaims = {
     e: number
     /** Token id, recorded on use so the link works once. */
     j: string
+    /** lesson_move_requests.id, on approve_move / decline_move links only. */
+    r?: string
 }
 
 export type VerifyResult =
@@ -55,11 +62,12 @@ export function lessonActionLinksEnabled(): boolean {
 }
 
 export function signLessonAction(
-    { lessonId, action, date, time }: { lessonId: string; action: LessonAction; date: string; time: string },
+    { lessonId, action, date, time, requestId }: { lessonId: string; action: LessonAction; date: string; time: string; requestId?: string },
     now: Date = new Date(),
 ): string | null {
     const key = signingKey()
     if (!key) return null
+    if (MOVE_ACTIONS.includes(action) && !requestId) return null
     const claims: LessonActionClaims = {
         l: lessonId,
         a: action,
@@ -67,6 +75,7 @@ export function signLessonAction(
         t: time.slice(0, 5),
         e: Math.floor(now.getTime() / 1000) + LINK_TTL_DAYS * 24 * 60 * 60,
         j: b64url(randomBytes(16)),
+        ...(requestId ? { r: requestId } : {}),
     }
     const body = b64url(Buffer.from(JSON.stringify(claims)))
     const sig = b64url(createHmac('sha256', key).update(body).digest())
@@ -93,7 +102,8 @@ export function verifyLessonAction(token: string | null | undefined, now: Date =
     if (
         !claims || typeof claims.l !== 'string' || !ACTIONS.includes(claims.a) ||
         typeof claims.d !== 'string' || typeof claims.t !== 'string' ||
-        typeof claims.e !== 'number' || typeof claims.j !== 'string'
+        typeof claims.e !== 'number' || typeof claims.j !== 'string' ||
+        (MOVE_ACTIONS.includes(claims.a) && typeof claims.r !== 'string')
     ) {
         return { ok: false, reason: 'invalid' }
     }

@@ -8,6 +8,9 @@ import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
 import { buildLessonHistory } from "@/lib/lesson-history"
 import { getMarkersForLessons } from "@/lib/recording-markers"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { familyMoveStatesCore, type FamilyMoveState } from "@/lib/core/move-requests"
+import { studioStartMs } from "@/lib/move-requests"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -90,6 +93,20 @@ export default async function StudentPage() {
 
   const nextScheduledLesson = upcomingLessons[0]
 
+  // Lessons the family can ask to move (#878): scheduled and not started yet,
+  // each with its latest request worth showing. Service-role read of this
+  // student's own requests only (it also closes ones that can no longer happen).
+  const nowMs = Date.now()
+  const movableLessons = upcomingLessons
+    .filter(l => studioStartMs(l.date, String(l.time)) > nowMs)
+    .map(l => ({ id: l.id as string, date: l.date as string, time: String(l.time).slice(0, 5), duration: (l.duration as number) || 60 }))
+  let moveStates: Record<string, FamilyMoveState> = {}
+  try {
+    moveStates = await familyMoveStatesCore(createAdminClient(), effectiveUserId, movableLessons)
+  } catch (e) {
+    console.error("Move requests fetch error:", e)
+  }
+
   // Format next lesson for UI
   const nextLesson = nextScheduledLesson ? {
     id: nextScheduledLesson.id,
@@ -136,6 +153,9 @@ export default async function StudentPage() {
         unreadCount={unreadCount || 0}
         history={history}
         markersByLesson={markersByLesson}
+        movableLessons={movableLessons}
+        moveStates={moveStates}
+        isAdminPreview={Boolean(impersonatingId)}
       />
     </>
   )

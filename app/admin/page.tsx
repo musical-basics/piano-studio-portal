@@ -7,6 +7,7 @@ import type { RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { getInquiries } from "@/app/actions/inquiries"
 import { getResources } from "@/app/actions/resources"
 import { findUnloggedForAdmin, type AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
+import { listPendingMoveRequestsCore, type PendingMoveRequest } from "@/lib/core/move-requests"
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -148,6 +149,15 @@ export default async function AdminPage() {
     console.error("Unlogged lessons fetch error:", e)
   }
 
+  // Families asking to move a lesson (#878), waiting for Approve or Decline.
+  // The read also closes requests that can no longer happen.
+  let moveRequests: PendingMoveRequest[] = []
+  try {
+    moveRequests = await listPendingMoveRequestsCore(createAdminClient())
+  } catch (e) {
+    console.error("Move requests fetch error:", e)
+  }
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
@@ -175,6 +185,7 @@ export default async function AdminPage() {
       resources={resources || []}
       pricingPlans={pricingPlans || []}
       unloggedLessons={unloggedLessons}
+      moveRequests={moveRequests}
     />
   )
 }

@@ -12,7 +12,8 @@ export const maxDuration = 60
 // Each morning: email the studio inbox about yesterday's lessons that nobody
 // logged (so no credit was taken), with what Zoom saw for each (#797: "No-show?"
 // and a No-Show button when only Lionel joined), and what the portal logged by
-// itself that day (#793). Silent when there is neither. Manual runs:
+// itself that day (#793), and families asking to move a lesson with Approve /
+// Decline buttons (#878). Silent when there is none of these. Manual runs:
 // ?date=YYYY-MM-DD for another day, ?dry=1 to build without emailing (the
 // reply then carries the email's subject and html).
 export const GET = withCronRun('unlogged-lessons', handle)
@@ -29,8 +30,8 @@ async function handle(request: Request) {
 
     try {
         const client = createAdminClient()
-        const { unlogged: lessons, autoLogged, email, emailed } = await runMorningEmail(client, date, { dryRun })
-        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged, ${autoLogged.length} logged automatically${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
+        const { unlogged: lessons, autoLogged, moveRequests, email, emailed } = await runMorningEmail(client, date, { dryRun })
+        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged, ${autoLogged.length} logged automatically, ${moveRequests.length} move request(s)${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
         return NextResponse.json({
             success: true,
             date,
@@ -38,6 +39,7 @@ async function handle(request: Request) {
             emailed,
             unlogged: lessons.map(l => ({ id: l.id, time: l.time, status: l.status, zoom: l.attendance?.kind ?? null })),
             autoLogged: autoLogged.map(l => ({ id: l.id, date: l.date, time: l.time, by: l.by, before: l.before, after: l.after })),
+            moveRequests: moveRequests.map(r => ({ id: r.id, lessonId: r.lessonId, from: `${r.fromDate} ${r.fromTime}`, to: `${r.toDate} ${r.toTime}` })),
             ...(dryRun && email ? { subject: email.subject, html: email.html, footer: email.footer } : {}),
         })
     } catch (err: any) {
