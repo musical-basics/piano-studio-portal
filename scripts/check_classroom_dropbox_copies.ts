@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict'
 import {
     classroomCopyDate, freeCopyName, isClassroomCopyName, syncClassroomDropboxCopies, COPIES_TABLE,
+    type CopyAlertEmail,
 } from '../lib/classroom-dropbox-copies'
 import type { DbClient } from '../lib/supabase/admin'
 
@@ -45,6 +46,7 @@ function fakeDb(tables: Record<string, Row[]>) {
         gte(col: string, v: any) { this.filters.push(r => r[col] >= v); return this }
         in(col: string, vs: any[]) { this.filters.push(r => vs.includes(r[col])); return this }
         not(col: string, _op: string, _v: null) { this.filters.push(r => r[col] !== null && r[col] !== undefined); return this }
+        is(col: string, v: null) { this.filters.push(r => (r[col] ?? null) === v); return this }
         update(p: Row) { this.op = 'update'; this.payload = p; return this }
         insert(p: Row) { this.op = 'insert'; this.payload = p; return this }
         then(resolve: (v: any) => unknown, reject?: (e: any) => unknown) { return Promise.resolve(this.run()).then(resolve, reject) }
@@ -143,7 +145,7 @@ async function main() {
     const db = fakeDb({
         classroom_recordings: [...recordings, piano].map(r => ({ ...r })),
         profiles: [
-            { id: S1, role: 'student', dropbox_recording_folder: 'Student One Recordings' },
+            { id: S1, role: 'student', name: 'Student One', dropbox_recording_folder: 'Student One Recordings' },
             { id: S2, role: 'student', dropbox_recording_folder: null },
         ],
         [COPIES_TABLE]: [],
@@ -151,8 +153,16 @@ async function main() {
     // The Zoom video of the same day is already there and must not be touched.
     const box = fakeDropbox({ [`${folder}/2026-11-16 - Lesson.mp4`]: 500_000_000 })
     const headSize = async (url: string) => sizes[url] ?? null
+    // The studio emails (#952), captured; a send can be made to fail.
+    const emails: CopyAlertEmail[] = []
+    let sendWorks = true
+    const alert = async (email: CopyAlertEmail) => {
+        if (!sendWorks) return false
+        emails.push(email)
+        return true
+    }
     const run = (extra: Partial<Parameters<typeof syncClassroomDropboxCopies>[0]> = {}) =>
-        syncClassroomDropboxCopies({ client: db, dbx: box.dbx, headSize, now: NOW, days: 14, ...extra })
+        syncClassroomDropboxCopies({ client: db, dbx: box.dbx, headSize, now: NOW, days: 14, alert, ...extra })
 
     // Dry run: the plan, nothing queued or started.
     const dry = await run({ dryRun: true })
@@ -191,7 +201,11 @@ async function main() {
     short.state = 'complete'
     short.size -= 1
     jobFor(recordings[5].url)[1].state = 'failed'
+    sendWorks = false // the studio email can't go out this time
     const third = await run()
+    sendWorks = true
+    assert.deepEqual(third.alerted, [], 'a send that failed is not counted')
+    assert.equal(emails.length, 0)
     assert.deepEqual(third.done.map(d => d.recordingId), ['r-lesson'])
     assert.equal(third.failed.length, 1)
     assert.match(third.failed[0].error, /size mismatch/)
@@ -201,9 +215,16 @@ async function main() {
     assert.equal(byRec('r-lesson').dropbox_size, sizes[recordings[0].url])
     assert.equal(byRec('r-same-day').status, 'failed')
     assert.equal(byRec('r-old').status, 'pending', 'a failed transfer goes back in the queue')
+    assert.equal(byRec('r-same-day').alerted_at ?? null, null, 'the failed send left it to be emailed next run')
 
-    // Next run retries the failed transfer at the same path, once.
+    // Next run retries the failed transfer at the same path, once, and emails
+    // the studio about the copy that gave up (#952).
     const fourth = await run()
+    assert.deepEqual(fourth.alerted, ['r-same-day'])
+    assert.equal(emails.length, 1)
+    assert.equal(emails[0].subject, 'Classroom video not copied to Dropbox: Student One, Mon, Nov 16, 2026')
+    assert.ok(emails[0].lines.some(l => /size mismatch/.test(l)), 'names the error')
+    assert.ok(emails[0].lines.some(l => l.includes('Student One')))
     assert.equal(fourth.started.length, 1)
     assert.equal(fourth.started[0].path, `${folder}/2026-11-10 - Classroom Lesson.mp4`)
     assert.equal(box.saveUrlCalls.length, 4)
@@ -216,6 +237,48 @@ async function main() {
     assert.equal(sixth.queued + sixth.started.length + sixth.done.length + sixth.inProgress, 0)
     assert.equal(box.saveUrlCalls.length, 4, "nothing copied again")
     assert.equal(box.files.get(`${folder}/2026-11-16 - lesson.mp4`.toLowerCase())?.size, 500_000_000, 'Zoom video untouched')
+    assert.equal(emails.length, 1, 'never emailed twice for the same copy')
+    const EM_DASH = String.fromCharCode(0x2014)
+    assert.ok(!emails.some(e => e.subject.includes(EM_DASH) || e.lines.some(l => l.includes(EM_DASH)) || e.footer.includes(EM_DASH)))
+
+    // ---- A copy Dropbox refuses three times: gives up on the third, one email.
+    const R3 = rec('r-refused', S1, '2026-11-17T22:00:00Z', '2026-11-17T22:50:00Z')
+    const db2 = fakeDb({
+        classroom_recordings: [{ ...R3 }],
+        profiles: [{ id: S1, role: 'student', name: 'Student One', dropbox_recording_folder: 'Student One Recordings' }],
+        [COPIES_TABLE]: [],
+    })
+    const box2 = fakeDropbox({})
+    box2.dbx.filesSaveUrl = async () => { throw Object.assign(new Error('refused'), { error: { error_summary: 'too_many_write_operations/..' } }) }
+    const emails2: CopyAlertEmail[] = []
+    const run2 = () => syncClassroomDropboxCopies({
+        client: db2, dbx: box2.dbx, headSize: async () => 900_000_000, now: NOW, days: 14,
+        alert: async (e) => { emails2.push(e); return true },
+    })
+    for (let i = 1; i <= 2; i++) {
+        const r = await run2()
+        assert.equal(r.failed.length, 0, `try ${i} goes back in the queue`)
+        assert.equal(emails2.length, 0)
+    }
+    const third2 = await run2()
+    assert.equal(third2.failed.length, 1, 'the third try gives up')
+    assert.deepEqual(third2.alerted, ['r-refused'])
+    assert.equal(emails2.length, 1)
+    assert.equal(emails2[0].subject, 'Classroom video not copied to Dropbox: Student One, Tue, Nov 17, 2026')
+    assert.ok(emails2[0].lines.some(l => /Gave up after 3 tries\. Error: save_url: too_many_write_operations/.test(l)), emails2[0].lines.join(' | '))
+    await run2()
+    await run2()
+    assert.equal(emails2.length, 1, 'never emailed twice for the same copy')
+
+    // A dry run never emails.
+    const db3 = fakeDb({
+        classroom_recordings: [],
+        profiles: [],
+        [COPIES_TABLE]: [{ id: 'c-x', recording_id: 'r-x', url: 'u', student_id: S1, status: 'failed', attempts: 3, error: 'e', alerted_at: null }],
+    })
+    let dryEmails = 0
+    await syncClassroomDropboxCopies({ client: db3, dbx: fakeDropbox({}).dbx, now: NOW, dryRun: true, alert: async () => { dryEmails++; return true } })
+    assert.equal(dryEmails, 0)
 
     console.log('classroom Dropbox copies: all checks passed')
 }

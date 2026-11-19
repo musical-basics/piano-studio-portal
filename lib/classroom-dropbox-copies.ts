@@ -1,5 +1,6 @@
 import type { Dropbox } from 'dropbox'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
+import { sendCronAlert } from '@/lib/cron-alerts'
 import { getDropboxClient, MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock } from '@/lib/studio-timezone'
 import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStartMs, UUID_RE } from '@/lib/classroom-recordings'
@@ -25,6 +26,12 @@ import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStartM
  * Families are not emailed about these copies: the classroom hand-off already
  * sends "your recording is ready", and the new-recordings cron ignores files
  * with this name (isClassroomCopyName).
+ *
+ * Lionel is (#952): when a copy gives up (status 'failed': MAX_ATTEMPTS tries
+ * used, or the file in Dropbox came out the wrong size), the end of the run
+ * emails the studio inbox once, naming the student, the recording date and the
+ * error (alertGaveUpCopies). alerted_at makes it once per row; an email that
+ * could not be sent is tried again on the next run.
  */
 
 export const COPIES_TABLE = 'classroom_recording_dropbox_copies'
@@ -100,7 +107,12 @@ export type CopySyncResult = {
     skipped: { recordingId: string; reason: string }[]
     /** Students with recordings to copy but no Dropbox folder. */
     noFolder: string[]
+    /** Recordings whose given-up copy was emailed to the studio this run (#952). */
+    alerted: string[]
 }
+
+/** One studio email (the shape sendCronAlert takes). */
+export type CopyAlertEmail = { subject: string; lines: string[]; footer: string }
 
 export type CopySyncOptions = {
     client?: DbClient
@@ -115,6 +127,8 @@ export type CopySyncOptions = {
     now?: Date
     /** R2 size by HEAD; injectable for tests. */
     headSize?: (url: string) => Promise<number | null>
+    /** Sends the "copy gave up" email (#952); true when sent. Default sendCronAlert to the studio inbox. */
+    alert?: (email: CopyAlertEmail) => Promise<boolean>
 }
 
 async function headSizeOf(url: string): Promise<number | null> {
@@ -146,7 +160,7 @@ export async function syncClassroomDropboxCopies(opts: CopySyncOptions = {}): Pr
     const headSize = opts.headSize ?? headSizeOf
     let dbxClient = opts.dbx ?? null
     const dbx = () => (dbxClient ??= getDropboxClient())
-    const result: CopySyncResult = { queued: 0, started: [], done: [], failed: [], inProgress: 0, waiting: [], skipped: [], noFolder: [] }
+    const result: CopySyncResult = { queued: 0, started: [], done: [], failed: [], inProgress: 0, waiting: [], skipped: [], noFolder: [], alerted: [] }
     const noFolder = new Set<string>()
 
     // ---- 1. Queue recordings that have no copy row yet.
@@ -412,7 +426,118 @@ export async function syncClassroomDropboxCopies(opts: CopySyncOptions = {}): Pr
         }
     }
 
+    // ---- 4. Tell the studio about copies that gave up (#952). Never fails the run.
+    if (!dryRun) {
+        const alert = opts.alert ?? ((email: CopyAlertEmail) => sendCronAlert(supabase, email))
+        try {
+            result.alerted = await alertGaveUpCopies(supabase, { alert, log, now, studentId: opts.studentId })
+        } catch (err) {
+            log(`could not email about failed copies: ${err instanceof Error ? err.message : String(err)}`)
+        }
+    }
+
     return result
+}
+
+function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+/** "Mon, Nov 16" for a YYYY-MM-DD. */
+function dayLabel(date: string): string {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** The "copy gave up" email for one row (#952). */
+export function copyGaveUpEmail(info: {
+    studentName: string
+    /** YYYY-MM-DD the recording started, Eastern. */
+    date: string
+    attempts: number
+    error: string
+    dropboxPath: string | null
+    rowId: string
+}): CopyAlertEmail {
+    const tries = info.attempts === 1 ? '1 try' : `${info.attempts} tries`
+    return {
+        subject: `Classroom video not copied to Dropbox: ${info.studentName}, ${dayLabel(info.date)}`,
+        lines: [
+            `Student: ${escapeHtml(info.studentName)}`,
+            `Recording from ${escapeHtml(dayLabel(info.date))}`,
+            `Gave up after ${tries}. Error: ${escapeHtml(info.error)}`,
+            ...(info.dropboxPath ? [`It was going to: ${escapeHtml(info.dropboxPath)}`] : []),
+        ],
+        footer: 'The video itself is safe in the classroom library (admin, Classroom recordings tab); only its copy in the ' +
+            `student's Dropbox folder is missing, and nothing retries it on its own now. Copy row ${escapeHtml(info.rowId)} in ` +
+            `${COPIES_TABLE}. This email comes once per recording.`,
+    }
+}
+
+/**
+ * Emails the studio once for every copy that gave up and was not emailed yet.
+ * The row is claimed first (alerted_at set only where it is still empty), so two
+ * runs at once can't both send; a send that fails clears the claim so the next
+ * run tries again. Returns the recording ids emailed.
+ */
+export async function alertGaveUpCopies(
+    supabase: DbClient,
+    { alert, log = () => {}, now = new Date(), studentId }: {
+        alert: (email: CopyAlertEmail) => Promise<boolean>
+        log?: (msg: string) => void
+        now?: Date
+        studentId?: string
+    },
+): Promise<string[]> {
+    let query = supabase
+        .from(COPIES_TABLE)
+        .select('id, recording_id, student_id, dropbox_path, attempts, error, alerted_at')
+        .eq('status', 'failed')
+        .is('alerted_at', null)
+    if (studentId) query = query.eq('student_id', studentId)
+    const { data, error } = await query
+    if (error) throw new Error(`${COPIES_TABLE} failed-copies query failed: ${error.message}`)
+    const rows = (data || []) as Array<{ id: string; recording_id: string; student_id: string; dropbox_path: string | null; attempts: number; error: string | null }>
+    if (rows.length === 0) return []
+
+    const { data: recs } = await supabase.from('classroom_recordings').select('id, url, created_at').in('id', rows.map(r => r.recording_id))
+    const recById = new Map((recs || []).map(r => [r.id as string, r as { url: string; created_at: string }]))
+    const { data: people } = await supabase.from('profiles').select('id, name').in('id', [...new Set(rows.map(r => r.student_id))])
+    const nameById = new Map((people || []).map(p => [p.id as string, (p.name as string) || 'a student']))
+
+    const sent: string[] = []
+    for (const row of rows) {
+        const { data: claimed } = await supabase
+            .from(COPIES_TABLE)
+            .update({ alerted_at: now.toISOString() })
+            .eq('id', row.id)
+            .is('alerted_at', null)
+            .select('id')
+        if (!claimed || claimed.length === 0) continue // the other trigger is emailing it
+
+        const rec = recById.get(row.recording_id)
+        const email = copyGaveUpEmail({
+            studentName: nameById.get(row.student_id) || 'a student',
+            date: rec ? classroomCopyDate(rec) : isoToStudioWallClock(now.toISOString()).localDate,
+            attempts: row.attempts,
+            error: row.error || 'no error was recorded',
+            dropboxPath: row.dropbox_path,
+            rowId: row.id,
+        })
+        let ok = false
+        try {
+            ok = await alert(email)
+        } catch (err) {
+            log(`email about failed copy of ${row.recording_id} threw: ${err instanceof Error ? err.message : String(err)}`)
+        }
+        if (ok) {
+            sent.push(row.recording_id)
+            log(`emailed the studio: copy of ${row.recording_id} gave up`)
+        } else {
+            await supabase.from(COPIES_TABLE).update({ alerted_at: null }).eq('id', row.id)
+            log(`could not email about failed copy of ${row.recording_id}; next run tries again`)
+        }
+    }
+    return sent
 }
 
 async function updateRow(supabase: DbClient, id: string, fields: Record<string, unknown>): Promise<void> {
