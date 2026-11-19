@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX, Timer } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX, Timer, Undo2 } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 
@@ -34,6 +34,8 @@ interface DashboardTabProps {
     onMessage: (studentId: string) => void
     /** "Running late" note to this family (today's lessons only, asks first). */
     onRunningLate?: (lesson: TodayLesson) => void
+    /** Give back the credit a log took, with a reason (asks first, #794). */
+    onUndoLog?: (lesson: TodayLesson) => void
     isLoading?: boolean
 }
 
@@ -54,6 +56,7 @@ export function DashboardTab({
     onRemind,
     onMessage,
     onRunningLate,
+    onUndoLog,
     isLoading = false
 }: DashboardTabProps) {
 
@@ -261,6 +264,18 @@ export function DashboardTab({
                                             <Pencil className="h-4 w-4 mr-1" />
                                             Edit
                                         </Button>
+                                        {onUndoLog && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => onUndoLog(lesson)}
+                                                disabled={isLoading}
+                                                title="Give back the credit this log took (asks first)"
+                                            >
+                                                <Undo2 className="h-4 w-4 mr-1" />
+                                                Undo log
+                                            </Button>
+                                        )}
                                     </div>
                                     ) : (
                                     <div className="flex gap-2 flex-wrap sm:justify-end sm:max-w-[50%]">

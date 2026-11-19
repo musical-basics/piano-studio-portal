@@ -38,6 +38,7 @@ import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
 import { RunningLateDialog } from "@/components/admin/running-late-dialog"
+import { UndoLogDialog } from "@/components/admin/undo-log-dialog"
 import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
@@ -155,6 +156,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const [missedLessonId, setMissedLessonId] = useState<string | null>(null)
     // "Running late": today's lesson whose confirm dialog is open (#788)
     const [runningLateLessonId, setRunningLateLessonId] = useState<string | null>(null)
+    // "Undo log": the logged lesson whose confirm dialog is open (#794)
+    const [undoLogLessonId, setUndoLogLessonId] = useState<string | null>(null)
 
     const [showReminderModal, setShowReminderModal] = useState(false)
     const [lessonForReminder, setLessonForReminder] = useState<TodayLesson | null>(null)
@@ -910,6 +913,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onCancel={handleCancelLesson}
                             onMissed={(lesson) => setMissedLessonId(lesson.id)}
                             onRunningLate={(lesson) => setRunningLateLessonId(lesson.id)}
+                            onUndoLog={(lesson) => setUndoLogLessonId(lesson.id)}
                             onRemind={(lesson) => {
                                 setLessonForReminder(lesson)
                                 setShowReminderModal(true)
@@ -956,6 +960,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         <CompletedTab
                             lessons={completedLessons}
                             onEdit={handleEditLesson}
+                            onUndoLog={(lesson) => setUndoLogLessonId(lesson.id)}
                         />
                     </TabsContent>
 
@@ -1044,6 +1049,13 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsContent>
                 </Tabs >
             </main >
+
+            {/* "Undo log" (#794), opened from Today and from Completed */}
+            <UndoLogDialog
+                lessonId={undoLogLessonId}
+                onClose={() => setUndoLogLessonId(null)}
+                onDone={() => setCalendarVersion(v => v + 1)}
+            />
 
             {/* Log Lesson Modal */}
             < Dialog open={showLogLessonModal} onOpenChange={setShowLogLessonModal} >
