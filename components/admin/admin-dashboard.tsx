@@ -47,7 +47,8 @@ import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { MoveRequestsCard } from "@/components/admin/move-requests-card"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
-import { NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
+import { FreeReasonChips, NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
+import { isFreeTrialLesson } from "@/app/actions/free-trial"
 import { appendNotePhrase } from "@/lib/lesson-note-phrases"
 import { getLastHomework } from "@/app/actions/last-homework"
 import type { LastHomework } from "@/lib/last-homework"
@@ -132,6 +133,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // "Free, don't take a credit" in the log dialog (#756).
     const [logFree, setLogFree] = useState(false)
     const [logFreeReason, setLogFreeReason] = useState("")
+    // #946: the lesson is the new student's free trial, so the log is free on its own.
+    const [logIsTrial, setLogIsTrial] = useState(false)
+    const logTrialSeq = useRef(0)
     const [videoUrl, setVideoUrl] = useState("")
     const [sheetMusicUrl, setSheetMusicUrl] = useState("")
     const [scheduleDate, setScheduleDate] = useState("")
@@ -249,6 +253,24 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const dayLessons = isViewingToday ? todaysLessons : fetchedDay?.date === dayViewDate ? fetchedDay.lessons : []
     const dayEvents = isViewingToday ? todaysEvents : fetchedDay?.date === dayViewDate ? fetchedDay.events : []
 
+    /** Asks whether the lesson being logged is the free trial (#946), for the dialog's note. */
+    const checkLogTrial = (studentId: string | null, lessonId: string | null, date: string, time: string) => {
+        const seq = ++logTrialSeq.current
+        setLogIsTrial(false)
+        if (!studentId || !date) return
+        isFreeTrialLesson(studentId, lessonId, date, String(time).slice(0, 5))
+            .then(trial => { if (seq === logTrialSeq.current) setLogIsTrial(trial) })
+            .catch(() => { /* no note; the log still decides on save */ })
+    }
+
+    // "Log a past lesson": the date and time can change, and whether it is the
+    // first lesson depends on them, so ask again as they do.
+    useEffect(() => {
+        if (!showLogLessonModal || !selectedStudentForLog) return
+        checkLogTrial(selectedStudentForLog.id, null, logDate, logTime)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showLogLessonModal, selectedStudentForLog, logDate, logTime])
+
     /** Fills an empty Homework box with last lesson's homework (#943); never overwrites typing. */
     const prefillLastHomework = (studentId: string | null, date: string, time: string) => {
         const seq = ++lastHomeworkSeq.current
@@ -274,6 +296,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         prefillLastHomework(ownHomework.trim() ? null : lesson.student_id, lesson.date, lesson.time)
         setLogFree(false)
         setLogFreeReason('')
+        checkLogTrial(lesson.student_id, lesson.id, lesson.date, lesson.time)
         setShowLogLessonModal(true)
     }
 
@@ -367,7 +390,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
             toast({
                 title: "Lesson Logged",
-                description: `Successfully logged lesson. ${free ? "Free: no credit taken." : "Credit deducted."}${autoScheduleMsg}`
+                description: `Successfully logged lesson. ${(result as any)?.trial ? "Free trial: no credit taken." : free || (result as any)?.free ? "Free: no credit taken." : "Credit deducted."}${autoScheduleMsg}`
             })
             setShowLogLessonModal(false)
             setLessonNotes("")
@@ -1307,6 +1330,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 Free, don&apos;t take a credit
                             </Label>
                         </div>
+                        {/* #947: ready reasons; a tap ticks Free and fills the reason. */}
+                        <FreeReasonChips
+                            value={logFree ? logFreeReason : ""}
+                            onPick={(reason) => { setLogFree(true); setLogFreeReason(reason) }}
+                            disabled={isLoading}
+                        />
                         {logFree && (
                             <Input
                                 id="log-free-reason"
@@ -1315,6 +1344,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 onChange={(e) => setLogFreeReason(e.target.value)}
                                 maxLength={300}
                             />
+                        )}
+                        {logIsTrial && !logFree && (
+                            <p className="text-sm text-emerald-700 dark:text-emerald-400">
+                                First lesson and nothing paid yet: this is the free trial, so it is logged free on its own (reason Trial).
+                            </p>
                         )}
                         <p className="text-xs text-muted-foreground">
                             The family still gets the usual lesson email. Nothing is sent about it being free. The credit check leaves it alone.
@@ -1326,7 +1360,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             Cancel
                         </Button>
                         <Button onClick={handleSaveLesson} disabled={isLoading}>
-                            {isLoading ? 'Saving...' : logFree ? 'Save Lesson (free)' : 'Save Lesson'}
+                            {isLoading ? 'Saving...' : logFree || logIsTrial ? 'Save Lesson (free)' : 'Save Lesson'}
                         </Button>
                     </div>
                 </DialogContent>

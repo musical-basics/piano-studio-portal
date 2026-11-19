@@ -17,6 +17,9 @@ import {
     updateLessonWithOptionalHomework,
 } from '@/lib/core/lessons'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { createAdminClient as createServiceClient } from '@/lib/supabase/admin'
+import { checkFreeTrial } from '@/lib/free-trial'
+import { FREE_TRIAL_REASON } from '@/lib/free-lesson-reasons'
 import { markNoShowCore } from '@/lib/core/no-show'
 import { shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
@@ -133,7 +136,7 @@ export async function logPastLesson(
     videoUrl?: string,
     sheetMusicUrl?: string,
     homework?: string,
-    free?: { reason?: string } | null
+    freeAsked?: { reason?: string } | null
 ) {
     const supabase = await createClient()
 
@@ -158,6 +161,17 @@ export async function logPastLesson(
 
     if (studentError || !student) {
         return { error: 'Student not found' }
+    }
+
+    // A new student's free trial is logged free on its own (#946, lib/free-trial.ts).
+    let free = freeAsked ?? null
+    let trial = false
+    if (!free) {
+        const decision = await checkFreeTrial(createServiceClient(), { studentId, lessonId: null, date, time })
+        if (decision.trial) {
+            free = { reason: FREE_TRIAL_REASON }
+            trial = true
+        }
     }
 
     // Create the completed lesson
@@ -298,7 +312,9 @@ export async function logPastLesson(
 
     return {
         success: true,
-        message: `Lesson logged for ${student.name}. Credit deducted.`
+        free: Boolean(free),
+        trial,
+        message: `Lesson logged for ${student.name}. ${trial ? 'Free trial, no credit taken.' : free ? 'Free, no credit taken.' : 'Credit deducted.'}`
     }
 }
 

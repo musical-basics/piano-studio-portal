@@ -11,6 +11,7 @@ import { markNoShowCore } from '@/lib/core/no-show'
 import { attendanceNote, zoomAttendance } from '@/lib/zoom-attendance'
 import { findLastHomework } from '@/lib/last-homework'
 import { LESSON_NOTE_PHRASES } from '@/lib/lesson-note-phrases'
+import { checkFreeTrial } from '@/lib/free-trial'
 import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -417,8 +418,13 @@ ${form('Mark no-show', 'noshow')}`)
 
     if (claims.a === 'log') {
         const quiet = isTooOldForUsualLog(lesson.date)
+        // #946: the new student's free trial is logged free on its own.
+        const trial = (await checkFreeTrial(client, { studentId: lesson.student_id, lessonId: lesson.id, date: lesson.date, time: String(lesson.time) })).trial
+        const cost = trial ? "This is the student's free trial, so it is logged free (no credit taken)." : 'This takes 1 credit.'
         const effect = quiet
-            ? `This takes 1 credit. The lesson is over ${QUIET_LOG_AFTER_DAYS} days old, so it is logged quietly: no email to the family and no next lesson booked.`
+            ? `${cost} The lesson is over ${QUIET_LOG_AFTER_DAYS} days old, so it is logged quietly: no email to the family and no next lesson booked.`
+            : trial
+            ? `${cost} It sends 1 family the usual emails (the lesson email, plus the next week's booking if one is made), the same as logging it in admin.`
             : "This takes 1 credit and sends 1 family the usual emails (the lesson email, plus the next week's booking if one is made), the same as logging it in admin."
         const notesHint = quiet ? 'optional, saved on the lesson' : "optional, goes in the family's lesson email"
         // #943: start from what the lesson has, else last lesson's homework.
@@ -588,7 +594,8 @@ export async function POST(request: Request) {
         }
         await record(`logged quietly: credits ${quiet.previousCredits} -> ${quiet.newCredits}`, lesson.student_id)
         console.log(`[lesson-action] logged old lesson ${lesson.id} quietly from email (credits ${quiet.previousCredits} -> ${quiet.newCredits})`)
-        return message('Logged', `${label} is logged and 1 credit was taken (${quiet.newCredits} left). Nobody was emailed and no lesson was booked.`)
+        const took = quiet.trial ? 'logged free as the free trial, no credit taken' : 'logged and 1 credit was taken'
+        return message('Logged', `${label} is ${took} (${quiet.newCredits} left). Nobody was emailed and no lesson was booked.`)
     }
 
     if (claims.a === 'log') {
@@ -613,7 +620,8 @@ export async function POST(request: Request) {
         const left = result.new_credits
         await record(`logged: credits ${result.previous_credits} -> ${left}`, lesson.student_id)
         console.log(`[lesson-action] logged ${lesson.id} from email (credits ${result.previous_credits} -> ${left})`)
-        return message('Logged', `${label} is logged and 1 credit was taken${typeof left === 'number' ? ` (${left} left)` : ''}.`)
+        const took = result.trial ? 'logged free as the free trial, no credit taken' : result.free ? 'logged free, no credit taken' : 'logged and 1 credit was taken'
+        return message('Logged', `${label} is ${took}${typeof left === 'number' ? ` (${left} left)` : ''}.`)
     }
 
     // remove: the row only, and only while it is still unlogged.

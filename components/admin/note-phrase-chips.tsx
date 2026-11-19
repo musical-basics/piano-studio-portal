@@ -1,6 +1,7 @@
 "use client"
 
 import { LESSON_NOTE_PHRASES } from "@/lib/lesson-note-phrases"
+import { FREE_LESSON_REASONS } from "@/lib/free-lesson-reasons"
 
 /**
  * One-tap phrases under a lesson notes box (#944). The parent adds the picked
@@ -20,6 +21,34 @@ export function NotePhraseChips({ onPick, disabled }: { onPick: (phrase: string)
                     + {phrase}
                 </button>
             ))}
+        </div>
+    )
+}
+
+/**
+ * Ready reasons next to "Free, don't take a credit" (#947,
+ * lib/free-lesson-reasons.ts). A tap ticks Free and sets the reason to the
+ * chip (one reason per lesson, so the history reads the same way every time);
+ * the reason box can still be typed in. The chosen one is highlighted.
+ */
+export function FreeReasonChips({ value, onPick, disabled }: { value: string; onPick: (reason: string) => void; disabled?: boolean }) {
+    return (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Reason for the free lesson">
+            {FREE_LESSON_REASONS.map(reason => {
+                const picked = value.trim().toLowerCase() === reason.toLowerCase()
+                return (
+                    <button
+                        key={reason}
+                        type="button"
+                        disabled={disabled}
+                        aria-pressed={picked}
+                        onClick={() => onPick(reason)}
+                        className={`rounded-full border px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${picked ? "border-primary bg-primary text-primary-foreground" : "bg-muted/40 hover:bg-muted"}`}
+                    >
+                        {reason}
+                    </button>
+                )
+            })}
         </div>
     )
 }

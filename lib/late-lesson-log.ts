@@ -2,6 +2,8 @@ import { revalidatePath } from 'next/cache'
 import type { DbClient } from '@/lib/supabase/admin'
 import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import { UNLOGGED_STATUSES } from '@/lib/unlogged-lessons'
+import { checkFreeTrial } from '@/lib/free-trial'
+import { FREE_TRIAL_REASON } from '@/lib/free-lesson-reasons'
 
 /**
  * Logging a lesson that is more than a week old, from the "Log it" button.
@@ -29,7 +31,8 @@ export function isTooOldForUsualLog(date: string, today: string = studioToday())
 }
 
 export type QuietLogResult =
-    | { ok: true; previousCredits: number; newCredits: number }
+    /** trial: the new student's free trial (#946), logged free with no credit taken. */
+    | { ok: true; previousCredits: number; newCredits: number; trial: boolean }
     | { ok: false; changed: true }
     | { ok: false; changed?: false; error: string }
 
@@ -46,7 +49,7 @@ export async function logOldLessonQuietly(
     const started = new Date()
     const { data: before, error: readError } = await client
         .from('lessons')
-        .select('id, student_id, status')
+        .select('id, student_id, status, date, time')
         .eq('id', lessonId)
         .maybeSingle()
     if (readError) return { ok: false, error: `lesson lookup failed: ${readError.message}` }
@@ -80,6 +83,27 @@ export async function logOldLessonQuietly(
         return { ok: false, error: `could not read the credits: ${creditsError?.message || 'no profile'}` }
     }
     const previousCredits = Number(profile.credits ?? 0)
+
+    // A new student's free trial (#946): logged free, nothing taken, no ledger row.
+    const decision = await checkFreeTrial(client, { studentId, lessonId, date: String(before.date), time: String(before.time) })
+    if (decision.trial) {
+        const { error: freeError } = await client
+            .from('lessons')
+            .update({ credit_snapshot_before: previousCredits, credit_snapshot: previousCredits, free_reason: FREE_TRIAL_REASON })
+            .eq('id', lessonId)
+        if (freeError) {
+            await undo()
+            return { ok: false, error: `could not log the free trial: ${freeError.message}` }
+        }
+        try {
+            revalidatePath('/admin')
+            revalidatePath('/student')
+        } catch {
+            // Outside a request (scripts): nothing to revalidate.
+        }
+        return { ok: true, previousCredits, newCredits: previousCredits, trial: true }
+    }
+
     const newCredits = previousCredits - 1
     const { error: deductError } = await client.from('profiles').update({ credits: newCredits }).eq('id', studentId)
     if (deductError) {
@@ -115,5 +139,5 @@ export async function logOldLessonQuietly(
     } catch {
         // Outside a request (scripts): nothing to revalidate.
     }
-    return { ok: true, previousCredits, newCredits }
+    return { ok: true, previousCredits, newCredits, trial: false }
 }

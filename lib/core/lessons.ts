@@ -15,6 +15,8 @@ import { sendMessageCore } from '@/lib/core/messages'
 import { LATE_CANCEL_FEE, isLateCancellation } from '@/lib/billing-policy'
 import { recordBillingTransaction } from '@/lib/core/billing'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { checkFreeTrial } from '@/lib/free-trial'
+import { FREE_TRIAL_REASON } from '@/lib/free-lesson-reasons'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -379,7 +381,7 @@ export async function logLessonCore({
     sheetMusicUrl,
     awaitNotifications = false,
     completedSource = 'agent_log',
-    free = null,
+    free: freeAsked = null,
 }: LogLessonArgs) {
     // Credit deduction is a privileged cross-user write on `profiles`. When this
     // is called from the admin UI, `client` is the admin's own RLS-scoped session,
@@ -415,6 +417,24 @@ export async function logLessonCore({
         lesson.credit_snapshot_before !== null ||
         lesson.credit_snapshot !== null
     const needsCredit = !isAlreadyCompleted || (isAlreadyCompleted && !hasSnapshots)
+
+    // A new student's free trial is logged free on its own (#946,
+    // lib/free-trial.ts), whichever path logs it. Asked-for free wins.
+    let free = freeAsked
+    let trial = false
+    if (!free && needsCredit) {
+        const decision = await checkFreeTrial(supabaseAdmin, {
+            studentId: lesson.student_id,
+            lessonId,
+            date: lesson.date,
+            time: String(lesson.time),
+        })
+        if (decision.trial) {
+            free = { reason: FREE_TRIAL_REASON }
+            trial = true
+            console.log(`logLessonCore: ${lessonId} is the free trial (${decision.why}), no credit taken`)
+        }
+    }
 
     const { data: loggedLesson, error: lessonError } = await updateLessonWithOptionalHomework(
         client,
@@ -577,7 +597,13 @@ export async function logLessonCore({
         credit_repaired: creditRepaired,
         previous_credits: previousCredits,
         new_credits: newCredits,
-        message: free && needsCredit
+        /** Logged free (asked for, or the free trial): no credit taken. */
+        free: Boolean(free && needsCredit),
+        /** Logged free because it is the new student's free trial (#946). */
+        trial,
+        message: trial
+            ? `Free trial logged. No credit taken (balance ${newCredits}).`
+            : free && needsCredit
             ? `Lesson logged free. No credit taken (balance ${newCredits}).`
             : creditRepaired
             ? `Lesson was already completed (via Zoom) but had no credit snapshot. Credit repaired (${previousCredits} -> ${newCredits}).`

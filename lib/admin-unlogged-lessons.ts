@@ -194,7 +194,8 @@ export async function logUnloggedLessonForAdmin(
             return { ok: false, text: `Logging did not finish: ${quiet.error}. Please check this lesson before trying again.` }
         }
         console.log(`[admin-unlogged] logged old lesson ${lesson.id} quietly from admin (credits ${quiet.previousCredits} -> ${quiet.newCredits})`)
-        return { ok: true, text: `${label} is logged and 1 credit was taken (${quiet.newCredits} left). Nobody was emailed and no lesson was booked.` }
+        const took = quiet.trial ? 'logged free as the free trial, no credit taken' : 'logged and 1 credit was taken'
+        return { ok: true, text: `${label} is ${took} (${quiet.newCredits} left). Nobody was emailed and no lesson was booked.` }
     }
 
     const result = await logLessonCore({
@@ -213,7 +214,8 @@ export async function logUnloggedLessonForAdmin(
     }
     const left = result.new_credits
     console.log(`[admin-unlogged] logged ${lesson.id} from admin (credits ${result.previous_credits} -> ${left})`)
-    return { ok: true, text: `${label} is logged and 1 credit was taken${typeof left === 'number' ? ` (${left} left)` : ''}.` }
+    const took = result.trial ? 'logged free as the free trial, no credit taken' : result.free ? 'logged free, no credit taken' : 'logged and 1 credit was taken'
+    return { ok: true, text: `${label} is ${took}${typeof left === 'number' ? ` (${left} left)` : ''}.` }
 }
 
 /** "Didn't happen": deletes the lesson row only, while it is still unlogged. Nobody is told. */
