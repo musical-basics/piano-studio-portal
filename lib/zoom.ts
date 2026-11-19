@@ -168,3 +168,45 @@ export async function updateZoomMeeting(
         return false
     }
 }
+
+/**
+ * #926: read a meeting back after moving it, so every move is checked. Needs the
+ * Zoom app's "View a meeting" permission (meeting:read:meeting:admin); without it
+ * Zoom answers 4711 and this returns 'unknown', which callers treat as "not
+ * checked" (no warning), so it is harmless until the permission is added.
+ *
+ * `expectedStartIso` is the real instant (studioWallClockToISO). Matches when the
+ * start is within a minute and the length is the same.
+ */
+export async function checkZoomMeetingTime(
+    meetingId: string,
+    expectedStartIso: string,
+    duration: number,
+): Promise<{ status: 'ok' | 'mismatch' | 'unknown'; actualStart?: string; actualDuration?: number }> {
+    const token = await getZoomAccessToken()
+    if (!token) return { status: 'unknown' }
+    try {
+        const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+            const body = await response.text()
+            if (!/4711/.test(body)) console.error(`checkZoomMeetingTime: Zoom answered ${response.status}: ${body.slice(0, 200)}`)
+            return { status: 'unknown' }
+        }
+        const meeting = await response.json()
+        const actualMs = Date.parse(meeting.start_time)
+        const expectedMs = Date.parse(expectedStartIso)
+        if (isNaN(actualMs) || isNaN(expectedMs)) return { status: 'unknown' }
+        const sameStart = Math.abs(actualMs - expectedMs) < 60_000
+        const sameLength = !duration || Number(meeting.duration) === Number(duration)
+        return {
+            status: sameStart && sameLength ? 'ok' : 'mismatch',
+            actualStart: meeting.start_time,
+            actualDuration: Number(meeting.duration),
+        }
+    } catch (error) {
+        console.error('checkZoomMeetingTime failed:', error)
+        return { status: 'unknown' }
+    }
+}

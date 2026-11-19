@@ -1,7 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
-import { studioNow, studioToday, studioTzAbbr } from '@/lib/studio-timezone'
+import { studioNow, studioToday, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
@@ -933,12 +933,27 @@ export async function rescheduleLessonCore({
         .single()
 
     const zoomMeetingId = (lesson as any).zoom_meeting_id
+    let zoomWarning: string | undefined
     if (zoomMeetingId) {
         try {
-            const { updateZoomMeeting } = await import('@/lib/zoom')
+            const { updateZoomMeeting, checkZoomMeetingTime } = await import('@/lib/zoom')
             const startDateTime = `${newDate}T${newTime}:00`
             const topic = studentForUpdates?.name ? `${studentForUpdates.name} - Piano Lesson` : 'Piano Lesson'
-            await updateZoomMeeting(zoomMeetingId, topic, startDateTime, newDuration)
+            const moved = await updateZoomMeeting(zoomMeetingId, topic, startDateTime, newDuration)
+            // #926: read the meeting back. One retry if Zoom still shows another
+            // time; "unknown" (no read permission yet, or Zoom silent) stays quiet.
+            const expectedIso = studioWallClockToISO(newDate, newTime.slice(0, 5))
+            let check = await checkZoomMeetingTime(zoomMeetingId, expectedIso, newDuration)
+            if (check.status === 'mismatch') {
+                await updateZoomMeeting(zoomMeetingId, topic, startDateTime, newDuration)
+                check = await checkZoomMeetingTime(zoomMeetingId, expectedIso, newDuration)
+            }
+            if (check.status === 'mismatch') {
+                console.error(`rescheduleLessonCore: Zoom meeting ${zoomMeetingId} still at ${check.actualStart} (${check.actualDuration} min) after the move`)
+                zoomWarning = 'Zoom still shows a different time for this lesson\'s meeting after the move, so please check it in Zoom.'
+            } else if (!moved && check.status !== 'ok') {
+                zoomWarning = 'Zoom did not accept the move, so please check this lesson\'s meeting in Zoom.'
+            }
         } catch (e) {
             console.error('rescheduleLessonCore: Zoom update failed (non-blocking):', e)
         }
@@ -1009,7 +1024,10 @@ export async function rescheduleLessonCore({
     return {
         success: true as const,
         message: 'Lesson rescheduled successfully',
-        warning: hasConflict ? `Warning: this student has an active skip/cancel/reschedule request for this date.` : undefined,
+        warning: [
+            hasConflict ? `Warning: this student has an active skip/cancel/reschedule request for this date.` : '',
+            zoomWarning ?? '',
+        ].filter(Boolean).join(' ') || undefined,
         conflicts: hasConflict ? conflicts : undefined
     }
 }
