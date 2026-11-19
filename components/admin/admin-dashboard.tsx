@@ -51,6 +51,7 @@ import { NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase
 import { appendNotePhrase } from "@/lib/lesson-note-phrases"
 import { getLastHomework } from "@/app/actions/last-homework"
 import type { LastHomework } from "@/lib/last-homework"
+import type { HomeworkStatus } from "@/lib/homework"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -81,9 +82,11 @@ export interface AdminDashboardProps {
     unloggedLessons?: AdminUnloggedLesson[]
     /** Families asking to move a lesson, waiting for Approve or Decline (#878). */
     moveRequests?: PendingMoveRequest[]
+    /** Each student's current homework and what they ticked (#945), by student id. */
+    homeworkByStudent?: Record<string, HomeworkStatus>
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [] }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [], homeworkByStudent = {} }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -960,6 +963,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         {/* Daily Schedule */}
                         <DashboardTab
                             date={dayViewDate}
+                            homeworkByStudent={homeworkByStudent}
                             isToday={isViewingToday}
                             onDateChange={showScheduleForDate}
                             isLoadingDay={isLoadingDay}

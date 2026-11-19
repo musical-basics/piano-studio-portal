@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX, Timer, Undo2 } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX, Timer, Undo2, CheckSquare, Square } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
+import type { HomeworkStatus } from "@/lib/homework"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
@@ -37,10 +38,42 @@ interface DashboardTabProps {
     /** Give back the credit a log took, with a reason (asks first, #794). */
     onUndoLog?: (lesson: TodayLesson) => void
     isLoading?: boolean
+    /** Each student's current homework and what they ticked (#945), by student id. */
+    homeworkByStudent?: Record<string, HomeworkStatus>
+}
+
+/**
+ * The family's ticks on its current homework (#945), under a lesson that comes
+ * after the lesson the homework is from: "Homework: 2 of 3 ticked" and the items.
+ */
+function HomeworkTicks({ status }: { status: HomeworkStatus }) {
+    const total = status.items.length
+    const from = new Date(`${status.lessonDate}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    return (
+        <details className="mt-2 text-sm" data-testid="homework-ticks">
+            <summary className="cursor-pointer select-none text-muted-foreground">
+                <span className={status.ticked === total ? "text-green-700 font-medium" : "font-medium text-foreground"}>
+                    Homework: {status.ticked} of {total} ticked
+                </span>
+                <span> (from {from})</span>
+            </summary>
+            <ul className="mt-1.5 space-y-1 pl-1">
+                {status.items.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                        {item.ticked
+                            ? <CheckSquare className="h-4 w-4 mt-0.5 shrink-0 text-green-700" />
+                            : <Square className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />}
+                        <span className={item.ticked ? "" : "text-muted-foreground"}>{item.text}</span>
+                    </li>
+                ))}
+            </ul>
+        </details>
+    )
 }
 
 export function DashboardTab({
     date,
+    homeworkByStudent = {},
     isToday,
     onDateChange,
     isLoadingDay = false,
@@ -234,6 +267,11 @@ export function DashboardTab({
                                                     </Badge>
                                                 )}
                                             </div>
+                                            {/* What they ticked of their current homework (#945), before this lesson. */}
+                                            {lesson.status !== 'completed' && (() => {
+                                                const hw = homeworkByStudent[lesson.student.id]
+                                                return hw && hw.lessonId !== lesson.id && hw.lessonDate <= lesson.date ? <HomeworkTicks status={hw} /> : null
+                                            })()}
                                         </div>
                                     </div>
                                     {lesson.status === 'completed' ? (

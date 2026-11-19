@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ClipboardList, Download, FileText, Video } from "lucide-react"
 import type { Lesson } from "@/lib/supabase/database.types"
+import { homeworkItems, tickedIndexes, type HomeworkTick } from "@/lib/homework"
+import { tickHomework } from "@/app/actions/homework"
 
 /**
  * The Homework tab.
@@ -19,12 +21,22 @@ import type { Lesson } from "@/lib/supabase/database.types"
  * Until a lesson has homework filled in, this falls back to that lesson's notes
  * so the tab isn't empty for students whose teacher hasn't started using the
  * field yet.
+ *
+ * Since #945 the latest logged lesson's homework is a checklist the family
+ * ticks off during the week, saved for the teacher to see before the next
+ * lesson (homework_ticks, through a server action that checks it is their own
+ * lesson). Older weeks, and notes standing in for homework, are read only. An
+ * admin previewing the student sees the ticks but can't change them.
  */
 
 interface HomeworkTabProps {
     /** Completed lessons, newest first. */
     lessons: Lesson[]
     studentId: string
+    /** Items this family has ticked (#945). */
+    ticks?: HomeworkTick[]
+    /** An admin previewing this student: ticks show, ticking is off. */
+    isPreview?: boolean
 }
 
 interface Assignment {
@@ -37,20 +49,6 @@ interface Assignment {
     hasVideo: boolean
 }
 
-/**
- * Split a homework blob into checklist items.
- *
- * One item per line is the documented convention, and common list markers
- * ("1.", "-", "•") are stripped so a pasted list doesn't render its bullets
- * twice. A single-line assignment stays a single item.
- */
-function toItems(text: string): string[] {
-    return text
-        .split(/\r?\n/)
-        .map((line) => line.replace(/^\s*(?:[-*•‣]|\d+[.)])\s*/, "").trim())
-        .filter(Boolean)
-}
-
 function formatDate(dateStr: string): string {
     const [year, month, day] = dateStr.split("-").map(Number)
     return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -61,27 +59,7 @@ function formatDate(dateStr: string): string {
     })
 }
 
-/**
- * Ticked items live in this browser only.
- *
- * Nothing about a tick is worth a round trip or a table: it's a scratch pad for
- * the student's own week, and the teacher tracks progress in the lesson itself.
- * Reads and writes are guarded because private-mode browsers throw on access.
- */
-function storageKey(studentId: string) {
-    return `homework-done:${studentId}`
-}
-
-function loadDone(studentId: string): Record<string, boolean> {
-    try {
-        const raw = window.localStorage.getItem(storageKey(studentId))
-        return raw ? JSON.parse(raw) : {}
-    } catch {
-        return {}
-    }
-}
-
-export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
+export function HomeworkTab({ lessons, studentId, ticks = [], isPreview = false }: HomeworkTabProps) {
     const assignments = useMemo<Assignment[]>(() => {
         const explicit = lessons.filter((l) => (l as any).homework?.trim())
 
@@ -91,32 +69,56 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
             lessonId: lesson.id,
             date: lesson.date,
             isExplicit: explicit.length > 0,
-            items: toItems(((lesson as any).homework || lesson.notes || "") as string),
+            items: homeworkItems(((lesson as any).homework || lesson.notes || "") as string),
             sheetMusicUrl: lesson.sheet_music_url,
             hasVideo: Boolean(lesson.video_url),
         }))
     }, [lessons])
 
-    const [done, setDone] = useState<Record<string, boolean>>({})
+    // The latest logged lesson (date, then time): only its homework can be ticked.
+    const latestLessonId = useMemo(() => {
+        const sorted = [...lessons].sort((a, b) => b.date.localeCompare(a.date) || String(b.time).localeCompare(String(a.time)))
+        return sorted[0]?.id ?? null
+    }, [lessons])
 
-    // Read after mount: localStorage isn't available during the server render.
-    useEffect(() => {
-        setDone(loadDone(studentId))
-    }, [studentId])
+    // Saved ticks, as "lessonId:index".
+    const savedDone = useMemo(() => {
+        const out: Record<string, boolean> = {}
+        for (const a of assignments) {
+            if (!a.isExplicit) continue
+            for (const i of tickedIndexes(a.lessonId, a.items, ticks)) out[`${a.lessonId}:${i}`] = true
+        }
+        return out
+    }, [assignments, ticks])
+    const [done, setDone] = useState<Record<string, boolean>>(savedDone)
+    useEffect(() => { setDone(savedDone) }, [savedDone])
+    const [saving, setSaving] = useState<string | null>(null)
+    const [tickError, setTickError] = useState<string | null>(null)
 
-    const toggle = (key: string) => {
-        setDone((prev) => {
-            const next = { ...prev, [key]: !prev[key] }
-            try {
-                window.localStorage.setItem(storageKey(studentId), JSON.stringify(next))
-            } catch {
-                // A browser blocking site data just means ticks don't survive a reload.
+    const toggle = async (lessonId: string, index: number, text: string) => {
+        if (isPreview || saving) return
+        const key = `${lessonId}:${index}`
+        const checked = !done[key]
+        setDone((prev) => ({ ...prev, [key]: checked }))
+        setSaving(key)
+        setTickError(null)
+        try {
+            const res = await tickHomework(lessonId, index, text, checked)
+            if ("error" in res) {
+                setDone((prev) => ({ ...prev, [key]: !checked }))
+                setTickError(res.error)
             }
-            return next
-        })
+        } catch {
+            setDone((prev) => ({ ...prev, [key]: !checked }))
+            setTickError("Your tick could not be saved just now. Please try again.")
+        } finally {
+            setSaving(null)
+        }
     }
 
     const [current, ...previous] = assignments
+    // Ticking is for the latest logged lesson's own homework only.
+    const canTick = Boolean(current?.isExplicit && current.lessonId === latestLessonId)
 
     if (!current) {
         return (
@@ -146,7 +148,7 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
                         From your lesson on {formatDate(current.date)}
                     </p>
                 </div>
-                {current.items.length > 1 && (
+                {canTick && current.items.length > 1 && (
                     <Badge variant={currentDone === current.items.length ? "default" : "secondary"}>
                         {currentDone} of {current.items.length} done
                     </Badge>
@@ -161,7 +163,7 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
                         <h3 className="font-semibold font-serif text-lg">This week</h3>
                     </div>
 
-                    <ul className="space-y-3">
+                    <ul className="space-y-3" data-testid="homework-current">
                         {current.items.map((item, i) => {
                             const key = `${current.lessonId}:${i}`
                             const checked = Boolean(done[key])
@@ -170,8 +172,10 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
                                     <Checkbox
                                         id={key}
                                         checked={checked}
-                                        onCheckedChange={() => toggle(key)}
+                                        onCheckedChange={() => toggle(current.lessonId, i, item)}
+                                        disabled={!canTick || isPreview || saving !== null}
                                         className="mt-0.5"
+                                        data-homework-item={i}
                                     />
                                     <label
                                         htmlFor={key}
@@ -213,8 +217,13 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
                 </CardContent>
             </Card>
 
+            {tickError && <p className="text-sm text-destructive px-1">{tickError}</p>}
             <p className="text-xs text-muted-foreground px-1">
-                Ticking items is just for you, and is remembered on this device.
+                {canTick
+                    ? isPreview
+                        ? "Preview: only the family can tick these."
+                        : "Tick items off as you practise. Your teacher sees what you have ticked before your next lesson."
+                    : "Ticking is for the homework from your latest lesson."}
             </p>
 
             {/* Earlier weeks */}
@@ -250,7 +259,7 @@ export function HomeworkTab({ lessons, studentId }: HomeworkTabProps) {
                                                 <Checkbox
                                                     id={key}
                                                     checked={checked}
-                                                    onCheckedChange={() => toggle(key)}
+                                                    disabled
                                                     className="mt-0.5"
                                                 />
                                                 <label

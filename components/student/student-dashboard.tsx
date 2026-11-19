@@ -58,6 +58,7 @@ import type { BillingSummary } from "@/app/actions/billing"
 import { BillingActivity } from "./billing-activity"
 import { MessagesPanel } from "./messages-panel"
 import { HomeworkTab } from "./homework-tab"
+import type { HomeworkTick } from "@/lib/homework"
 import { LessonHistoryTab } from "./lesson-history-tab"
 import type { LessonHistory } from "@/lib/lesson-history"
 import { getMyUnreadCount } from "@/app/messages/actions"
@@ -117,6 +118,8 @@ export interface StudentDashboardProps {
     history?: LessonHistory
     /** Moments Lionel marked in classroom recordings (#874), by lesson id. */
     markersByLesson?: Record<string, RecordingMarker[]>
+    /** Homework items this family ticked (#945). */
+    homeworkTicks?: HomeworkTick[]
     /** Upcoming lessons not started yet, soonest first: each can be asked to move (#878). */
     movableLessons?: { id: string; date: string; time: string; duration: number }[]
     /** The latest move request worth showing, by lesson id. */
@@ -136,7 +139,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -1256,7 +1259,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                             )}
 
                             <TabsContent value="homework" className="space-y-4">
-                                <HomeworkTab lessons={completedLessons} studentId={profile.id} />
+                                <HomeworkTab lessons={completedLessons} studentId={profile.id} ticks={homeworkTicks} isPreview={isAdminPreview} />
                             </TabsContent>
 
                             {/* #875: practice videos for Lionel to watch and comment on */}

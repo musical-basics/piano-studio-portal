@@ -11,6 +11,8 @@ import { getMarkersForLessons } from "@/lib/recording-markers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { familyMoveStatesCore, type FamilyMoveState } from "@/lib/core/move-requests"
 import { studioStartMs } from "@/lib/move-requests"
+import { homeworkTicksFor } from "@/lib/core/homework"
+import type { HomeworkTick } from "@/lib/homework"
 
 export default async function StudentPage({
   searchParams,
@@ -95,6 +97,15 @@ export default async function StudentPage({
   // (already limited to this family by their own session).
   const markersByLesson = await getMarkersForLessons(lessons || [])
 
+  // Homework items this family ticked (#945). Row security limits this read to
+  // their own ticks (or, for an admin preview, the admin's read-all).
+  let homeworkTicks: HomeworkTick[] = []
+  try {
+    homeworkTicks = await homeworkTicksFor(supabase as any, effectiveUserId)
+  } catch (e) {
+    console.error("Homework ticks fetch error:", e)
+  }
+
   // Find next scheduled lesson
   const now = new Date()
   const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000))
@@ -170,6 +181,7 @@ export default async function StudentPage({
         unreadCount={unreadCount || 0}
         history={history}
         markersByLesson={markersByLesson}
+        homeworkTicks={homeworkTicks}
         movableLessons={movableLessons}
         moveStates={moveStates}
         isAdminPreview={Boolean(impersonatingId)}

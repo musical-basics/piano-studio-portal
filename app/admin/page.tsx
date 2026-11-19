@@ -8,6 +8,8 @@ import { getInquiries } from "@/app/actions/inquiries"
 import { getResources } from "@/app/actions/resources"
 import { findUnloggedForAdmin, type AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { listPendingMoveRequestsCore, type PendingMoveRequest } from "@/lib/core/move-requests"
+import { homeworkStatusByStudent } from "@/lib/core/homework"
+import type { HomeworkStatus } from "@/lib/homework"
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -158,6 +160,15 @@ export default async function AdminPage() {
     console.error("Move requests fetch error:", e)
   }
 
+  // Each student's current homework and what they ticked (#945), shown on
+  // their next lesson in the day schedule.
+  let homeworkByStudent: Record<string, HomeworkStatus> = {}
+  try {
+    homeworkByStudent = await homeworkStatusByStudent(createAdminClient())
+  } catch (e) {
+    console.error("Homework status fetch error:", e)
+  }
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
@@ -186,6 +197,7 @@ export default async function AdminPage() {
       pricingPlans={pricingPlans || []}
       unloggedLessons={unloggedLessons}
       moveRequests={moveRequests}
+      homeworkByStudent={homeworkByStudent}
     />
   )
 }
