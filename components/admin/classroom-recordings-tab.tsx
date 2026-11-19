@@ -1,11 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, PlayCircle, RefreshCw } from "lucide-react"
+import { ExternalLink, Loader2, PlayCircle, RefreshCw, X } from "lucide-react"
 import { attachClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
 
@@ -48,6 +48,14 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
     const [attaching, setAttaching] = useState<string | null>(null)
     // Shown above the table, next to the rows it is about.
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+    // The one recording playing in place (#791); opening another closes it.
+    const [playingId, setPlayingId] = useState<string | null>(null)
+    const [playError, setPlayError] = useState<string | null>(null)
+
+    const togglePlay = (id: string) => {
+        setPlayError(null)
+        setPlayingId(current => (current === id ? null : id))
+    }
 
     const load = useCallback(async () => {
         setIsLoading(true)
@@ -160,9 +168,13 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                 ) : rows.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No classroom recordings yet</p>
                 ) : (
+                    // A size container, so the player below a row is as wide as the
+                    // visible table even when the table scrolls sideways on a phone.
+                    <div className="@container">
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-10"><span className="sr-only">Play</span></TableHead>
                                 <TableHead>Student</TableHead>
                                 <TableHead>Recorded</TableHead>
                                 <TableHead>Length</TableHead>
@@ -171,14 +183,27 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                         </TableHeader>
                         <TableBody>
                             {rows.map(row => (
-                                <TableRow key={row.id}>
+                                <Fragment key={row.id}>
+                                <TableRow>
+                                    <TableCell className="w-10 pr-0">
+                                        <Button
+                                            size="icon"
+                                            variant={playingId === row.id ? "secondary" : "ghost"}
+                                            className="h-8 w-8"
+                                            onClick={() => togglePlay(row.id)}
+                                            aria-label={playingId === row.id ? "Close the player" : "Play here"}
+                                            title={playingId === row.id ? "Close the player" : "Play here"}
+                                        >
+                                            {playingId === row.id ? <X className="h-4 w-4" /> : <PlayCircle className="h-5 w-5" />}
+                                        </Button>
+                                    </TableCell>
                                     <TableCell className="font-medium">
                                         {row.studentName || <span className="text-muted-foreground">{row.studentId || "Unknown"}</span>}
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap">
-                                        <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">
-                                            <PlayCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline" title="Open in a new tab">
                                             {recordedLabel(row)}
+                                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
                                         </a>
                                         {!row.hasStartStamp && (
                                             <div className="text-xs text-muted-foreground">when it stopped (no start time on file)</div>
@@ -187,9 +212,37 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                     <TableCell className="whitespace-nowrap">{lengthLabel(row.minutes)}</TableCell>
                                     <TableCell className="whitespace-normal">{statusCell(row)}</TableCell>
                                 </TableRow>
+                                {playingId === row.id && (
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableCell colSpan={5} className="whitespace-normal p-2">
+                                            <div className="sticky left-0 w-[calc(100cqw-1rem)] max-w-3xl space-y-2">
+                                                {/* Mounted only once Play is pressed; nothing loads before that. */}
+                                                <video
+                                                    key={row.id}
+                                                    src={row.url}
+                                                    controls
+                                                    autoPlay
+                                                    playsInline
+                                                    preload="none"
+                                                    className="block w-full max-h-[70vh] rounded-md bg-black"
+                                                    onError={() => setPlayError("This video can't play here. Open it in a new tab instead.")}
+                                                />
+                                                {playError && <p className="text-sm text-destructive">{playError}</p>}
+                                                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                                    <span>{row.studentName || "Unknown"}, {recordedLabel(row)}</span>
+                                                    <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline shrink-0">
+                                                        New tab <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                </Fragment>
                             ))}
                         </TableBody>
                     </Table>
+                    </div>
                 )}
             </CardContent>
         </Card>
