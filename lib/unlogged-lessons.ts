@@ -11,6 +11,7 @@ import type { PendingMoveRequest } from '@/lib/core/move-requests'
 import type { LessonRow as ClassroomLessonRow } from '@/lib/classroom-recordings'
 import { findDayLessons } from '@/lib/evening-preview'
 import { todayScheduleSection, todaySubject, type TodaySchedule } from '@/lib/today-schedule-email'
+import { findShortLessons, shortLessonsSection, type ShortLesson } from '@/lib/short-lessons'
 
 /**
  * Lessons from a given studio day that nobody logged. A lesson takes its credit
@@ -305,7 +306,7 @@ export function buildUnloggedEmail(
     return { subject, lines, html, footer, buttons }
 }
 
-const MORNING_WHEN = 'This email comes only on mornings with a lesson today, a lesson unlogged or logged automatically, or a family asking to move a lesson.'
+const MORNING_WHEN = 'This email comes only on mornings with a lesson today, a lesson unlogged, logged automatically or cut short on Zoom, or a family asking to move a lesson.'
 
 /** Emails the studio inbox about the day's unlogged lessons. No email when there are none. */
 export async function alertUnloggedLessons(
@@ -450,11 +451,13 @@ export function buildMorningEmail(
     date: string,
     unlogged: UnloggedLesson[],
     autoLogged: AutoLoggedLesson[],
-    { now = new Date(), baseUrl = appBaseUrl(), moveRequests = [], today }: {
+    { now = new Date(), baseUrl = appBaseUrl(), moveRequests = [], today, short = [] }: {
         now?: Date
         baseUrl?: string
         moveRequests?: PendingMoveRequest[]
         today?: TodaySchedule
+        /** Yesterday's Zoom lessons that ran under half the booked time (#966). */
+        short?: ShortLesson[]
     } = {},
 ): MorningEmail {
     const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
@@ -467,18 +470,19 @@ export function buildMorningEmail(
     const auto = autoLoggedSection(autoLogged, date, { baseUrl })
     const moves = moveRequestsSection(moveRequests, { now, baseUrl, heading: n > 0 || m > 0 || !!today })
     const movesSubject = k ? `${k === 1 ? '1 family asks' : `${k} families ask`} to move a lesson` : ''
+    const ranShort = shortLessonsSection(short, { baseUrl })
     const admin = `${baseUrl}/admin`
     const todayNote = today ? ` ${TODAY_NOTE}` : ''
 
     if (n === 0) {
         const autoSubject = m ? `${m} lesson${m === 1 ? '' : 's'} logged automatically on ${day}` : ''
-        const parts = [movesSubject, autoSubject].filter(Boolean)
+        const parts = [movesSubject, ranShort.subject, autoSubject].filter(Boolean)
         return {
             subject: parts.length
                 ? [...parts, todaySubject(today, { lead: false })].filter(Boolean).join('; ')
                 : todaySubject(today, { lead: true }),
-            lines: [...schedule.lines, ...moves.lines, ...auto.lines],
-            html: [schedule.html, moves.html, m ? auto.html : ''].filter(Boolean).join('\n'),
+            lines: [...schedule.lines, ...moves.lines, ...ranShort.lines, ...auto.lines],
+            html: [schedule.html, moves.html, ranShort.html, m ? auto.html : ''].filter(Boolean).join('\n'),
             footer: `${m ? `Everything from ${day} is logged.` : `Nothing from ${day} is waiting to be logged.`} The <a href="${admin}">admin dashboard</a> has the rest.${todayNote} ${MORNING_WHEN}`,
         }
     }
@@ -489,15 +493,16 @@ export function buildMorningEmail(
     const subject = (k ? `${movesSubject}; ` : '') +
         unloggedEmail.subject +
         (noShows ? ` (${noShows} No-show?)` : '') +
+        (ranShort.subject ? `, ${ranShort.subject}` : '') +
         (m ? `, ${m} logged automatically` : '') +
         (todayPart ? `; ${todayPart}` : '')
     const unloggedHtml = m || k || today
         ? `<h3 style="font-size:16px;margin:4px 0 8px">Not logged yet (${n})</h3>\n${unloggedEmail.html}`
         : unloggedEmail.html
-    const html = [schedule.html, moves.html, unloggedHtml, m ? auto.html : ''].filter(Boolean).join('\n')
+    const html = [schedule.html, moves.html, unloggedHtml, ranShort.html, m ? auto.html : ''].filter(Boolean).join('\n')
     return {
         subject,
-        lines: [...schedule.lines, ...moves.lines, ...unloggedEmail.lines, ...auto.lines],
+        lines: [...schedule.lines, ...moves.lines, ...unloggedEmail.lines, ...ranShort.lines, ...auto.lines],
         html,
         footer: `${unloggedEmail.footer}${todayNote}`,
     }
@@ -508,6 +513,8 @@ export type MorningRun = {
     autoLogged: AutoLoggedLesson[]
     moveRequests: PendingMoveRequest[]
     today: TodaySchedule
+    /** Yesterday's Zoom lessons that ran short (#966). */
+    short: ShortLesson[]
     email: MorningEmail | null
     emailed: boolean
 }
@@ -543,12 +550,19 @@ export async function runMorningEmail(
         // The rest of the email still goes out; admin shows the requests.
         console.error('[unlogged-lessons] move requests lookup failed:', e instanceof Error ? e.message : e)
     }
-    if (unlogged.length === 0 && autoLogged.length === 0 && moveRequests.length === 0 && !today.lessons?.length) {
-        return { unlogged, autoLogged, moveRequests, today, email: null, emailed: false }
+    let short: ShortLesson[] = []
+    try {
+        short = await findShortLessons(client, date)
+    } catch (e) {
+        // The rest still goes out; admin shows each lesson's Zoom minutes.
+        console.error('[unlogged-lessons] short lessons lookup failed:', e instanceof Error ? e.message : e)
     }
-    const email = buildMorningEmail(date, unlogged, autoLogged, { now, moveRequests, today })
+    if (unlogged.length === 0 && autoLogged.length === 0 && moveRequests.length === 0 && short.length === 0 && !today.lessons?.length) {
+        return { unlogged, autoLogged, moveRequests, today, short, email: null, emailed: false }
+    }
+    const email = buildMorningEmail(date, unlogged, autoLogged, { now, moveRequests, today, short })
     const emailed = dryRun ? false : await sendCronAlert(client, email)
-    return { unlogged, autoLogged, moveRequests, today, email, emailed }
+    return { unlogged, autoLogged, moveRequests, today, short, email, emailed }
 }
 
 // ---------------------------------------------------------------------------

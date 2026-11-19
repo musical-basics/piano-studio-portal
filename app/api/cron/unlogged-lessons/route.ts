@@ -32,9 +32,9 @@ async function handle(request: Request) {
 
     try {
         const client = createAdminClient()
-        const { unlogged: lessons, autoLogged, moveRequests, today, email, emailed } = await runMorningEmail(client, date, { dryRun })
+        const { unlogged: lessons, autoLogged, moveRequests, today, short, email, emailed } = await runMorningEmail(client, date, { dryRun })
         const todayCount = today.lessons ? String(today.lessons.length) : 'unknown'
-        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged, ${autoLogged.length} logged automatically, ${moveRequests.length} move request(s), ${todayCount} today${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
+        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged, ${autoLogged.length} logged automatically, ${moveRequests.length} move request(s), ${short.length} ran short, ${todayCount} today${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
         return NextResponse.json({
             success: true,
             date,
@@ -44,6 +44,7 @@ async function handle(request: Request) {
             today: { date: today.date, lessons: today.lessons?.map(l => ({ id: l.id, time: l.time, place: l.place })) ?? null },
             autoLogged: autoLogged.map(l => ({ id: l.id, date: l.date, time: l.time, by: l.by, before: l.before, after: l.after })),
             moveRequests: moveRequests.map(r => ({ id: r.id, lessonId: r.lessonId, from: `${r.fromDate} ${r.fromTime}`, to: `${r.toDate} ${r.toTime}` })),
+            ranShort: short.map(s => ({ id: s.id, time: s.time, booked: s.duration, minutes: Math.round(s.seconds / 60), measure: s.measure, logged: s.logged, free: s.free })),
             ...(dryRun && email ? { subject: email.subject, html: email.html, footer: email.footer } : {}),
         })
     } catch (err: any) {

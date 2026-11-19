@@ -94,7 +94,8 @@ export const PORTAL_JOBS: JobInfo[] = [
         summarize: b => {
             const today = len(b?.today?.lessons)
             const todayPart = today ? `, ${plural(today, 'lesson')} today` : ''
-            return `${len(b?.unlogged) ? `${plural(len(b.unlogged), 'lesson')} unlogged` : 'Nothing unlogged'}${todayPart}${b?.emailed ? ', emailed you' : ''}`
+            const short = len(b?.ranShort)
+            return `${len(b?.unlogged) ? `${plural(len(b.unlogged), 'lesson')} unlogged` : 'Nothing unlogged'}${short ? `, ${short} ran short` : ''}${todayPart}${b?.emailed ? ', emailed you' : ''}`
         },
     },
     {
