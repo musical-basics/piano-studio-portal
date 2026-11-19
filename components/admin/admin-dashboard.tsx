@@ -803,6 +803,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </a>
                             </Button>
                             <Button variant="outline" asChild>
+                                <a href="/admin/jobs" className="gap-2">
+                                    <Clock className="h-4 w-4" />
+                                    Jobs
+                                </a>
+                            </Button>
+                            <Button variant="outline" asChild>
                                 <a href="/admin/reviews" className="gap-2">
                                     <Star className="h-4 w-4" />
                                     Reviews

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { FREE_PLAN_LIMITS, runStorageCheck, type Limits } from '@/lib/storage-usage'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +14,9 @@ export const maxDuration = 30
 // Manual runs: ?dry=1 measures and returns what it would email (with the HTML)
 // without sending or saving. With ?dry=1 only, ?db_limit_mb=N and
 // ?files_limit_mb=N stand in for the plan's limits, to see the email.
-export async function GET(request: Request) {
+export const GET = withCronRun('storage-check', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

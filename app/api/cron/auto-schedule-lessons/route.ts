@@ -3,6 +3,7 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { autoScheduleStandingLessonsCore } from '@/lib/core/lessons'
 import { studioToday } from '@/lib/studio-timezone'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { readHeartbeat, sendCronAlert, writeHeartbeat, sourceJob, ALERT_COOLDOWN_MINUTES } from '@/lib/cron-alerts'
 import { checkCaptureHeartbeat } from '@/lib/payment-capture-alerts'
 
@@ -103,7 +104,9 @@ async function checkTriggerHealth(client: DbClient): Promise<void> {
     }
 }
 
-export async function GET(request: Request) {
+export const GET = withCronRun('auto-schedule-lessons', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

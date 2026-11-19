@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { attachClassroomRecordings } from '@/lib/classroom-recordings'
 import { syncClassroomDropboxCopies } from '@/lib/classroom-dropbox-copies'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -16,7 +17,9 @@ export const maxDuration = 120
 // (lib/classroom-dropbox-copies.ts). Manual runs: ?days=N to look further back,
 // ?copy_days=N to queue older recordings for Dropbox, ?dry=1 to report without
 // writing (result.logged = what it would log, dropbox.started = what it would copy).
-export async function GET(request: Request) {
+export const GET = withCronRun('classroom-recordings', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

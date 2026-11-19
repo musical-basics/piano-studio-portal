@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { backfillMissingRecordings } from '@/lib/backfill-recordings'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 // Recordings can be ~50-300MB; allow time for download + chunked Dropbox upload.
@@ -10,7 +11,9 @@ export const maxDuration = 300
 // lessons that have a zoom_meeting_id but no video_url and pulls any matching
 // cloud recording into Dropbox. Idempotent: a lesson with video_url already set
 // is excluded by the query, so re-runs are safe.
-export async function GET(request: Request) {
+export const GET = withCronRun('backfill-recordings', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

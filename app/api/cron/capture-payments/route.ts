@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { cronSource, writeHeartbeat } from '@/lib/cron-alerts'
 import { stripe } from '@/lib/stripe'
 import { CAPTURE_JOB, sendCaptureAlert } from '@/lib/payment-capture-alerts'
@@ -42,7 +43,9 @@ async function resolveUserId(pi: Stripe.PaymentIntent): Promise<string | null> {
     return sessions.data[0]?.metadata?.userId || null
 }
 
-export async function GET(request: Request) {
+export const GET = withCronRun('capture-payments', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

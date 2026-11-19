@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { isoToStudioWallClock, studioWallClockToISO } from '@/lib/studio-timezone'
 import {
     alertUnloggedLessons,
@@ -26,7 +27,9 @@ export const dynamic = 'force-dynamic'
 // Manual runs: ?date=YYYY-MM-DD for another day (a past day is judged as it
 // stood at 11pm that night, with the lessons' current status), ?dry=1 to list
 // without emailing.
-export async function GET(request: Request) {
+export const GET = withCronRun('unlogged-tonight', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

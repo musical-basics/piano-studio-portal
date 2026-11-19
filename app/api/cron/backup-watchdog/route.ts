@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { alertIfBackupStale, checkBackup, checkFamilyWatch } from '@/lib/backup-watchdog'
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +10,9 @@ export const dynamic = 'force-dynamic'
 // hours: the nightly database backup (decision #438) or the family-message
 // watch (#776), one email each. Silent while they're fresh.
 // Manual runs: ?dry=1 shows what would be sent without emailing.
-export async function GET(request: Request) {
+export const GET = withCronRun('backup-watchdog', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

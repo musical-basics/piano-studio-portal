@@ -6,6 +6,7 @@ import NewRecordingEmail from '@/components/emails/new-recording-email'
 import { formatRecordingName } from '@/lib/format-recording-name'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { isClassroomCopyName } from '@/lib/classroom-dropbox-copies'
 
 const supabase = createClient(
@@ -29,7 +30,9 @@ function getDropboxClient() {
     })
 }
 
-export async function GET(request: Request) {
+export const GET = withCronRun('new-recordings', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

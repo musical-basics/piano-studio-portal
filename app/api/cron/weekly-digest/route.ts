@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { readHeartbeat, sendCronAlert, writeHeartbeat, sourceJob } from '@/lib/cron-alerts'
 import { ALL_NOTICES, NOTICE_FLAG_COLUMNS } from '@/lib/reminder-policy'
 import { studioToday } from '@/lib/studio-timezone'
@@ -31,7 +32,9 @@ function ago(at: Date | null): string {
     return `${Math.round(mins / 1440)}d ago`
 }
 
-export async function GET(request: Request) {
+export const GET = withCronRun('weekly-digest', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

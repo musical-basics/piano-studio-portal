@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { buildEveningPreview, eveningAsOf, eveningLessonDate, renderEveningPreview, sendEveningPreview } from '@/lib/evening-preview'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,9 @@ export const dynamic = 'force-dynamic'
 // Manual runs: ?date=YYYY-MM-DD for the lesson day to cover (a past day lists
 // messages as they stood at 9pm the evening before), ?dry=1 to return the
 // preview and the email's HTML without sending.
-export async function GET(request: Request) {
+export const GET = withCronRun('evening-preview', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

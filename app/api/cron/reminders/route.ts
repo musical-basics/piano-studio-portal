@@ -6,6 +6,7 @@ import { differenceInMinutes, addDays, format } from 'date-fns'
 import { dueNotice, neverNotified, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import {
     readHeartbeat, writeHeartbeat, sendCronAlert, pingDeadManSwitch,
     cronSource, withRetry, ALERT_COOLDOWN_MINUTES,
@@ -39,7 +40,9 @@ function describeWhen(diffMinutes: number, timeLabel: string, dayLabel: string) 
     return { phrase: `on ${dayLabel} at ${timeLabel}`, variant: '48h' as const }
 }
 
-export async function GET(request: Request) {
+export const GET = withCronRun('reminders', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

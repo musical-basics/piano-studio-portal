@@ -481,6 +481,34 @@ def compare_live(tables, restored, fingerprints, problems, warnings):
     return live
 
 
+RUN_JOB = "studio-restore-test"
+
+
+def record_run(ok, detail):
+    """Records this run on cron_heartbeats 'studio-restore-test' (when, whether it
+    worked, the email's subject) for the portal's jobs page, /admin/jobs (#777).
+    Never raises: a missed stamp only makes the page show the test as late."""
+    import urllib.request
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    row = {"job": RUN_JOB, "last_finished_at": now, "last_ok": ok, "last_detail": detail[:500]}
+    if ok:
+        row["last_run_at"] = now
+    try:
+        key = b.secret("SUPABASE_SERVICE_KEY", required=False)
+        if not key:
+            raise RuntimeError("no SUPABASE_SERVICE_KEY")
+        req = urllib.request.Request(
+            f"{b.SUPABASE_URL}/rest/v1/cron_heartbeats?on_conflict=job", data=json.dumps([row]).encode(),
+            headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                     "Prefer": "resolution=merge-duplicates,return=minimal"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+        print(f"recorded for the jobs page: {RUN_JOB} {'ok' if ok else 'FAILED'}")
+    except Exception as e:
+        print(f"WARNING: run not recorded for the jobs page ({e})", file=sys.stderr)
+
+
 def main():
     started = datetime.datetime.now()
     args = sys.argv[1:]
@@ -543,6 +571,7 @@ def main():
           f"{users} sign-ins, {secs:.0f}s")
     print(f"--- email ---\n{subject}\n\n{body}\n---")
     b.alert(subject, body)
+    record_run(not problems, subject)
     return 1 if problems else 0
 
 
@@ -562,4 +591,5 @@ if __name__ == "__main__":
             b.newest_backup_line(), "",
             f"Log: {LOG}",
         ]))
+        record_run(False, msg)
         sys.exit(1)

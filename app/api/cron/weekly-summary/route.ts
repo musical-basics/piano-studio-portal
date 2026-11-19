@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { buildWeeklySummary, lastWeekMonday, mondayOf, renderWeeklySummary, sendWeeklySummary } from '@/lib/weekly-summary'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +14,9 @@ export const maxDuration = 60
 // (Mar to Nov) that is 9:30am EDT, since Vercel Cron runs on UTC.
 // Manual runs: ?week=YYYY-MM-DD (any day of that week) for another week,
 // ?dry=1 to return the summary and the email's HTML without sending.
-export async function GET(request: Request) {
+export const GET = withCronRun('weekly-summary', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

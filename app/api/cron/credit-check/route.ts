@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { studioToday } from '@/lib/studio-timezone'
 import { alertCreditCheck, checkCredits, previousMonth } from '@/lib/credit-check'
 import { findPastUnloggedLessons } from '@/lib/unlogged-lessons'
@@ -19,7 +20,9 @@ export const dynamic = 'force-dynamic'
 // lessons added with no payment and no reason (#757, lib/payment-check.ts).
 // Manual runs: ?month=YYYY-MM for another month (the unlogged list is always
 // as of now), ?dry=1 to report without emailing.
-export async function GET(request: Request) {
+export const GET = withCronRun('credit-check', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

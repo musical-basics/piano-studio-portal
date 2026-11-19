@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withCronRun } from '@/lib/cron-runs'
 import { runClassroomServerWatch } from '@/lib/classroom-server-watch'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +12,9 @@ export const maxDuration = 30
 // once when it is back (Lionel's #724, lib/classroom-server-watch.ts). Does
 // nothing until CLASSROOM_SERVER_HEALTH_URL is set. Manual runs: ?dry=1 probes
 // and reports without emailing or saving.
-export async function GET(request: Request) {
+export const GET = withCronRun('classroom-server-watch', handle)
+
+async function handle(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
