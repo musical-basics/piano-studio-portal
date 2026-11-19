@@ -47,6 +47,10 @@ import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { MoveRequestsCard } from "@/components/admin/move-requests-card"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
+import { NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
+import { appendNotePhrase } from "@/lib/lesson-note-phrases"
+import { getLastHomework } from "@/app/actions/last-homework"
+import type { LastHomework } from "@/lib/last-homework"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -118,6 +122,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // Kept separate from notes so the student portal can surface "what do I
     // practice this week" on its own Homework tab.
     const [lessonHomework, setLessonHomework] = useState("")
+    // #943: the log dialog's empty Homework box starts with last lesson's
+    // homework. The counter drops a late answer for a dialog opened since.
+    const [lastHomework, setLastHomework] = useState<LastHomework | null>(null)
+    const lastHomeworkSeq = useRef(0)
     // "Free, don't take a credit" in the log dialog (#756).
     const [logFree, setLogFree] = useState(false)
     const [logFreeReason, setLogFreeReason] = useState("")
@@ -238,13 +246,29 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     const dayLessons = isViewingToday ? todaysLessons : fetchedDay?.date === dayViewDate ? fetchedDay.lessons : []
     const dayEvents = isViewingToday ? todaysEvents : fetchedDay?.date === dayViewDate ? fetchedDay.events : []
 
+    /** Fills an empty Homework box with last lesson's homework (#943); never overwrites typing. */
+    const prefillLastHomework = (studentId: string | null, date: string, time: string) => {
+        const seq = ++lastHomeworkSeq.current
+        setLastHomework(null)
+        if (!studentId) return
+        getLastHomework(studentId, date, String(time).slice(0, 5))
+            .then(last => {
+                if (!last || seq !== lastHomeworkSeq.current) return
+                setLastHomework(last)
+                setLessonHomework(h => (h.trim() ? h : last.homework))
+            })
+            .catch(() => { /* the box just starts empty */ })
+    }
+
     const handleLogLesson = (lesson: TodayLesson) => {
         setSelectedLesson(lesson)
         setSelectedStudentForLog(null)
         setVideoUrl(lesson.video_url || '')
         setSheetMusicUrl(lesson.sheet_music_url || '')
         setLessonNotes(lesson.notes || '')
-        setLessonHomework((lesson as any).homework || '')
+        const ownHomework = (lesson as any).homework || ''
+        setLessonHomework(ownHomework)
+        prefillLastHomework(ownHomework.trim() ? null : lesson.student_id, lesson.date, lesson.time)
         setLogFree(false)
         setLogFreeReason('')
         setShowLogLessonModal(true)
@@ -258,6 +282,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         setLogTime("12:00")
         setLogDuration(60)
         setLessonHomework("")
+        prefillLastHomework(student.id, studioToday(), "12:00")
         setLogFree(false)
         setLogFreeReason("")
         setShowLogLessonModal(true)
@@ -1150,6 +1175,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 rows={6}
                                 className="resize-none"
                             />
+                            <NotePhraseChips onPick={(phrase) => setLessonNotes(n => appendNotePhrase(n, phrase))} />
                         </div>
 
                         <div className="space-y-2">
@@ -1164,6 +1190,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 rows={4}
                                 className="resize-none"
                             />
+                            {lastHomework && lessonHomework === lastHomework.homework && (
+                                <p className="text-xs text-muted-foreground">
+                                    Last lesson&apos;s homework ({shortLessonDate(lastHomework.date)}): edit what changed or clear it.
+                                </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                                 Shown on its own Homework tab in the student portal. One item per line becomes a checklist.
                             </p>

@@ -9,6 +9,9 @@ import { lessonEndMs } from '@/lib/unlogged-lessons'
 import { MISSED_LESSON_CREDIT_CENTS, getMissedLessonPreviewCore, missedLessonCore } from '@/lib/core/missed-lesson'
 import { markNoShowCore } from '@/lib/core/no-show'
 import { attendanceNote, zoomAttendance } from '@/lib/zoom-attendance'
+import { findLastHomework } from '@/lib/last-homework'
+import { LESSON_NOTE_PHRASES } from '@/lib/lesson-note-phrases'
+import { randomBytes } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +26,10 @@ export const dynamic = 'force-dynamic'
  *             email all behave exactly as a normal log. The confirm page has
  *             optional notes and homework boxes (#753) that go into that log,
  *             so the family's usual lesson email carries the notes; left empty,
- *             the log is as before. A lesson over a week
+ *             the log is as before. The homework box starts with last
+ *             lesson's homework (#943, lib/last-homework.ts) and one-tap
+ *             phrases sit under the notes box (#944, lib/lesson-note-phrases.ts,
+ *             the page's only script). A lesson over a week
  *             old (the monthly credit check lists those) is logged quietly
  *             instead: credit and snapshots, no email, no booking (see
  *             lib/late-lesson-log.ts).
@@ -59,6 +65,7 @@ type LessonRow = {
     duration: number | null
     status: string
     notes: string | null
+    homework: string | null
     video_url: string | null
     zoom_meeting_id: string | null
 }
@@ -75,7 +82,15 @@ function esc(s: string): string {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }
 
-function page(title: string, bodyHtml: string, status = 200): Response {
+/**
+ * A page may carry one inline script (the Log it page's phrase chips, #944).
+ * It runs under a fresh nonce; every other script stays blocked.
+ */
+function page(title: string, bodyHtml: string, status = 200, script?: string): Response {
+    const nonce = script ? randomBytes(16).toString('base64') : null
+    const headers = nonce
+        ? { ...NO_STORE, 'Content-Security-Policy': `${NO_STORE['Content-Security-Policy']}; script-src 'nonce-${nonce}'` }
+        : NO_STORE
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -100,9 +115,35 @@ function page(title: string, bodyHtml: string, status = 200): Response {
   ul.effects { margin: 0 0 12px; padding-left: 20px; }
   ul.effects li { margin: 0 0 4px; }
   a { color: #1d4ed8; }
+  .chips { margin: 2px 0 0; }
+  button.chip { display: inline-block; width: auto; margin: 8px 8px 0 0; padding: 8px 12px; font-size: 15px; font-weight: 500; color: #1c1917; background: #f5f5f4; border: 1px solid #d6d3d1; border-radius: 999px; }
+  button.chip:active { background: #e7e5e4; }
 </style></head>
-<body><div class="card">${bodyHtml}</div></body></html>`
-    return new Response(html, { status, headers: NO_STORE })
+<body><div class="card">${bodyHtml}</div>${nonce ? `<script nonce="${nonce}">${script}</script>` : ''}</body></html>`
+    return new Response(html, { status, headers })
+}
+
+/**
+ * The chips under the notes box (#944): a tap adds the phrase to the end of
+ * the notes on its own line, never replacing them (appendNotePhrase in
+ * lib/lesson-note-phrases.ts, written out for the browser).
+ */
+const PHRASE_SCRIPT = `document.querySelectorAll('button.chip').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var n = document.getElementById('n');
+    if (!n) return;
+    var p = b.getAttribute('data-phrase') || '';
+    var base = n.value.replace(/[ \\t]+$/, '');
+    n.value = !base.trim() ? p : (base.charAt(base.length - 1) === '\\n' ? base + p : base + '\\n' + p);
+    n.scrollTop = n.scrollHeight;
+  });
+});`
+
+function phraseChips(): string {
+    const chips = LESSON_NOTE_PHRASES
+        .map(p => `<button type="button" class="chip" data-phrase="${esc(p)}">+ ${esc(p)}</button>`)
+        .join('')
+    return `<div class="chips" role="group" aria-label="Add a phrase to the notes">${chips}</div>`
 }
 
 function message(title: string, text: string, status = 200): Response {
@@ -123,6 +164,11 @@ function weekday(date: string): string {
     return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
 }
 
+/** "Nov 11" */
+function shortDate(date: string): string {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
 function longDay(date: string): string {
     return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
@@ -139,7 +185,7 @@ type Checked =
 async function checkLesson(client: DbClient, claims: LessonActionClaims): Promise<Checked> {
     const { data: lesson, error } = await client
         .from('lessons')
-        .select('id, student_id, date, time, duration, status, notes, video_url, zoom_meeting_id')
+        .select('id, student_id, date, time, duration, status, notes, homework, video_url, zoom_meeting_id')
         .eq('id', claims.l)
         .maybeSingle()
     if (error) {
@@ -369,16 +415,32 @@ ${form('Mark no-show', 'noshow')}`)
             ? `This takes 1 credit. The lesson is over ${QUIET_LOG_AFTER_DAYS} days old, so it is logged quietly: no email to the family and no next lesson booked.`
             : "This takes 1 credit and sends 1 family the usual emails (the lesson email, plus the next week's booking if one is made), the same as logging it in admin."
         const notesHint = quiet ? 'optional, saved on the lesson' : "optional, goes in the family's lesson email"
+        // #943: start from what the lesson has, else last lesson's homework.
+        let homework = (lesson.homework || '').trim()
+        let homeworkHint = 'optional'
+        if (!homework) {
+            try {
+                const last = await findLastHomework(client, lesson.student_id, { date: lesson.date, time: String(lesson.time).slice(0, 5) })
+                if (last) {
+                    homework = last.homework.slice(0, HOMEWORK_MAX)
+                    homeworkHint = `optional; last lesson's homework (${shortDate(last.date)}), edit what changed or clear it`
+                }
+            } catch (e) {
+                // An empty box is the old behaviour; never block the page on it.
+                console.error('[lesson-action] last homework lookup failed:', e instanceof Error ? e.message : e)
+            }
+        }
         const boxes = `
 <label for="n">Lesson notes <span>(${esc(notesHint)})</span></label>
 <textarea id="n" name="n" rows="6" maxlength="${NOTES_MAX}">${esc(lesson.notes || '')}</textarea>
-<label for="h">Homework <span>(optional)</span></label>
-<textarea id="h" name="h" rows="3" maxlength="${HOMEWORK_MAX}"></textarea>`
+${phraseChips()}
+<label for="h">Homework <span>(${esc(homeworkHint)})</span></label>
+<textarea id="h" name="h" rows="3" maxlength="${HOMEWORK_MAX}">${esc(homework)}</textarea>`
         return page('Log this lesson?', `
 <h1>Log ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)}?</h1>
 <p class="muted">${esc(when)}</p>
 <p>${esc(effect)}</p>
-${form('Log it', 'log', boxes)}`)
+${form('Log it', 'log', boxes)}`, 200, PHRASE_SCRIPT)
     }
 
     const recording = lesson.video_url

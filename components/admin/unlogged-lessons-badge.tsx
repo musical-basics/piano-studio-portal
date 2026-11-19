@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { AlertTriangle, CalendarX, CheckCircle2, DollarSign, Loader2, Mail, MessageCircle, XCircle } from "lucide-react"
 import { logUnloggedLesson, removeUnloggedLesson, type AdminUnloggedLesson } from "@/app/actions/unlogged-lessons"
 import { getMissedLessonPreview, markLessonMissed, type MissedLessonPreview } from "@/app/actions/missed-lesson"
+import { getLastHomework } from "@/app/actions/last-homework"
+import type { LastHomework } from "@/lib/last-homework"
+import { appendNotePhrase } from "@/lib/lesson-note-phrases"
+import { NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
 
 /**
  * The red "N unlogged" badge next to the studio name on the admin home (#760).
@@ -53,6 +57,8 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
     const [submitting, setSubmitting] = useState(false)
     const [notes, setNotes] = useState("")
     const [homework, setHomework] = useState("")
+    const [lastHomework, setLastHomework] = useState<LastHomework | null>(null)
+    const lastHomeworkSeq = useRef(0)
     const [preview, setPreview] = useState<MissedLessonPreview | null>(null)
     const [previewError, setPreviewError] = useState<string | null>(null)
 
@@ -83,6 +89,18 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
     const ask = (kind: Kind, lesson: AdminUnloggedLesson) => {
         setNotes(lesson.notes || "")
         setHomework("")
+        // #943: Log it starts with last lesson's homework in the box.
+        const seq = ++lastHomeworkSeq.current
+        setLastHomework(null)
+        if (kind === "log") {
+            getLastHomework(lesson.studentId, lesson.date, lesson.time)
+                .then(last => {
+                    if (!last || seq !== lastHomeworkSeq.current) return
+                    setLastHomework(last)
+                    setHomework(h => (h.trim() ? h : last.homework))
+                })
+                .catch(() => { /* the box just starts empty */ })
+        }
         setStep({ view: "confirm", kind, lesson })
     }
 
@@ -198,12 +216,18 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
                                     </span>
                                 </Label>
                                 <Textarea id="unlogged-notes" rows={5} maxLength={NOTES_MAX} value={notes} onChange={e => setNotes(e.target.value)} />
+                                <NotePhraseChips disabled={submitting} onPick={phrase => setNotes(n => appendNotePhrase(n, phrase).slice(0, NOTES_MAX))} />
                             </div>
                             <div className="space-y-1.5">
                                 <Label htmlFor="unlogged-homework">
                                     Homework <span className="font-normal text-muted-foreground">(optional)</span>
                                 </Label>
                                 <Textarea id="unlogged-homework" rows={3} maxLength={HOMEWORK_MAX} value={homework} onChange={e => setHomework(e.target.value)} />
+                                {lastHomework && homework === lastHomework.homework && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Last lesson&apos;s homework ({shortLessonDate(lastHomework.date)}): edit what changed or clear it.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     )}
