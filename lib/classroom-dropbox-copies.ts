@@ -2,7 +2,7 @@ import type { Dropbox } from 'dropbox'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { getDropboxClient, MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock } from '@/lib/studio-timezone'
-import { MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStartMs, UUID_RE } from '@/lib/classroom-recordings'
+import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStartMs, UUID_RE } from '@/lib/classroom-recordings'
 
 /**
  * Classroom recordings copied into the student's Dropbox folder (Lionel's #726),
@@ -153,6 +153,7 @@ export async function syncClassroomDropboxCopies(opts: CopySyncOptions = {}): Pr
     let recQuery = supabase
         .from('classroom_recordings')
         .select('id, student_id, url, created_at, size_bytes')
+        .eq('kind', LESSON_KIND)
         .gte('created_at', new Date(now.getTime() - days * 24 * 60 * MINUTE).toISOString())
         .order('created_at', { ascending: true })
     if (opts.studentId) recQuery = recQuery.eq('student_id', opts.studentId)

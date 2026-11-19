@@ -113,9 +113,15 @@ const GUEST = 'guest'
 const NOW = new Date('2026-11-18T20:00:00Z')
 const stamp = (iso: string) => Date.parse(iso)
 const rec = (id: string, student: string, startIso: string | null, stopIso: string, suffix = '') => ({
-    id, student_id: student, created_at: stopIso, size_bytes: null, filename: '', teacher_id: '',
+    id, student_id: student, created_at: stopIso, size_bytes: null, filename: '', teacher_id: '', kind: 'lesson',
     url: startIso ? `${R2}/${student}_${stamp(startIso)}${suffix}.mp4` : `${R2}/${student}_1773961666960_part1.mp4`,
 })
+// The piano camera alone (#792): stays in the classroom library, never copied.
+const piano = {
+    ...rec('r-piano', S1, '2026-11-16T17:00:00Z', '2026-11-16T17:52:30Z'),
+    kind: 'piano',
+    url: `${R2}/${S1}_${stamp('2026-11-16T17:00:00Z')}_piano-${stamp('2026-11-16T17:00:05Z')}.webm`,
+}
 const recordings = [
     rec('r-lesson', S1, '2026-11-16T17:00:00Z', '2026-11-16T17:52:00Z'),          // 52 min: copy
     rec('r-same-day', S1, '2026-11-16T19:00:00Z', '2026-11-16T19:40:00Z'),        // same day: " (2)"
@@ -135,7 +141,7 @@ const folder = '/Lesson Recordings/Student One Recordings'
 
 async function main() {
     const db = fakeDb({
-        classroom_recordings: recordings.map(r => ({ ...r })),
+        classroom_recordings: [...recordings, piano].map(r => ({ ...r })),
         profiles: [
             { id: S1, role: 'student', dropbox_recording_folder: 'Student One Recordings' },
             { id: S2, role: 'student', dropbox_recording_folder: null },
@@ -160,6 +166,7 @@ async function main() {
     assert.ok(!dry.skipped.some(s => s.recordingId === 'r-guest'), 'guest ids are dropped before anything else')
     assert.ok(dry.skipped.some(s => s.recordingId === 'r-empty' && /too small/.test(s.reason)))
     assert.equal(box.saveUrlCalls.length, 0)
+    assert.ok(!dry.skipped.some(s => s.recordingId === 'r-piano'), 'piano-camera files are not even looked at')
 
     // First run: three queued and three Dropbox jobs started.
     const first = await run()

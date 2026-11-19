@@ -34,6 +34,10 @@ import { logLessonCore } from '@/lib/core/lessons'
 // their stamp is not a start time and they are matched by save time instead.
 const START_MS_RE = /_(\d{13})\.mp4$/i
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// classroom_recordings.kind: 'lesson' is the two-camera lesson video; 'piano' is
+// the teacher's piano camera alone, no sound (#792), kept in the classroom
+// library next to it. Only lesson videos go on a lesson, log it, or go to Dropbox.
+export const LESSON_KIND = 'lesson'
 const MINUTE = 60_000
 
 // A recording may start a little before the slot (teacher gets set up) and any
@@ -164,6 +168,7 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
     let query = supabase
         .from('classroom_recordings')
         .select('id, student_id, url, created_at, size_bytes')
+        .eq('kind', LESSON_KIND)
         .gte('created_at', new Date(now.getTime() - days * 24 * 60 * MINUTE).toISOString())
         .order('created_at', { ascending: true })
     if (opts.studentId) query = query.eq('student_id', opts.studentId)
@@ -378,6 +383,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
     const { data: rows, error } = await supabase
         .from('classroom_recordings')
         .select('id, student_id, url, created_at, size_bytes')
+        .eq('kind', LESSON_KIND)
         .order('created_at', { ascending: false })
         .limit(limit)
     if (error) throw new Error(`classroom_recordings query failed: ${error.message}`)
