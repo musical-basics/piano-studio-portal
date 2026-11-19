@@ -15,6 +15,11 @@ plain words, are in docs/restore-studio.md; this does the typing for them.
         (~/Backups/piano-studio/storage) or from a downloaded Dropbox copy.
     python3 scripts/restore_studio_db.py check --to NEW_REF [--archive FILE]
         Counts every table and the sign-ins against the copy.
+    python3 scripts/restore_studio_db.py decrypt PATH
+        Opens a copy downloaded from Dropbox (encrypted, names end in .enc):
+        one file, or a folder of them into "<folder> (decrypted)". The key
+        comes from this Mac's Keychain, or is pasted (from the password
+        manager) on another Mac.
 
 SQL goes over the Supabase Management API (HTTPS), because this network
 blocks the database ports. The token is SUPABASE_PAT, else the Supabase CLI's
@@ -28,6 +33,7 @@ is given, and even then only into a database with no tables left.
 """
 import argparse
 import datetime
+import getpass
 import json
 import mimetypes
 import os
@@ -217,8 +223,8 @@ def quoted(text):
 def cmd_list(args):
     points = sorted(b.restore_points(b.BACKUP_ROOT), key=lambda p: p[1], reverse=True)
     if not points:
-        die(f"no copies in {b.BACKUP_ROOT}. Download the newest from Dropbox (/Studio Backups) "
-            f"and pass it with --archive.")
+        die(f"no copies in {b.BACKUP_ROOT}. Download the newest from Dropbox (/Studio Backups), "
+            f"open it with the decrypt command and pass it with --archive (docs/restore-studio.md).")
     print(f"Copies in {b.BACKUP_ROOT} (newest first; use one without PARTIAL):")
     for path, when, complete in points:
         size = path.stat().st_size / 1e6
@@ -230,6 +236,53 @@ def cmd_list(args):
         print(f"\nNewest complete: {newest.name}: {len([k for k in rows if k.startswith('public.')])} tables, "
               f"{sum(v for k, v in rows.items() if k.startswith('public.')):,} rows, "
               f"{rows.get('auth.users.json', '?')} sign-ins")
+
+
+# ---------------------------------------------------------------- decrypt ---
+
+def cmd_decrypt(args):
+    """The Dropbox copies are encrypted (Lionel's #780). A file X.enc becomes X
+    next to it; a folder becomes '<folder> (decrypted)' beside it, same layout."""
+    src = pathlib.Path(args.path).expanduser().resolve()
+    if not src.exists():
+        die(f"no such file or folder: {src}")
+    if src.is_file():
+        if not src.name.endswith(b.ENC_SUFFIX):
+            die(f"{src.name} does not end in {b.ENC_SUFFIX}, so it is not encrypted: use it as it is")
+        pairs = [(src, src.with_name(src.name[:-len(b.ENC_SUFFIX)]))]
+        out = src.parent
+    else:
+        out = src.with_name(f"{src.name} (decrypted)")
+        pairs = [(p, (out / p.relative_to(src)).with_name(p.name[:-len(b.ENC_SUFFIX)]))
+                 for p in sorted(src.rglob(f"*{b.ENC_SUFFIX}")) if p.is_file()]
+        if not pairs:
+            die(f"no {b.ENC_SUFFIX} files in {src}")
+    key = b.keychain_secret(b.ENC_ACCOUNT)
+    if key:
+        print("key: from this Mac's Keychain")
+    else:
+        key = getpass.getpass("Paste the Dropbox backup key (64 letters and digits, saved in Passwords as "
+                              "\"Studio backup Dropbox key\") and press Return. It stays hidden: ").strip()
+        if not key:
+            die("no key given")
+    started, nbytes, failed = time.time(), 0, []
+    for i, (enc, dest) in enumerate(pairs):
+        dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            b.openssl_enc(True, enc, dest, key)
+        except RuntimeError as e:
+            if i == 0:
+                die(f"{e}. Is it the key saved when the Dropbox copies were made?")
+            failed.append(str(e))
+            continue
+        nbytes += dest.stat().st_size
+        if (i + 1) % 25 == 0:
+            print(f"  {i + 1} of {len(pairs)} decrypted")
+    print(f"{len(pairs) - len(failed)} of {len(pairs)} files decrypted ({nbytes / 1e6:.1f} MB) in "
+          f"{time.time() - started:.0f}s, into {out}")
+    for f in failed:
+        print(f"  NOT decrypted: {f}")
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------- database ---
@@ -579,6 +632,8 @@ def main():
     ap = argparse.ArgumentParser(description="Bring the studio back from a nightly copy (docs/restore-studio.md).")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="the copies on this Mac")
+    sub.add_parser("decrypt", help="open a copy downloaded from Dropbox").add_argument(
+        "path", help="a .enc file, or a folder of them (into '<folder> (decrypted)')")
     for name in ("database", "storage", "check"):
         p = sub.add_parser(name)
         p.add_argument("--to", help="the new Supabase project's ref")
@@ -595,7 +650,8 @@ def main():
             p.add_argument("--storage-url", help="practice run: a local Storage server")
     args = ap.parse_args()
     print(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} restore_studio_db {args.cmd}")
-    return {"list": cmd_list, "database": cmd_database, "storage": cmd_storage, "check": cmd_check}[args.cmd](args) or 0
+    return {"list": cmd_list, "database": cmd_database, "storage": cmd_storage, "check": cmd_check,
+            "decrypt": cmd_decrypt}[args.cmd](args) or 0
 
 
 if __name__ == "__main__":

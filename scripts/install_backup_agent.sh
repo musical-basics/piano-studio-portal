@@ -47,6 +47,25 @@ store RESEND_API_KEY || echo "warning: no RESEND_API_KEY, runs will not email" >
 for k in DROPBOX_REFRESH_TOKEN DROPBOX_CLIENT_ID DROPBOX_CLIENT_SECRET; do
   store "$k" || echo "warning: no $k, the Dropbox copy will report itself failed" >&2
 done
+# The key that encrypts everything sent to Dropbox (Lionel's #780). Made once
+# and NEVER replaced here: the copies already in Dropbox open only with the key
+# they were made with. On a new Mac, put the saved key back first
+# (docs/restore-studio.md) so this does not make a new one.
+ENC_ACCOUNT="dropbox-encryption-key"
+if security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$ENC_ACCOUNT" >/dev/null 2>&1; then
+  echo "  keychain: $ENC_ACCOUNT already there (kept)"
+else
+  # security -i reads the command from stdin, so the key never shows in ps;
+  # printf is a shell builtin. 64 hex characters = 256 random bits.
+  printf 'add-generic-password -s %s -a %s -T /usr/bin/security -j "%s" -w %s\n' \
+    "$KEYCHAIN_SERVICE" "$ENC_ACCOUNT" "encrypts the studio backup copies in Dropbox, keep a copy in Passwords" \
+    "$(/usr/bin/openssl rand -hex 32)" | security -i >/dev/null
+  security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$ENC_ACCOUNT" >/dev/null 2>&1 \
+    || { echo "could not store the Dropbox encryption key in the Keychain" >&2; exit 1; }
+  echo "  keychain: $ENC_ACCOUNT MADE. Save it off this Mac now, or a lost Mac makes the Dropbox copies unreadable:"
+  echo "    security find-generic-password -s $KEYCHAIN_SERVICE -a $ENC_ACCOUNT -w | pbcopy"
+  echo "    then paste it into Passwords as \"Studio backup Dropbox key\""
+fi
 
 # write_agent LABEL SCRIPT LOG SCHEDULE-DICT EXTRA-ENV
 write_agent() {

@@ -24,7 +24,9 @@ Second copy (decision #536): the archives, kept by the same rules, and the
 storage mirror also go to Dropbox, "/Studio Backups" in the Dropbox the lesson
 recordings use (STUDIO_BACKUP_DROPBOX_DIR for another folder,
 STUDIO_BACKUP_DROPBOX=off to skip). A Dropbox failure leaves the run OK and
-the email says so.
+the email says so. Everything sent there is encrypted first (Lionel's #780,
+files end in .enc; the key is in the Keychain, see "encryption" below). The
+archives on the Mac stay unencrypted.
 
 If the Management API token is refused, the rows are still dumped (they need
 only the service key) from the table list remembered from the last good run,
@@ -43,9 +45,13 @@ editing it.
 
     python3 scripts/backup_studio_db.py                 # run a backup now
     python3 scripts/backup_studio_db.py --prune-dry-run # what retention would delete
+    python3 scripts/backup_studio_db.py --retire-plaintext-dropbox [--dry-run]
+        # deletes unencrypted files from the Dropbox copy, each only after its
+        # encrypted twin was downloaded, decrypted and found identical
 """
 import base64
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -444,18 +450,111 @@ def mirror_storage(pat, key):
     return fetched, skipped, len(manifest)
 
 
+# ------------------------------------------------------------- encryption ---
+#
+# Lionel's #780: the Dropbox copies hold every family's sign-in (emails and
+# password hashes), so everything sent there is encrypted first and a Dropbox
+# leak alone exposes nothing (names and sizes show, contents do not). Plain
+# OpenSSL file encryption: AES-256-CBC, the key stretched with PBKDF2-SHA256
+# (200,000 rounds, a new random salt per file). Any Mac's /usr/bin/openssl
+# (LibreSSL) or any OpenSSL 3 opens a file with
+#     openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in X.enc -out X
+# (it asks for the key). The key is 64 random hex characters in the Keychain
+# (service 'studio-backup', account 'dropbox-encryption-key'), made once by
+# install_backup_agent.sh, and MUST also be kept off the Mac (Lionel's
+# password manager): without it the Dropbox copies cannot be opened. openssl
+# gets it through a pipe (-pass fd:), never on a command line or in the
+# environment. The Mac's own archives stay unencrypted: they sit next to the
+# key anyway, in a folder only this user can read, and the restore steps and
+# the monthly test read them as they are.
+
+ENC_ACCOUNT = "dropbox-encryption-key"
+ENC_SUFFIX = ".enc"
+OPENSSL = "/usr/bin/openssl"
+ENC_ARGS = ("-aes-256-cbc", "-md", "sha256", "-pbkdf2", "-iter", "200000")
+
+
+def encryption_key():
+    key = keychain_secret(ENC_ACCOUNT)
+    if not key:
+        raise RuntimeError(f"the Dropbox encryption key is missing from the Keychain (service {KEYCHAIN_SERVICE}, "
+                           f"account {ENC_ACCOUNT}), so nothing was sent; put it back from the password manager "
+                           f"(docs/restore-studio.md)")
+    return key
+
+
+def openssl_enc(decrypt, src, dest, key):
+    """Encrypts (or decrypts) the file src into dest. Raises with the reason;
+    a wrong key or a damaged file almost always shows as 'bad decrypt'."""
+    r, w = os.pipe()
+    try:
+        os.write(w, (key + "\n").encode())
+    finally:
+        os.close(w)
+    try:
+        res = subprocess.run(
+            [OPENSSL, "enc", "-d" if decrypt else "-e", *ENC_ARGS, *(() if decrypt else ("-salt",)),
+             "-in", str(src), "-out", str(dest), "-pass", f"fd:{r}"],
+            pass_fds=(r,), capture_output=True, text=True, timeout=1800)
+    finally:
+        os.close(r)
+    if res.returncode != 0:
+        try:
+            pathlib.Path(dest).unlink()
+        except OSError:
+            pass
+        why = ("the key does not open it, or the file is damaged" if decrypt and "bad decrypt" in res.stderr
+               else res.stderr.strip()[:200])
+        raise RuntimeError(f"openssl could not {'decrypt' if decrypt else 'encrypt'} {pathlib.Path(src).name}: {why}")
+
+
+def encrypted_size(n):
+    """What openssl writes for n plain bytes: 'Salted__', the 8-byte salt, and
+    the bytes padded up to the next whole 16-byte block (always at least 1)."""
+    return 16 + (n // 16 + 1) * 16
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def dropbox_content_hash(path):
+    """Dropbox's content_hash of a local file (the SHA-256 of its 4 MB blocks'
+    SHA-256s), to prove a file in Dropbox holds exactly these bytes."""
+    blocks = []
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(4 * 1024 * 1024), b""):
+            blocks.append(hashlib.sha256(block).digest())
+    return hashlib.sha256(b"".join(blocks)).hexdigest()
+
+
+def private_workdir(name):
+    """An empty folder only this user can read, for decrypted or encrypted
+    files in passing (callers remove it in a finally)."""
+    d = BACKUP_ROOT / name
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(mode=0o700, parents=True)
+    return d
+
+
 # ---------------------------------------------------------- dropbox copy ---
 #
 # Decision #536: a dead Mac or disk must not take every backup with it, so each
 # run also copies the archives and the storage mirror to the Dropbox the lesson
-# recordings use (the portal's Dropbox app). A Dropbox failure never fails the
-# backup: the run stays OK locally and the email says what went wrong. Whatever
-# a failed night missed is sent the next night (both sides are compared).
+# recordings use (the portal's Dropbox app), encrypted (above). A Dropbox
+# failure never fails the backup: the run stays OK locally and the email says
+# what went wrong. Whatever a failed night missed is sent the next night (both
+# sides are compared).
 
 DROPBOX_ROOT = (os.environ.get("STUDIO_BACKUP_DROPBOX_DIR") or "/Studio Backups").rstrip("/")
 DROPBOX_KEYS = ("DROPBOX_REFRESH_TOKEN", "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET")
 DROPBOX_CHUNK = 64 * 1024 * 1024  # files/upload takes up to 150 MB; bigger ones go in sessions
 DROPBOX_SENT = ".dropbox-sent.json"
+DROPBOX_WORK = ".dropbox-tmp"  # encrypted files on their way up; the restore test waits while it exists
 
 
 class Dropbox:
@@ -474,12 +573,18 @@ class Dropbox:
             raise RuntimeError(f"Dropbox refused the refresh token (HTTP {e.code} "
                                f"{e.read().decode(errors='replace')[:120]})") from None
 
-    def _call(self, url, data, headers, timeout=300):
-        """Retries rate limits (Dropbox answers 429 to bursts of writes) and 5xx."""
+    def _call(self, url, data, headers, timeout=300, sink=None):
+        """Retries rate limits (Dropbox answers 429 to bursts of writes) and 5xx.
+        With sink (a path), the body is a download written there, and the
+        file's metadata (Dropbox-API-Result) is returned."""
         for attempt in range(5):
             req = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {self.token}", **headers})
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as res:
+                    if sink is not None:
+                        with open(sink, "wb") as f:
+                            shutil.copyfileobj(res, f, 1 << 20)
+                        return json.loads(res.headers.get("Dropbox-API-Result") or "null")
                     return json.loads(res.read() or b"null")
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:200]
@@ -518,22 +623,64 @@ class Dropbox:
             return self._content("files/upload_session/finish",
                                  {"cursor": {"session_id": session, "offset": offset}, "commit": commit}, f.read())
 
-    def files_in(self, folder):
-        """{name: size} of the files directly in folder ({} if it doesn't exist yet)."""
+    def download(self, path, dest):
+        """Writes the Dropbox file path to the local dest; returns its metadata."""
+        return self._call("https://content.dropboxapi.com/2/files/download", b"", {
+            "Content-Type": "application/octet-stream",
+            "Dropbox-API-Arg": json.dumps({"path": path}, ensure_ascii=True)}, sink=dest)
+
+    def files(self, folder, recursive=False):
+        """The file entries (name, path_display, size, content_hash...) in
+        folder, and in its subfolders too if recursive ([] if it doesn't exist yet)."""
         try:
-            res = self.rpc("files/list_folder", {"path": folder, "limit": 2000})
+            res = self.rpc("files/list_folder", {"path": folder, "recursive": recursive, "limit": 2000})
         except RuntimeError as e:
             if "not_found" in str(e):
-                return {}
+                return []
             raise
         entries = res["entries"]
         while res.get("has_more"):
             res = self.rpc("files/list_folder/continue", {"cursor": res["cursor"]})
             entries += res["entries"]
-        return {e["name"]: e.get("size") for e in entries if e.get(".tag") == "file"}
+        return [e for e in entries if e.get(".tag") == "file"]
+
+    def files_in(self, folder):
+        """{name: size} of the files directly in folder ({} if it doesn't exist yet)."""
+        return {e["name"]: e.get("size") for e in self.files(folder)}
 
     def delete(self, path):
         self.rpc("files/delete_v2", {"path": path})
+
+
+def send_encrypted(dbx, src, dest, key, work):
+    """Encrypts src, proves the result decrypts back to the same bytes, uploads
+    it to the Dropbox path dest and proves Dropbox holds exactly what was sent."""
+    enc, back = work / "upload.enc", work / "upload.check"
+    try:
+        openssl_enc(False, src, enc, key)
+        openssl_enc(True, enc, back, key)
+        if sha256_file(back) != sha256_file(src):
+            raise RuntimeError(f"{src.name}: the encrypted copy does not decrypt to the original")
+        meta = dbx.upload(enc, dest)
+        if (meta or {}).get("content_hash") != dropbox_content_hash(enc):
+            raise RuntimeError(f"{dest}: Dropbox holds different bytes than were sent")
+    finally:
+        for p in (enc, back):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
+def dropbox_archives(dbx):
+    """{archive name: size in Dropbox} of the encrypted archives in DROPBOX_ROOT
+    (the name without .enc, as on the Mac)."""
+    out = {}
+    for name, size in dbx.files_in(DROPBOX_ROOT).items():
+        plain = name[:-len(ENC_SUFFIX)]
+        if name.endswith(ENC_SUFFIX) and ARCHIVE_RE.fullmatch(plain):
+            out[plain] = size
+    return out
 
 
 def dropbox_safe(path):
@@ -549,11 +696,13 @@ def dropbox_safe(path):
 
 
 def dropbox_copy():
-    """Sends the archives and new storage files; prunes the Dropbox archives
-    with the same keep-rules (gfs_plan) as the local ones. Returns a summary
-    line. Raises with the reason when anything could not be copied."""
+    """Sends the archives and new storage files, encrypted (NAME.enc in
+    Dropbox); prunes the Dropbox archives with the same keep-rules (gfs_plan)
+    as the local ones. Returns a summary line. Raises with the reason when
+    anything could not be copied. Never sends anything unencrypted."""
+    key = encryption_key()
     dbx = Dropbox()
-    remote = dbx.files_in(DROPBOX_ROOT)
+    remote = dropbox_archives(dbx)
     local = {p.name: p for p, _, _ in restore_points(BACKUP_ROOT)}
     points = []
     for name in set(remote) | set(local):
@@ -562,43 +711,104 @@ def dropbox_copy():
             points.append((name, datetime.datetime.fromisoformat(f"{m[1]}T{m[2]}:{m[3]}"), not m[4]))
     keep = gfs_plan(points, datetime.date.today())
     sent = pruned = 0
-    for name in sorted(local):
-        if name in keep and remote.get(name) != local[name].stat().st_size:
-            dbx.upload(local[name], f"{DROPBOX_ROOT}/{name}")
-            sent += 1
-    for name in sorted(remote):
-        if ARCHIVE_RE.fullmatch(name) and name not in keep:
-            dbx.delete(f"{DROPBOX_ROOT}/{name}")
-            pruned += 1
-
-    # Storage files: what the local mirror holds that Dropbox doesn't have yet,
-    # remembered per Dropbox folder so a test folder can't mark files as sent.
-    mirror_path, sent_path = STORAGE_ROOT / ".manifest.json", STORAGE_ROOT / DROPBOX_SENT
-    mirror = json.loads(mirror_path.read_text()) if mirror_path.exists() else {}
-    record = json.loads(sent_path.read_text()) if sent_path.exists() else {}
-    done = record.get("files", {}) if record.get("folder") == DROPBOX_ROOT else {}
-    files = nbytes = 0
-    failed = []
+    work = private_workdir(DROPBOX_WORK)
     try:
-        for okey, stamp in sorted(mirror.items()):
-            src = STORAGE_ROOT / okey
-            if done.get(okey) == stamp or not src.exists():
-                continue
-            try:
-                dbx.upload(src, f"{DROPBOX_ROOT}/storage/{dropbox_safe(okey)}")
-                done[okey] = stamp
-                files += 1
-                nbytes += src.stat().st_size
-            except Exception as e:
-                failed.append(f"{okey}: {e}")
+        for name in sorted(local):
+            if name in keep and remote.get(name) != encrypted_size(local[name].stat().st_size):
+                send_encrypted(dbx, local[name], f"{DROPBOX_ROOT}/{name}{ENC_SUFFIX}", key, work)
+                sent += 1
+        for name in sorted(remote):
+            if name not in keep:
+                dbx.delete(f"{DROPBOX_ROOT}/{name}{ENC_SUFFIX}")
+                pruned += 1
+
+        # Storage files: what the local mirror holds that Dropbox doesn't have
+        # yet, remembered per Dropbox folder so a test folder can't mark files
+        # as sent. A record from before encryption counts for nothing, so every
+        # file goes again, encrypted.
+        mirror_path, sent_path = STORAGE_ROOT / ".manifest.json", STORAGE_ROOT / DROPBOX_SENT
+        mirror = json.loads(mirror_path.read_text()) if mirror_path.exists() else {}
+        record = json.loads(sent_path.read_text()) if sent_path.exists() else {}
+        done = (record.get("files", {}) if record.get("folder") == DROPBOX_ROOT and record.get("encrypted")
+                else {})
+        files = nbytes = 0
+        failed = []
+        try:
+            for okey, stamp in sorted(mirror.items()):
+                src = STORAGE_ROOT / okey
+                if done.get(okey) == stamp or not src.exists():
+                    continue
+                try:
+                    send_encrypted(dbx, src, f"{DROPBOX_ROOT}/storage/{dropbox_safe(okey)}{ENC_SUFFIX}", key, work)
+                    done[okey] = stamp
+                    files += 1
+                    nbytes += src.stat().st_size
+                except Exception as e:
+                    failed.append(f"{okey}: {e}")
+        finally:
+            sent_path.write_text(json.dumps({"folder": DROPBOX_ROOT, "encrypted": True, "files": done},
+                                            indent=1, sort_keys=True))
     finally:
-        sent_path.write_text(json.dumps({"folder": DROPBOX_ROOT, "files": done}, indent=1, sort_keys=True))
+        shutil.rmtree(work, ignore_errors=True)
     on_dropbox = len([n for n in keep if n in remote or n in local])
     summary = (f"{sent} archive{'s' * (sent != 1)} sent, {pruned} pruned, {on_dropbox} kept there; "
-               f"{files} storage file{'s' * (files != 1)} sent ({nbytes / 1e6:.1f} MB), {len(done)} there in all")
+               f"{files} storage file{'s' * (files != 1)} sent ({nbytes / 1e6:.1f} MB), {len(done)} there in all; "
+               f"all encrypted, each checked after upload")
     if failed:
         raise RuntimeError(f"{len(failed)} storage file(s) not sent, first: {failed[0][:150]} ({summary})")
     return summary
+
+
+def retire_plaintext(dry_run=False):
+    """Lionel's #780, once: deletes the unencrypted files the Dropbox copy held
+    from before encryption. Each is deleted only after its encrypted twin
+    (same path + .enc) was downloaded, decrypted, and found byte-identical to
+    it (Dropbox's content_hash of the decrypted bytes equals the plain file's).
+    A missing twin is made first from the Dropbox file itself. Dropbox keeps
+    deleted files restorable for 30 days; this does not purge that history."""
+    key = encryption_key()
+    dbx = Dropbox()
+    entries = dbx.files(DROPBOX_ROOT, recursive=True)
+    enc = {e["path_lower"]: e for e in entries if e["name"].endswith(ENC_SUFFIX)}
+    plain = sorted((e for e in entries if not e["name"].endswith(ENC_SUFFIX)), key=lambda e: e["path_lower"])
+    print(f"{DROPBOX_ROOT}: {len(enc)} encrypted files, {len(plain)} unencrypted "
+          f"({sum(e['size'] for e in plain) / 1e6:.1f} MB)")
+    made = verified = deleted = nbytes = 0
+    failed = []
+    work = private_workdir(DROPBOX_WORK)
+    try:
+        for e in plain:
+            twin = e["path_display"] + ENC_SUFFIX
+            try:
+                if twin.lower() not in enc:
+                    src = work / "plain"
+                    dbx.download(e["path_display"], src)
+                    if dropbox_content_hash(src) != e["content_hash"]:
+                        raise RuntimeError("download did not match Dropbox's hash")
+                    send_encrypted(dbx, src, twin, key, work)
+                    src.unlink()
+                    made += 1
+                dbx.download(twin, work / "twin.enc")
+                openssl_enc(True, work / "twin.enc", work / "twin", key)
+                same = dropbox_content_hash(work / "twin") == e["content_hash"]
+                for p in (work / "twin.enc", work / "twin"):
+                    p.unlink()
+                if not same:
+                    raise RuntimeError("the encrypted twin does not decrypt to the same bytes")
+                verified += 1
+                if not dry_run:
+                    dbx.delete(e["path_display"])
+                    deleted += 1
+                    nbytes += e["size"]
+            except Exception as ex:
+                failed.append(f"{e['path_display']}: {ex}")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    print(f"{made} encrypted twins made, {verified} of {len(plain)} verified identical after decrypting, "
+          + ("nothing deleted (dry run)" if dry_run else f"{deleted} unencrypted files deleted ({nbytes / 1e6:.1f} MB)"))
+    for f in failed:
+        print(f"NOT DONE {f}")
+    return 1 if failed else 0
 
 
 # -------------------------------------------------------------- retention ---
@@ -810,6 +1020,8 @@ if __name__ == "__main__":
     if "--prune-dry-run" in sys.argv:
         print(prune(dry_run=True))
         sys.exit(0)
+    if "--retire-plaintext-dropbox" in sys.argv:
+        sys.exit(retire_plaintext(dry_run="--dry-run" in sys.argv))
     try:
         main()
     except SystemExit:

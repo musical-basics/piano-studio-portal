@@ -16,7 +16,12 @@ python3 scripts/restore_studio_db.py list
 ```
 It shows the copies on this Mac (`~/Backups/piano-studio`); the steps below use the newest complete one by themselves (never one marked PARTIAL).
 
-No copies on the Mac? In Dropbox, folder `/Studio Backups`, download the newest `piano-studio-<date>-<time>.tar.gz` without PARTIAL, and the `storage` folder. Then add `--archive ~/Downloads/<that file>` to steps 3 and 7, and `--from ~/Downloads/storage` to step 4.
+No copies on the Mac? In Dropbox, folder `/Studio Backups`, download the newest `piano-studio-<date>-<time>.tar.gz.enc` without PARTIAL, and the `storage` folder (Dropbox gives it as `storage.zip`: double-click it). Everything there is encrypted, so open both with the Dropbox backup key (see "The Dropbox key" below):
+```
+python3 scripts/restore_studio_db.py decrypt ~/Downloads/piano-studio-<date>-<time>.tar.gz.enc
+python3 scripts/restore_studio_db.py decrypt ~/Downloads/storage
+```
+On this Mac the key comes from the Keychain by itself; on another Mac it asks you to paste it from Passwords. Then add `--archive ~/Downloads/piano-studio-<date>-<time>.tar.gz` to steps 3 and 7, and `--from ~/Downloads/"storage (decrypted)"` to step 4.
 
 **2. Make an empty database (you).** supabase.com/dashboard, then **New project**:
 - Organization: the studio's. Name: `piano-studio-2`. Database password: **Generate a password**, save it in Passwords. Region: **East US (North Virginia)**, the same as before. Plan: Free. Click **Create new project** and wait until it is ready (about 2 minutes).
@@ -48,7 +53,7 @@ It makes the 6 buckets (`studio_private` stays private) and uploads every file (
 
 Then Deployments, the top one, the `...` menu, **Redeploy**. Do the same in the classroom app's Vercel project (music-lesson-dashboard), where the service key is called `SUPABASE_SERVICE_ROLE_KEY`, and redeploy it.
 
-On the Mac: put the same values in `.env.local` in both folders (the portal's and `music-lesson-dashboard`), change `PROJECT_REF` in `scripts/backup_studio_db.py` to NEW_REF, and run `scripts/install_backup_agent.sh`, so the nightly copy follows the new database. If Elephant stops showing the studio's time zone, it needs the new URL and anon key too.
+On the Mac: put the same values in `.env.local` in both folders (the portal's and `music-lesson-dashboard`), change `PROJECT_REF` in `scripts/backup_studio_db.py` to NEW_REF, and run `scripts/install_backup_agent.sh`, so the nightly copy follows the new database. On a new Mac, put the Dropbox key back in its Keychain first (see "The Dropbox key"), or the script makes a new key and the older Dropbox copies need the old one from Passwords. If Elephant stops showing the studio's time zone, it needs the new URL and anon key too.
 
 **7. Check it worked.**
 ```
@@ -72,6 +77,11 @@ It should say `OK` and `Sign-ins: 30 of 30 identical to the copy` (or however ma
 ## Appendix
 
 **What the copy holds.** Every table and row, the sign-ins (`auth.users` and `auth.identities`, with password hashes), and the database's rules: keys, indexes, functions, triggers, row security, policies (including Storage's) and grants. The files are kept separately in `~/Backups/piano-studio/storage` and in Dropbox `/Studio Backups/storage`. Copies are kept 7 daily, 4 weekly, 12 monthly, and one a year forever.
+
+**The Dropbox key.** Since Nov 19, 2026 everything in Dropbox `/Studio Backups` is encrypted before it leaves the Mac (names end in `.enc`; AES-256), so someone who gets into the Dropbox alone sees file names and sizes but no sign-ins, rows or files. The copies on the Mac itself are not encrypted (they sit next to the key anyway, in a folder only your Mac user can open). The key is 64 letters and digits, kept in this Mac's Keychain (service `studio-backup`, account `dropbox-encryption-key`) and in Passwords as "Studio backup Dropbox key". **Without it the Dropbox copies cannot be opened**, so it must stay in Passwords.
+- Save it to Passwords (once): `security find-generic-password -s studio-backup -a dropbox-encryption-key -w | pbcopy`, then in Passwords make a new entry "Studio backup Dropbox key" and paste it as the password. Nothing shows in Terminal.
+- Put it back on a new Mac (before `scripts/install_backup_agent.sh`): `security add-generic-password -s studio-backup -a dropbox-encryption-key -T /usr/bin/security -w` and paste it when asked (twice).
+- Open one file without the script, on any Mac: `openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in FILE.enc -out FILE` and paste the key when asked. "bad decrypt" means the wrong key.
 
 **What it does not hold**, so the steps cover it: the Supabase sign-in settings (step 5) and API keys (step 2, new ones anyway); which tables Realtime watches (`classroom_annotations` and `crm_students`, kept in the script and switched back on by step 3). The live project has no scheduled database jobs, Edge Functions or Vault secrets to bring back.
 
