@@ -42,6 +42,7 @@ import {
 } from "@/lib/mock-data"
 import { MakeupScheduler } from "./makeup-scheduler"
 import { RecordingConsentDialog } from "./recording-consent-dialog"
+import { PracticeTab } from "./practice-tab"
 import { CancellationModal } from "./cancellation-modal"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
@@ -882,7 +883,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     {/* My Library */}
                     <div className="lg:col-span-2 space-y-6">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                            <TabsList className={`grid w-full ${history ? "grid-cols-6" : "grid-cols-5"} mb-6`}>
+                            <TabsList className={`grid w-full ${history ? "grid-cols-7" : "grid-cols-6"} mb-6`}>
                                 <TabsTrigger value="lessons" className="gap-2">
                                     <Music className="h-4 w-4" />
                                     <span className="hidden sm:inline">Lessons</span>
@@ -896,6 +897,10 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 <TabsTrigger value="homework" className="gap-2">
                                     <ClipboardList className="h-4 w-4" />
                                     <span className="hidden sm:inline">Homework</span>
+                                </TabsTrigger>
+                                <TabsTrigger value="practice" className="gap-2">
+                                    <Video className="h-4 w-4" />
+                                    <span className="hidden sm:inline">Practice</span>
                                 </TabsTrigger>
                                 <TabsTrigger value="downloads" className="gap-2">
                                     <FileText className="h-4 w-4" />
@@ -1155,6 +1160,11 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                             <TabsContent value="homework" className="space-y-4">
                                 <HomeworkTab lessons={completedLessons} studentId={profile.id} />
+                            </TabsContent>
+
+                            {/* #875: practice videos for Lionel to watch and comment on */}
+                            <TabsContent value="practice" className="space-y-4">
+                                {activeTab === "practice" && <PracticeTab />}
                             </TabsContent>
 
                             <TabsContent value="downloads" className="space-y-4">

@@ -7,7 +7,7 @@ import { AnnouncementTab } from "@/components/admin/announcement-tab"
 import { MasterCalendar } from "./master-calendar"
 import { WeeklyScheduleTab, type RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
-import React, { useState, useRef, Suspense, useMemo } from "react"
+import React, { useState, useRef, Suspense, useMemo, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +40,8 @@ import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
 import { RunningLateDialog } from "@/components/admin/running-late-dialog"
 import { UndoLogDialog } from "@/components/admin/undo-log-dialog"
 import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
+import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
+import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
@@ -166,6 +168,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     // State for Active Tab and Chat Selection
     const [activeTab, setActiveTab] = useState("dashboard")
+
+    // #875: practice videos still waiting for a comment (red count on the tab)
+    const [practiceWaiting, setPracticeWaiting] = useState(0)
+    useEffect(() => {
+        countPracticeVideosWaiting().then(setPracticeWaiting).catch(() => {})
+    }, [])
     const [chatStudentId, setChatStudentId] = useState<string | null>(null)
 
     const handleJumpToMessage = (studentId: string) => {
@@ -862,6 +870,18 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             <Film className="h-4 w-4" />
                             <span className="hidden sm:inline">Classroom recordings</span>
                         </TabsTrigger>
+                        <TabsTrigger value="practice" className="gap-2 relative">
+                            <Video className="h-4 w-4" />
+                            <span className="hidden sm:inline">Practice</span>
+                            {practiceWaiting > 0 && (
+                                <Badge
+                                    variant="destructive"
+                                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                                >
+                                    {practiceWaiting}
+                                </Badge>
+                            )}
+                        </TabsTrigger>
                         <TabsTrigger value="messages" className="gap-2 relative">
                             <MessageCircle className="h-4 w-4" />
                             <span className="hidden sm:inline">Messages</span>
@@ -972,6 +992,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 setActiveTab("dashboard")
                             }}
                         />
+                    </TabsContent>
+
+                    {/* #875: practice videos from students, with your comments */}
+                    <TabsContent value="practice" className="space-y-4">
+                        {activeTab === "practice" && <PracticeVideosTab onWaitingChange={setPracticeWaiting} />}
                     </TabsContent>
 
                     <TabsContent value="messages">
