@@ -152,7 +152,13 @@ export function isThanksOnly(content: string | null, attachments?: unknown): boo
 }
 
 function previewOf(content: string | null, attachments: unknown): string {
-    const text = (content || '').replace(/\s+/g, ' ').trim()
+    // Links a family sent are shown as "[link]": mail apps turn any URL into a
+    // tappable link, and a preview is not the place to open an unknown site.
+    const text = (content || '')
+        .replace(/\b(?:https?:\/\/|www\.)\S+/gi, '[link]')
+        .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|app|link|xyz|me|ly|gg|ru|cn|info|biz|site|online|shop|top)(?:\/\S*)?\b/gi, '[link]')
+        .replace(/\s+/g, ' ')
+        .trim()
     const files = Array.isArray(attachments) ? attachments.length : 0
     if (!text) return files ? `(sent ${files === 1 ? 'a file' : `${files} files`})` : '(empty message)'
     return text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS).trimEnd()}...` : text
