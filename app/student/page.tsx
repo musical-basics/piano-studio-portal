@@ -7,6 +7,7 @@ import { getLatestAnnouncement } from "@/app/actions/announcements"
 import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
 import { buildLessonHistory } from "@/lib/lesson-history"
+import { getMarkersForLessons } from "@/lib/recording-markers"
 
 export default async function StudentPage() {
   const supabase = await createClient()
@@ -70,6 +71,10 @@ export default async function StudentPage() {
   // signed-in family's own session, so row security limits it to their lessons.
   const history = buildLessonHistory(lessons || [], profile.credits ?? null)
 
+  // Moments Lionel marked in classroom recordings (#874), for the lessons above
+  // (already limited to this family by their own session).
+  const markersByLesson = await getMarkersForLessons(lessons || [])
+
   // Find next scheduled lesson
   const now = new Date()
   const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000))
@@ -130,6 +135,7 @@ export default async function StudentPage() {
         latestAnnouncement={latestAnnouncement}
         unreadCount={unreadCount || 0}
         history={history}
+        markersByLesson={markersByLesson}
       />
     </>
   )

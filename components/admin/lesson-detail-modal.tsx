@@ -6,14 +6,17 @@ import { Separator } from "@/components/ui/separator"
 import { Calendar, Clock, Download, Music } from "lucide-react"
 import { VideoPlayer } from "@/components/video-player"
 import type { Lesson } from "@/lib/mock-data"
+import type { RecordingMarker } from "@/lib/recording-markers"
 
 interface LessonDetailModalProps {
   lesson: Lesson
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Moments Lionel marked in the classroom recording (#874). */
+  markers?: RecordingMarker[]
 }
 
-export function LessonDetailModal({ lesson, open, onOpenChange }: LessonDetailModalProps) {
+export function LessonDetailModal({ lesson, open, onOpenChange, markers }: LessonDetailModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -62,7 +65,7 @@ export function LessonDetailModal({ lesson, open, onOpenChange }: LessonDetailMo
           {lesson.video_url && (
             <div>
               <h3 className="font-semibold text-lg mb-3 font-serif">Lesson Recording</h3>
-              <VideoPlayer url={lesson.video_url} title={`Lesson - ${lesson.date}`} />
+              <VideoPlayer url={lesson.video_url} title={`Lesson - ${lesson.date}`} markers={markers} />
               <Button variant="outline" className="w-full mt-3" asChild>
                 <a href={lesson.video_url} target="_blank" rel="noopener noreferrer">
                   <Download className="h-4 w-4 mr-2" />

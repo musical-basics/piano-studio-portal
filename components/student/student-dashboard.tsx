@@ -35,6 +35,7 @@ import {
     Repeat,
     Gift,
     History,
+    Bookmark,
 } from "lucide-react"
 import {
     mockEvents,
@@ -79,6 +80,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { VideoPlayer } from "@/components/video-player"
+import type { RecordingMarker } from "@/lib/recording-markers"
 import { getDropboxRecordings, getDropboxTemporaryLink } from "@/app/actions/recordings"
 import type { DropboxRecording } from "@/app/actions/recordings"
 import { formatRecordingName } from "@/lib/format-recording-name"
@@ -106,6 +108,8 @@ export interface StudentDashboardProps {
     unreadCount?: number
     /** The Lesson history tab, built on the server from the family's own lessons. */
     history?: LessonHistory
+    /** Moments Lionel marked in classroom recordings (#874), by lesson id. */
+    markersByLesson?: Record<string, RecordingMarker[]>
 }
 
 // Category badge colors
@@ -117,7 +121,7 @@ const categoryColors: Record<string, string> = {
     'Recording': 'bg-pink-100 text-pink-800',
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {} }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom Link (prioritized over Zoom)
@@ -978,6 +982,12 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                                         Video
                                                                     </Badge>
                                                                 )}
+                                                                {lesson.video_url && (markersByLesson[lesson.id]?.length ?? 0) > 0 && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        <Bookmark className="h-3 w-3 mr-1" />
+                                                                        {markersByLesson[lesson.id].length} marked {markersByLesson[lesson.id].length === 1 ? 'moment' : 'moments'}
+                                                                    </Badge>
+                                                                )}
                                                             </div>
                                                             {lesson.sheet_music_url && (
                                                                 <div className="mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
@@ -1342,6 +1352,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     lesson={selectedLesson}
                     open={showLessonDetail}
                     onOpenChange={setShowLessonDetail}
+                    markers={markersByLesson[selectedLesson.id]}
                 />
             )}
 
