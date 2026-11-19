@@ -6,6 +6,7 @@ import type { TodayLesson, StudentRoster, LessonWithStudent } from "@/components
 import type { RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { getInquiries } from "@/app/actions/inquiries"
 import { getResources } from "@/app/actions/resources"
+import { findUnloggedForAdmin, type AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -138,6 +139,15 @@ export default async function AdminPage() {
     .lte("start_time", eventWindowEnd.toISOString())
     .order("start_time", { ascending: true })
 
+  // Past lessons nobody logged, for the red "N unlogged" badge (#760).
+  // Service-role read, since we are past the admin gate.
+  let unloggedLessons: AdminUnloggedLesson[] = []
+  try {
+    unloggedLessons = await findUnloggedForAdmin(createAdminClient())
+  } catch (e) {
+    console.error("Unlogged lessons fetch error:", e)
+  }
+
   // Count unread messages (messages where admin is recipient and is_read is false)
   const totalUnread = 0
 
@@ -164,6 +174,7 @@ export default async function AdminPage() {
       inquiriesError={inquiriesError}
       resources={resources || []}
       pricingPlans={pricingPlans || []}
+      unloggedLessons={unloggedLessons}
     />
   )
 }

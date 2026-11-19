@@ -21,6 +21,9 @@ export const QUIET_LOG_AFTER_DAYS = 7
 /** Ledger label, so the credit check knows this late credit is meant. */
 export const LATE_LOG_SOURCE = 'unlogged lesson logged late (email button)'
 
+/** The same, for a log from the admin home's unlogged list (#760). */
+export const LATE_LOG_SOURCE_ADMIN = 'unlogged lesson logged late (admin list)'
+
 export function isTooOldForUsualLog(date: string, today: string = studioToday()): boolean {
     return shiftDateStr(date, QUIET_LOG_AFTER_DAYS) <= today
 }
@@ -38,7 +41,7 @@ export type QuietLogResult =
 export async function logOldLessonQuietly(
     client: DbClient,
     lessonId: string,
-    { notes, homework }: { notes?: string; homework?: string } = {},
+    { notes, homework, source = LATE_LOG_SOURCE }: { notes?: string; homework?: string; source?: string } = {},
 ): Promise<QuietLogResult> {
     const started = new Date()
     const { data: before, error: readError } = await client
@@ -102,7 +105,7 @@ export async function logOldLessonQuietly(
         .order('changed_at', { ascending: false })
         .limit(1)
     if (rows && rows[0]) {
-        const { error: labelError } = await client.from('credit_transactions').update({ source: LATE_LOG_SOURCE }).eq('id', rows[0].id)
+        const { error: labelError } = await client.from('credit_transactions').update({ source }).eq('id', rows[0].id)
         if (labelError) console.error('[late-lesson-log] ledger label not saved:', labelError.message)
     }
 

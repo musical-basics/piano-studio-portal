@@ -38,6 +38,8 @@ import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
 import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
+import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
+import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import type { LessonWithStudent, TodayLesson, StudentRoster, Inquiry, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr } from "@/lib/studio-timezone"
 
@@ -64,9 +66,11 @@ export interface AdminDashboardProps {
     inquiriesError?: string
     resources: Resource[]
     pricingPlans: PricingPlan[]
+    /** Past lessons nobody logged, for the red "N unlogged" badge (#760). */
+    unloggedLessons?: AdminUnloggedLesson[]
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [] }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -730,17 +734,21 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             {/* Header */}
             <header className="border-b bg-card sticky top-0 z-10">
                 <div className="container mx-auto px-4 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 bg-primary rounded-full flex items-center justify-center">
+                    {/* On a phone the buttons go under the name and scroll sideways, so the page keeps the phone's width (#760). */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3 sm:shrink-0">
+                            <div className="h-10 w-10 shrink-0 bg-primary rounded-full flex items-center justify-center">
                                 <Music className="h-5 w-5 text-primary-foreground" />
                             </div>
                             <div>
-                                <h1 className="text-xl font-serif font-semibold">{admin.studio_name || "Teacher Admin Portal"}</h1>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h1 className="text-xl font-serif font-semibold">{admin.studio_name || "Teacher Admin Portal"}</h1>
+                                    <UnloggedLessonsBadge lessons={unloggedLessons} />
+                                </div>
                                 <p className="text-sm text-muted-foreground">{admin.name || 'Admin'}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
                             <Button variant="outline" asChild>
                                 <a href="/admin/events" className="gap-2">
                                     <Calendar className="h-4 w-4" />
