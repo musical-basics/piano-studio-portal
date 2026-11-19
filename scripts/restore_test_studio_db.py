@@ -347,6 +347,18 @@ def restore_and_check(archive):
     roles -= {"public", "PUBLIC", "postgres"}
 
     stats = {}
+    # #993: Supabase's sign-in settings and email templates (not loadable into a
+    # throwaway Postgres; checked for being there and readable).
+    if b.AUTH_CONFIG in files:
+        try:
+            cfg = json.loads(files[b.AUTH_CONFIG])["config"]
+            stats["auth_settings"] = len(cfg)
+            stats["auth_templates"] = sum(1 for k, v in cfg.items() if "template" in k and v)
+        except Exception as e:
+            problems.append(f"{b.AUTH_CONFIG}: unreadable ({e})")
+    else:
+        warnings.append("this copy has no sign-in settings or email templates (made before 2026-11-19, or they could not be saved: "
+                        + str((manifest or {}).get("auth_config", "no record")) + ")")
     restored, fingerprints = {}, {}
     started_docker = start_docker()
     try:
@@ -628,6 +640,8 @@ def run_test(started, args, from_dropbox, work):
         f"Restored:  {len(public)} tables, {rows:,} rows, {users} sign-ins ({idents} identities), "
         f"every row INSERTed into a throwaway Postgres",
         f"Rebuilt:   {rules}",
+        f"Sign-in:   " + (f"{s('auth_settings')} settings and {s('auth_templates')} email templates saved in the copy (secrets left out)"
+                          if s('auth_settings') else "settings and email templates not in this copy"),
         "Live:      " + (f"every table and sign-in matches the live database"
                          f" ({live.get('sign-ins identical', 0)} of {users} sign-ins identical)"
                          if live and not problems else "compared, see below" if live else "not compared"),

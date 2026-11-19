@@ -421,6 +421,40 @@ def dump_schema(pat, dest):
     return sum(len(v) for v in snap.values())
 
 
+AUTH_CONFIG = "auth-config.json"
+# Keys in Supabase's auth config that hold secrets: OAuth client secrets, the SMTP
+# password, hook secrets, SMS provider tokens and keys. They are left out on
+# purpose (they live with their own services); the file lists which were set.
+AUTH_SECRET_RE = re.compile(r"(secret|secrets|_pass|password|auth_token|api_key|access_key|private_key|_key)$", re.I)
+
+
+def dump_auth_config(pat, dest):
+    """#993: Supabase's sign-in settings and email templates (Management API
+    config/auth: site URL, redirect URLs, sign-up and password rules, SMTP host and
+    sender, every email template), so a restore does not fall back to defaults.
+    Returns (settings, non-empty email templates, secrets left out)."""
+    res = subprocess.run(
+        ["curl", "-s", "-w", "\n%{http_code}",
+         f"https://api.supabase.com/v1/projects/{PROJECT_REF}/config/auth",
+         "-H", f"Authorization: Bearer {pat}"],
+        capture_output=True, text=True, timeout=120)
+    body, _, code = res.stdout.rpartition("\n")
+    if not code.startswith("2"):
+        raise RuntimeError(f"HTTP {code}: {body[:200]}")
+    cfg = json.loads(body)
+    left_out = sorted(k for k, v in cfg.items() if AUTH_SECRET_RE.search(k) and v not in (None, "", False, [], {}))
+    kept = {k: (None if AUTH_SECRET_RE.search(k) else v) for k, v in cfg.items()}
+    templates = sum(1 for k, v in cfg.items() if "template" in k and v)
+    (dest / AUTH_CONFIG).write_text(json.dumps({
+        "saved": datetime.datetime.now().isoformat(timespec="seconds"),
+        "restore_with": f"PATCH https://api.supabase.com/v1/projects/<ref>/config/auth with \"config\" "
+                        "(set the left-out secrets again by hand first: they are not in this file)",
+        "left_out_secrets": left_out,
+        "config": kept,
+    }, indent=1, default=str))
+    return len(cfg), templates, len(left_out)
+
+
 def mirror_storage(pat, key):
     """Incremental copy of every Storage file (sheet music, lesson materials, attachments)."""
     objects = mgmt_query(pat, """
@@ -920,6 +954,7 @@ def main():
 
     storage = None
     live = {}
+    auth_config = "not saved (no Management API token)"
     if pat:
         try:
             for t in AUTH_TABLES:
@@ -927,6 +962,15 @@ def main():
                 expected[f"auth.{t}.json"] = n
                 print(f"auth.{t}: {n} rows")
             print(f"schema snapshot: {dump_schema(pat, tmp)} objects")
+            # #993: sign-in settings and email templates. A failure here never
+            # fails the backup; the manifest records it and the restore test says so.
+            try:
+                n_cfg, n_tmpl, n_secret = dump_auth_config(pat, tmp)
+                auth_config = f"saved: {n_cfg} settings, {n_tmpl} email templates, {n_secret} secrets left out"
+            except Exception as e:
+                auth_config = f"failed: {str(e)[:200]}"
+                print(f"WARNING: sign-in settings not saved ({e})", file=sys.stderr)
+            print(f"sign-in settings: {auth_config}")
             # Compare against the live counts. Rows can arrive mid-run (a new
             # message), so only a real gap is an error.
             written = {t: expected[f"public.{t}.json"] for t, _ in tables}
@@ -945,6 +989,7 @@ def main():
     (tmp / MANIFEST).write_text(json.dumps({
         "made": started.isoformat(timespec="seconds"), "host": socket.gethostname(),
         "partial": bool(degraded), "rows": expected, "live_counts": live,
+        "auth_config": auth_config,
     }, indent=1))
 
     tag = "-PARTIAL" if degraded else ""

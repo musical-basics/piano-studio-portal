@@ -45,6 +45,7 @@ It makes the 6 buckets (`studio_private` stays private) and uploads every file (
 **5. Sign-in settings (you).** In the new project:
 - **Authentication, URL Configuration:** Site URL `https://lessons.musicalbasics.com`. Redirect URLs: add `https://lessons.musicalbasics.com/**` and `http://localhost:3000/**`.
 - **Authentication, Emails, SMTP Settings**, turn on custom SMTP: host `smtp.resend.com`, port `587`, username `resend`, password = the Resend API key (Vercel, the portal's `RESEND_API_KEY`), sender email = the studio's notifications address (the same as in Resend), sender name `Lionel Yu Piano Studio`. Save. This is what sends "reset your password" emails.
+- **Everything else, from the copy (copies made since Nov 19, 2026, #993):** the copy holds `auth-config.json` with every sign-in setting and all 16 email templates as they were (secrets left out; it lists them, today only the SMTP password set above). Ask Claude to send its `config` back with the Management API (`PATCH /v1/projects/NEW_REF/config/auth`) after the two bullets above, so the email wording, sign-up and password rules come back exactly instead of Supabase's defaults.
 
 **6. Point the apps at it (you).** Vercel, project **piano-studio-portal**, Settings, Environment Variables. Edit these for Production and Preview:
 - `NEXT_PUBLIC_SUPABASE_URL` = `https://NEW_REF.supabase.co`
@@ -83,7 +84,7 @@ It should say `OK` and `Sign-ins: 30 of 30 identical to the copy` (or however ma
 - Put it back on a new Mac (before `scripts/install_backup_agent.sh`): `security add-generic-password -s studio-backup -a dropbox-encryption-key -T /usr/bin/security -w` and paste it when asked (twice).
 - Open one file without the script, on any Mac: `openssl enc -d -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -in FILE.enc -out FILE` and paste the key when asked. "bad decrypt" means the wrong key.
 
-**What it does not hold**, so the steps cover it: the Supabase sign-in settings (step 5) and API keys (step 2, new ones anyway); which tables Realtime watches (`classroom_annotations` and `crm_students`, kept in the script and switched back on by step 3). The live project has no scheduled database jobs, Edge Functions or Vault secrets to bring back.
+**What it does not hold**, so the steps cover it: the sign-in secrets (the SMTP password in step 5; copies since Nov 19, 2026 hold every other sign-in setting and the email templates in `auth-config.json`) and API keys (step 2, new ones anyway); which tables Realtime watches (`classroom_annotations` and `crm_students`, kept in the script and switched back on by step 3). The live project has no scheduled database jobs, Edge Functions or Vault secrets to bring back.
 
 **Safety.** The script never writes to the live project: its ref is refused unless `--same-project` is given, and even then it only loads into a database with no tables left. Nothing is emailed or texted while restoring.
 
