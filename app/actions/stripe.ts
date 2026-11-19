@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
 import { stripe, getOrCreateStripeCustomer, getAccountCreditCents } from '@/lib/stripe'
+import { NO_SUBSCRIPTION, summarizeSubscriptions, type SubscriptionSummary } from '@/lib/subscription-summary'
 import type Stripe from 'stripe'
 
 export async function createCheckoutSession(pricingPointId: string) {
@@ -213,16 +214,7 @@ export async function createBalancePaymentSession() {
     }
 }
 
-export type SubscriptionSummary = {
-    /** True while Stripe still considers a subscription running (same test the checkout guard uses). */
-    active: boolean
-    /** Set when the plan has been capped (e.g. the 3-installment quarterly plan) and will not bill again. */
-    endingAt: string | null
-    /** Next automatic charge, ISO. Null when the subscription is winding down. */
-    nextPaymentAt: string | null
-    creditsPerCycle: number | null
-    amountCents: number | null
-}
+export type { SubscriptionSummary }
 
 /**
  * Read-only summary of the student's running subscription.
@@ -238,9 +230,7 @@ export type SubscriptionSummary = {
  * restores the old low-credits prompt rather than suppressing a genuine one.
  */
 export async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
-    const inactive: SubscriptionSummary = {
-        active: false, endingAt: null, nextPaymentAt: null, creditsPerCycle: null, amountCents: null,
-    }
+    const inactive = NO_SUBSCRIPTION
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -263,30 +253,8 @@ export async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
             limit: 10,
         })
 
-        // Match the checkout guard's definition of "running" exactly, so the banner
-        // and the guard can never disagree about whether a purchase is possible.
-        const running = subs.data.find(sub => ['active', 'trialing', 'past_due'].includes(sub.status))
-        if (!running) return inactive
-
-        // current_period_end lives on the subscription item in recent API versions,
-        // and on the subscription itself in older ones.
-        const item = running.items.data[0] as any
-        const periodEndUnix: number | undefined = item?.current_period_end ?? (running as any).current_period_end
-        const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null
-
-        // A capped plan (billing_cycles metadata) gets cancel_at_period_end set by the
-        // webhook once it has taken its last payment. It is still "active", so the
-        // guard still blocks self-serve checkout, but there is no next charge coming.
-        const windingDown = running.cancel_at_period_end || Boolean(running.cancel_at)
-        const cancelAt = running.cancel_at ? new Date(running.cancel_at * 1000).toISOString() : null
-
-        return {
-            active: true,
-            endingAt: windingDown ? (cancelAt ?? periodEnd) : null,
-            nextPaymentAt: windingDown ? null : periodEnd,
-            creditsPerCycle: Number(running.metadata?.credits) || null,
-            amountCents: item?.price?.unit_amount ?? null,
-        }
+        // Read the same way the admin Balances page reads it (lib/subscription-summary.ts).
+        return summarizeSubscriptions(subs.data)
     } catch (err: any) {
         console.error('[getSubscriptionSummary] Stripe lookup failed:', err?.message)
         return inactive

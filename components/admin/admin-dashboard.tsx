@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone, Film } from "lucide-react"
+import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone, Film, Wallet } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -41,6 +41,7 @@ import { RunningLateDialog } from "@/components/admin/running-late-dialog"
 import { UndoLogDialog } from "@/components/admin/undo-log-dialog"
 import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
 import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
+import { BalancesTab } from "@/components/admin/balances-tab"
 import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
@@ -910,6 +911,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 </Badge>
                             )}
                         </TabsTrigger>
+                        <TabsTrigger value="balances" className="gap-2">
+                            <Wallet className="h-4 w-4" />
+                            <span className="hidden sm:inline">Balances</span>
+                        </TabsTrigger>
                         <TabsTrigger value="pricing" className="gap-2">
                             <DollarSign className="h-4 w-4" />
                             <span className="hidden sm:inline">Pricing</span>
@@ -1018,6 +1023,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
                     <TabsContent value="inquiries" className="m-0 h-full p-4 lg:p-10 overflow-auto">
                         <InquiriesTab inquiries={inquiries} error={inquiriesError} />
+                    </TabsContent>
+
+                    {/* #935: every active family's lessons left, lessons and next payment (read only) */}
+                    <TabsContent value="balances" className="space-y-4">
+                        {activeTab === "balances" && <BalancesTab onMessage={handleJumpToMessage} />}
                     </TabsContent>
 
                     <TabsContent value="pricing" className="p-4 lg:p-10">

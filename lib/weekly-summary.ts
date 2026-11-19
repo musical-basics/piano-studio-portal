@@ -212,19 +212,11 @@ export async function buildWeeklySummary(
  */
 export async function nextPaymentFromStripe(customerId: string): Promise<{ nextPayment: string | null; perPayment: number | null; planEnds: string | null } | null> {
     const { stripe } = await import('@/lib/stripe')
+    const { summarizeSubscriptions } = await import('@/lib/subscription-summary')
     const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 10 })
-    const running = subs.data.find(sub => ['active', 'trialing', 'past_due'].includes(sub.status))
-    if (!running) return null
-    const item = running.items.data[0] as any
-    const periodEndUnix: number | undefined = item?.current_period_end ?? (running as any).current_period_end
-    const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null
-    const windingDown = running.cancel_at_period_end || Boolean(running.cancel_at)
-    const cancelAt = running.cancel_at ? new Date(running.cancel_at * 1000).toISOString() : null
-    return {
-        nextPayment: windingDown ? null : periodEnd,
-        perPayment: Number(running.metadata?.credits) || null,
-        planEnds: windingDown ? (cancelAt ?? periodEnd) : null,
-    }
+    const s = summarizeSubscriptions(subs.data)
+    if (!s.active) return null
+    return { nextPayment: s.nextPaymentAt, perPayment: s.creditsPerCycle, planEnds: s.endingAt }
 }
 
 function escapeHtml(s: string): string {
