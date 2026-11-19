@@ -19,6 +19,7 @@ import {
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { markNoShowCore } from '@/lib/core/no-show'
 import { shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { formatLessonTimeForFamily } from '@/lib/family-time'
 import type { AdminTodayEvent, LessonWithStudent } from '@/types/admin'
 
 // Initialize Resend
@@ -150,7 +151,7 @@ export async function logPastLesson(
     // Verify student exists and get credits
     const { data: student, error: studentError } = await supabase
         .from('profiles')
-        .select('name, credits, email')
+        .select('name, credits, email, timezone')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -282,6 +283,7 @@ export async function logPastLesson(
                     react: LessonLoggedEmail({
                         studentName: student.name || 'Student',
                         date: formattedDate,
+                        time: formatLessonTimeForFamily(date, time, student.timezone),
                         notes: notes,
                         sheetMusicUrl: sheetMusicUrl || undefined,
                         sheetMusicFileName
@@ -514,7 +516,7 @@ export async function updateLesson(
     // Get the lesson to find student_id and date for email
     const { data: lesson, error: fetchError } = await supabase
         .from('lessons')
-        .select('student_id, date')
+        .select('student_id, date, time')
         .eq('id', lessonId)
         .single()
 
@@ -589,6 +591,7 @@ export async function updateLesson(
                     react: LessonLoggedEmail({
                         studentName: student.name || 'Student',
                         date: formattedDate,
+                        time: lesson.time ? formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone) : undefined,
                         notes: notes,
                         sheetMusicUrl: sheetMusicUrl || undefined,
                         sheetMusicFileName

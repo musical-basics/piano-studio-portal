@@ -89,7 +89,7 @@ export function LessonHistoryTab({ history }: { history: LessonHistory }) {
                                         <StatusPill status={r.status} />
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                        {r.clock} · {r.duration} min{r.leftAfter !== null ? ` · ${r.leftAfter} left after` : ""}
+                                        {r.clock}{r.familyClock ? ` (${r.familyClock})` : ""} · {r.duration} min{r.leftAfter !== null ? ` · ${r.leftAfter} left after` : ""}
                                     </p>
                                 </li>
                             ))}
@@ -110,7 +110,10 @@ export function LessonHistoryTab({ history }: { history: LessonHistory }) {
                                 {rows.map(r => (
                                     <tr key={r.id}>
                                         <td className="px-4 py-2.5 whitespace-nowrap">{formatDay(r.date)}</td>
-                                        <td className="px-4 py-2.5 whitespace-nowrap">{r.clock}</td>
+                                        <td className="px-4 py-2.5 whitespace-nowrap">
+                                            {r.clock}
+                                            {r.familyClock && <span className="block text-xs text-muted-foreground">{r.familyClock}</span>}
+                                        </td>
                                         <td className="px-4 py-2.5 whitespace-nowrap">{r.duration} min</td>
                                         <td className="px-4 py-2.5"><StatusPill status={r.status} /></td>
                                         <td className="px-4 py-2.5 text-right tabular-nums">{left(r.leftAfter)}</td>

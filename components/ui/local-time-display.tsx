@@ -2,14 +2,20 @@
 
 import { useEffect, useState } from "react"
 import { STUDIO_TZ, studioTzAbbr, studioWallClockToISO } from "@/lib/studio-timezone"
+import { familyLocalTime, familyTimeZone } from "@/lib/family-time"
 
 interface LocalTimeDisplayProps {
     date: string // "YYYY-MM-DD"
     time: string // "HH:MM" (24h format from DB)
     duration?: number
+    /**
+     * The family's zone from their profile (#930). When it is known, their own time
+     * comes from it (same as their emails, B.C. handled); otherwise the browser's zone.
+     */
+    familyTz?: string | null
 }
 
-export function LocalTimeDisplay({ date, time }: LocalTimeDisplayProps) {
+export function LocalTimeDisplay({ date, time, familyTz }: LocalTimeDisplayProps) {
     const [localTimeStr, setLocalTimeStr] = useState<string | null>(null)
 
     // Tolerate both "HH:MM" and "HH:MM:SS" (Postgres TIME comes back with seconds).
@@ -19,6 +25,15 @@ export function LocalTimeDisplay({ date, time }: LocalTimeDisplayProps) {
 
     useEffect(() => {
         if (!time) return
+        // The profile's zone wins: it is what their emails use.
+        if (familyTimeZone(familyTz)) {
+            try {
+                setLocalTimeStr(familyLocalTime(date, `${String(hours).padStart(2, '0')}:${minutes}`, familyTz))
+            } catch {
+                setLocalTimeStr(null)
+            }
+            return
+        }
         // Someone already in the studio's zone doesn't need it twice.
         const userZone = Intl.DateTimeFormat().resolvedOptions().timeZone
         if (userZone === STUDIO_TZ) return
@@ -30,7 +45,7 @@ export function LocalTimeDisplay({ date, time }: LocalTimeDisplayProps) {
         } catch (e) {
             console.error("Time conversion error:", e)
         }
-    }, [date, time, hours, minutes])
+    }, [date, time, hours, minutes, familyTz])
 
     if (!time) return <span className="font-medium text-foreground">TBD</span>
 

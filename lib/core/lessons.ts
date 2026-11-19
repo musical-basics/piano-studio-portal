@@ -144,12 +144,15 @@ async function sendLessonLoggedEmail({
     client,
     studentId,
     date,
+    time,
     notes,
     sheetMusicUrl,
 }: {
     client: DbClient
     studentId: string
     date: string
+    /** The lesson's stored (Eastern) time; the email shows it with the family's own (#929). */
+    time?: string | null
     notes: string
     sheetMusicUrl?: string | null
 }) {
@@ -177,6 +180,7 @@ async function sendLessonLoggedEmail({
             react: LessonLoggedEmail({
                 studentName: student.name || 'Student',
                 date: formattedDate,
+                time: time ? formatLessonTimeForFamily(date, time, student.timezone) : undefined,
                 notes,
                 sheetMusicUrl: sheetMusicUrl || undefined,
                 sheetMusicFileName: sheetMusicFileName(sheetMusicUrl),
@@ -540,6 +544,7 @@ export async function logLessonCore({
         client,
         studentId: lesson.student_id,
         date: lesson.date,
+        time: lesson.time,
         notes,
         sheetMusicUrl: sheetMusicUrl || null,
     }))
@@ -1099,7 +1104,8 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
 
                 const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                 const formattedDate = formatDateLong(lesson.date)
-                const formattedTime = formatStudioTime(lesson.time, lesson.date)
+                // The family's own clock too (#929): "5:30pm EST (2:30pm your time)".
+                const formattedTime = formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone)
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,

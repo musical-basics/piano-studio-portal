@@ -72,7 +72,7 @@ export default async function StudentPage() {
 
   // The Lesson history tab (#737), from the same rows. This read uses the
   // signed-in family's own session, so row security limits it to their lessons.
-  const history = buildLessonHistory(lessons || [], profile.credits ?? null)
+  const history = buildLessonHistory(lessons || [], profile.credits ?? null, new Date(), profile.timezone)
 
   // Moments Lionel marked in classroom recordings (#874), for the lessons above
   // (already limited to this family by their own session).

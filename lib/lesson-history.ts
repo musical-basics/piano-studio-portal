@@ -1,4 +1,5 @@
 import { studioWallClockToISO } from '@/lib/studio-timezone'
+import { familyLocalTime, formatStudioTime } from '@/lib/family-time'
 
 /**
  * The family's "Lesson history" tab (#737): every lesson on their account,
@@ -23,8 +24,10 @@ export type LessonHistoryRow = {
     id: string
     /** YYYY-MM-DD, studio (Eastern) date. */
     date: string
-    /** "8:15pm", Eastern. */
+    /** "8:15pm EST", Eastern. */
     clock: string
+    /** "5:15pm your time" from profiles.timezone (#930), or null when it reads the same as Eastern or is unknown. */
+    familyClock: string | null
     /** Minutes. */
     duration: number
     status: LessonHistoryStatus
@@ -60,6 +63,14 @@ export function formatLessonClock(time: string): string {
     return `${hour}:${String(m).padStart(2, '0')}${suffix}`
 }
 
+function safeFamilyTime(date: string, time: string, tz: string | null | undefined): string | null {
+    try {
+        return familyLocalTime(date, time, tz)
+    } catch {
+        return null
+    }
+}
+
 export function lessonHistoryStatus(lesson: SourceLesson, now: Date = new Date()): LessonHistoryStatus {
     if (lesson.status === 'completed' && typeof lesson.free_reason === 'string') return 'free'
     if (lesson.status === 'completed' || lesson.status === 'cancelled') return 'counted'
@@ -69,7 +80,12 @@ export function lessonHistoryStatus(lesson: SourceLesson, now: Date = new Date()
 }
 
 /** Newest first. Only the fields a family should see leave this function. */
-export function buildLessonHistory(lessons: SourceLesson[], creditsNow: number | null, now: Date = new Date()): LessonHistory {
+export function buildLessonHistory(
+    lessons: SourceLesson[],
+    creditsNow: number | null,
+    now: Date = new Date(),
+    familyTz?: string | null,
+): LessonHistory {
     const key = (l: SourceLesson) => `${l.date} ${String(l.time).slice(0, 5)}`
     const rows = [...lessons]
         .sort((a, b) => key(b).localeCompare(key(a)))
@@ -78,7 +94,8 @@ export function buildLessonHistory(lessons: SourceLesson[], creditsNow: number |
             return {
                 id: l.id,
                 date: l.date,
-                clock: formatLessonClock(String(l.time).slice(0, 5)),
+                clock: formatStudioTime(String(l.time), l.date),
+                familyClock: safeFamilyTime(l.date, String(l.time), familyTz),
                 duration: l.duration || 60,
                 status,
                 leftAfter: (status === 'counted' || status === 'free') && typeof l.credit_snapshot === 'number' ? l.credit_snapshot : null,

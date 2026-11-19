@@ -87,7 +87,8 @@ import type { RecordingMarker } from "@/lib/recording-markers"
 import { getDropboxRecordings, getDropboxTemporaryLink } from "@/app/actions/recordings"
 import type { DropboxRecording } from "@/app/actions/recordings"
 import { formatRecordingName } from "@/lib/format-recording-name"
-import { studioTzAbbr } from "@/lib/studio-timezone"
+import { studioTzAbbr, studioToday } from "@/lib/studio-timezone"
+import { familyLocalTime, formatLessonTimeForFamily } from "@/lib/family-time"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -483,7 +484,22 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         const displayHour = h % 12 || 12
         const time = `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`
         // lesson_time is studio wall-clock (Eastern), not the student's own zone.
-        return `${profile.lesson_day}s at ${time} ${studioTzAbbr()}`
+        // Their own clock too (#930), read on the next date that falls on that
+        // weekday so a "Fri 12:30am your time" shift names the right day.
+        let own: string | null = null
+        try {
+            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const want = days.indexOf(String(profile.lesson_day).toLowerCase())
+            if (want >= 0) {
+                const d = new Date(`${studioToday()}T12:00:00Z`)
+                while (d.getUTCDay() !== want) d.setUTCDate(d.getUTCDate() + 1)
+                const hhmm = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                own = familyLocalTime(d.toISOString().slice(0, 10), hhmm, profile.timezone)
+            }
+        } catch {
+            own = null
+        }
+        return `${profile.lesson_day}s at ${time} ${studioTzAbbr()}${own ? ` (${own})` : ''}`
     })()
 
     const [currentDate, setCurrentDate] = useState("")
@@ -554,7 +570,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                         Upcoming Lesson Confirmation
                                     </h3>
                                     <p className="text-sm text-blue-700 dark:text-blue-300">
-                                        Please confirm you will be attending your lesson on {formatDate(nextLesson.date)} at {nextLesson.time}.
+                                        Please confirm you will be attending your lesson on {formatDate(nextLesson.date)} at {nextLesson.rawTime ? formatLessonTimeForFamily(nextLesson.date, nextLesson.rawTime, profile.timezone) : nextLesson.time}.
                                     </p>
                                 </div>
                             </div>
@@ -685,7 +701,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                         </div>
                                         <div>
                                             <p className="text-sm text-muted-foreground">Time</p>
-                                            <LocalTimeDisplay date={nextLesson.date} time={nextLesson.rawTime ?? nextLesson.time} />
+                                            <LocalTimeDisplay date={nextLesson.date} time={nextLesson.rawTime ?? nextLesson.time} familyTz={profile.timezone} />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
@@ -1344,8 +1360,16 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                         {formatDate(lesson.date)}
                                                     </span>
                                                 </div>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {formatTime(lesson.time)}
+                                                <span className="text-xs text-muted-foreground text-right">
+                                                    {formatTime(lesson.time)} {studioTzAbbr(lesson.date)}
+                                                    {(() => {
+                                                        try {
+                                                            const own = familyLocalTime(lesson.date, lesson.time, profile.timezone)
+                                                            return own ? <span className="block">{own}</span> : null
+                                                        } catch {
+                                                            return null
+                                                        }
+                                                    })()}
                                                 </span>
                                             </div>
 

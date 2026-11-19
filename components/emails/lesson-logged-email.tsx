@@ -15,6 +15,8 @@ import * as React from "react";
 interface LessonLoggedEmailProps {
     studentName: string;
     date: string;
+    /** "5:30pm EST (2:30pm your time)" (#929); omitted = date only. */
+    time?: string;
     notes: string;
     nextLessonDate?: string;
     sheetMusicUrl?: string;
@@ -24,6 +26,7 @@ interface LessonLoggedEmailProps {
 export const LessonLoggedEmail = ({
     studentName,
     date,
+    time,
     notes,
     nextLessonDate,
     sheetMusicUrl,
@@ -31,13 +34,13 @@ export const LessonLoggedEmail = ({
 }: LessonLoggedEmailProps) => (
     <Html>
         <Head />
-        <Preview>Here are the notes from your lesson on {date}</Preview>
+        <Preview>{`Here are the notes from your lesson on ${date}${time ? ` at ${time}` : ''}`}</Preview>
         <Body style={main}>
             <Container style={container}>
                 <Heading style={h1}>Lesson Summary</Heading>
                 <Text style={text}>Hi {studentName},</Text>
                 <Text style={text}>
-                    Great work today! Here are the notes and practice assignments from your lesson on <strong>{date}</strong>.
+                    Great work today! Here are the notes and practice assignments from your lesson on <strong>{date}{time ? ` at ${time}` : ''}</strong>.
                 </Text>
 
                 <Section style={box}>
