@@ -1,6 +1,7 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { formatStudioTime } from '@/lib/backup-watchdog'
+import { nextHealth, readReport, saveAlerts, type HealthAlerts, type HealthEmail } from '@/lib/classroom-server-health'
 
 /**
  * Watch on the classroom's call server (Lionel's #724).
@@ -117,12 +118,19 @@ export function nextWatchState(prev: WatchState, probe: Probe, now: Date, url: s
     }
 }
 
+const HEALTH_FOOTER = `Sent by the portal's classroom server watch (/api/cron/classroom-server-watch) from the report the server sends every 5 minutes. `
+    + `One email when a problem starts and one when it is fixed.`
+
 const FOOTER = `Sent by the portal's classroom server watch (/api/cron/classroom-server-watch). `
     + `It checks the server every 5 minutes, emails once when it stops answering twice in a row, and once when it is back.`
+
+export type HealthResult = { message: string; emails: string[]; alerts: HealthAlerts }
 
 export type WatchResult = {
     configured: boolean
     message: string
+    /** #949: the server's own report (recorder, call server, disk). */
+    health?: HealthResult
     url?: string
     probe?: Probe
     before?: WatchState
@@ -158,13 +166,47 @@ async function writeState(client: DbClient, state: WatchState, now: Date, emaile
     if (error) throw new Error(`cron_heartbeats write failed: ${error.message}`)
 }
 
+/** #949: the server's own report, read and alerted on (lib/classroom-server-health.ts). */
+async function runHealthReport(
+    client: DbClient,
+    now: Date,
+    dryRun: boolean,
+    inUse: boolean,
+    send: (e: HealthEmail) => Promise<boolean>,
+): Promise<HealthResult> {
+    const { report, alerts: prev } = await readReport(client)
+    const { alerts, emails } = nextHealth(prev, report, now, inUse)
+    const after: HealthAlerts = { ...alerts }
+    const sent: string[] = []
+    for (const e of emails) {
+        if (dryRun) { sent.push(`would email "${e.kind}"`); continue }
+        const ok = await send(e)
+        sent.push(ok ? `emailed "${e.kind}"` : `"${e.kind}" email failed`)
+        // A failed email is tried again next run: keep that problem's old flag.
+        if (!ok) {
+            if (e.kind.startsWith('stale')) after.stale = prev.stale
+            else if (e.kind.startsWith('recorder')) after.recorderDown = prev.recorderDown
+            else if (e.kind.startsWith('disk')) after.diskFull = prev.diskFull
+        }
+    }
+    const changed = after.stale !== prev.stale || after.recorderDown !== prev.recorderDown || after.diskFull !== prev.diskFull
+    if (!dryRun && changed) await saveAlerts(client, report, after)
+    const status = report
+        ? `server report ${Math.round((now.getTime() - Date.parse(report.at)) / 60_000)} min old: call server ${report.livekit}, recorder ${report.egress}, disk ${report.diskPct}%`
+        : 'no server report yet'
+    return { message: `${status}${sent.length ? `, ${sent.join(', ')}` : ''}`, emails: sent, alerts: after }
+}
+
 export async function runClassroomServerWatch(opts: WatchOptions): Promise<WatchResult> {
     const url = (opts.url === undefined ? process.env.CLASSROOM_SERVER_HEALTH_URL : opts.url)?.trim()
-    if (!url) {
-        return { configured: false, message: 'not configured: CLASSROOM_SERVER_HEALTH_URL is not set, so nothing was checked' }
-    }
     const now = opts.now ?? new Date()
     const dryRun = !!opts.dryRun
+    const sendHealth = (e: HealthEmail) =>
+        opts.sendAlert ? opts.sendAlert(e as WatchEmail) : sendCronAlert(opts.client, { subject: e.subject, lines: e.lines, footer: HEALTH_FOOTER })
+    const health = await runHealthReport(opts.client, now, dryRun, !!url, sendHealth)
+    if (!url) {
+        return { configured: false, health, message: `not configured: CLASSROOM_SERVER_HEALTH_URL is not set, so the server was not probed; ${health.message}` }
+    }
 
     const before = await readState(opts.client)
     const probe = await probeServer(url, opts.fetchImpl, opts.timeoutMs)
@@ -184,7 +226,8 @@ export async function runClassroomServerWatch(opts: WatchOptions): Promise<Watch
     const mail = email ? (dryRun ? `, would email "${email.kind}"` : emailed ? `, emailed "${email.kind}"` : `, "${email.kind}" email failed`) : ''
     return {
         configured: true,
-        message: `${serverName(url)} ${status}${mail}${dryRun ? ' (dry run, nothing saved)' : ''}`,
+        health,
+        message: `${serverName(url)} ${status}${mail}${dryRun ? ' (dry run, nothing saved)' : ''}; ${health.message}`,
         url,
         probe,
         before,

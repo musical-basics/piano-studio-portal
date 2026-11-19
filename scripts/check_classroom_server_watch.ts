@@ -72,6 +72,11 @@ async function main() {
     assert.match(off.message, /not configured/)
     assert.equal(rows.size, 0)
 
+    // #949: the server's own report is healthy and stays fresh for this whole run
+    // (dated far ahead), so only the probe-based emails below are counted here;
+    // scripts/check_classroom_server_health.ts covers the report's own emails.
+    rows.set('classroom-server-report', { job: 'classroom-server-report', state: { report: { at: '2099-01-01T00:00:00Z', livekit: 'active', egress: 'active', diskPct: 30 }, alerts: { recorderDown: false, diskFull: false, stale: false } } })
+
     // Healthy.
     let r = await tick('ok')
     assert.equal(r.probe?.ok, true)
