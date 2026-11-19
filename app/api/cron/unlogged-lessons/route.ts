@@ -6,6 +6,8 @@ import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import { runMorningEmail } from '@/lib/unlogged-lessons'
 
 export const dynamic = 'force-dynamic'
+// Asks Zoom about each unlogged lesson (#797): a few calls, each capped at 15s.
+export const maxDuration = 60
 
 // Each morning: email the studio inbox about yesterday's lessons that nobody
 // logged (so no credit was taken), with what Zoom saw for each (#797: "No-show?"
