@@ -215,7 +215,7 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'plan-payment-check',
         name: 'Plan payment watch',
-        what: "Reads Stripe's plan payments every hour and emails you once when a family's payment fails twice in a row, and once more if Stripe ends the plan unpaid.",
+        what: "Reads Stripe's plan payments every hour and emails you the same day a family's plan payment is first declined, and once more if Stripe ends the plan unpaid.",
         group: 'payments',
         summarize: b => [
             `${plural(Number(b?.events) || 0, 'payment event')} checked`,

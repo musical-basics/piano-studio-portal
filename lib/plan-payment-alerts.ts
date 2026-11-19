@@ -4,14 +4,15 @@ import { sendCronAlert } from '@/lib/cron-alerts'
 import { STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
 
 /**
- * Plan payment alerts (Lionel's #984): email the studio inbox when a family's
- * plan payment fails twice in a row, and again if Stripe gives up and ends the
- * plan. In Nov 2026 a family's plan was ended by Stripe after 9 declined
- * payments over two weeks and nobody noticed.
+ * Plan payment alerts (Lionel's #984, #1000): email the studio inbox the same
+ * day a family's plan payment is first declined, and again if Stripe gives up
+ * and ends the plan. In Nov 2026 a family's plan was ended by Stripe after 9
+ * declined payments over two weeks and nobody noticed. (#984 alerted at the
+ * 2nd failure in a row; #1000 moved it to the first decline.)
  *
  * Rules, per Stripe subscription:
  *   - A failure run is the failed payments since the last paid invoice. On its
- *     2nd failure the studio gets one email (family, plan, amount, Stripe's
+ *     first failure the studio gets one email (family, plan, amount, Stripe's
  *     decline reason, the next retry). Later failures in the same run say
  *     nothing more; a paid invoice ends the run, and a new run can alert again.
  *   - When the plan is deleted and it ended unpaid (Stripe's reason is
@@ -147,7 +148,7 @@ export function byTime(a: PlanEvent, b: PlanEvent): number {
 }
 
 export type PlanAlert = {
-    kind: 'failed_twice' | 'ended_unpaid'
+    kind: 'declined' | 'ended_unpaid'
     subscriptionId: string
     /** Once per key per plan: 'failed:<first failure of the run>' or 'ended'. */
     key: string
@@ -171,8 +172,7 @@ export function decidePlanAlert(history: PlanEvent[], event: PlanEvent): PlanAle
         if (earlier.some(e => e.kind === 'paid' && e.at > event.at)) return null
         const run = [...earlier.filter(e => e.kind === 'failed' && e.at > lastPaidAt && e.at <= event.at), event]
             .sort(byTime)
-        if (run.length < 2) return null
-        return { kind: 'failed_twice', subscriptionId: event.subscriptionId, key: `failed:${run[0].id}`, failures: run, event }
+        return { kind: 'declined', subscriptionId: event.subscriptionId, key: `failed:${run[0].id}`, failures: run, event }
     }
 
     // Ended.
@@ -251,12 +251,14 @@ export function planAlertEmail(alert: PlanAlert, info: PlanAlertInfo): { subject
     const first = alert.failures[0]
     const lines: string[] = [`Family: ${family}`, `Plan: ${planLine(alert.event, alert.failures)}`]
 
-    if (alert.kind === 'failed_twice') {
+    if (alert.kind === 'declined') {
         const next = info.nextAttemptAt !== undefined ? info.nextAttemptAt : last.nextAttemptAt
         lines.push(
             `Amount: ${amount ?? 'unknown'}`,
             `Declined: ${info.decline || 'Stripe gave no reason'}`,
-            `Failed payments in a row: ${alert.failures.length} (first ${formatWhen(first.at)}, latest ${formatWhen(last.at)})`,
+            alert.failures.length > 1
+                ? `Failed payments in a row: ${alert.failures.length} (first ${formatWhen(first.at)}, latest ${formatWhen(last.at)})`
+                : `When: ${formatWhen(last.at)}`,
             `Next retry: ${next ? formatWhen(next) : 'none scheduled, Stripe will not try again'}`,
         )
     } else {
@@ -274,11 +276,11 @@ export function planAlertEmail(alert: PlanAlert, info: PlanAlertInfo): { subject
     const safe = lines.map(escapeHtml)
     safe.push(`In Stripe: ${links}`)
 
-    const subject = alert.kind === 'failed_twice'
-        ? `Plan payment failed twice in a row: ${family}`
+    const subject = alert.kind === 'declined'
+        ? (alert.failures.length > 1 ? `Plan payment declined ${alert.failures.length} times in a row: ${family}` : `Plan payment declined: ${family}`)
         : `Stripe ended a plan unpaid: ${family}`
-    const footer = alert.kind === 'failed_twice'
-        ? 'Stripe keeps retrying on its own and ends the plan after the last retry. You get one email per run of failures (and one more if Stripe ends the plan). Nothing was changed in Stripe or the portal.'
+    const footer = alert.kind === 'declined'
+        ? 'Stripe keeps retrying on its own and ends the plan after the last retry. You get one email at the first decline of each run (and one more if Stripe ends the plan). Nothing was changed in Stripe or the portal.'
         : 'The family has no plan now, so no more lessons are added automatically. Nothing was changed in Stripe or the portal.'
     return { subject: escapeHtml(subject), lines: safe, footer }
 }
