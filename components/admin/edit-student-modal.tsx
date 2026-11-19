@@ -30,6 +30,7 @@ import type { Profile } from "@/lib/supabase/database.types"
 import { PricingPlan } from "@/app/actions/pricing"
 import { RecurringSlotsManager } from "@/components/admin/recurring-slots-manager"
 import { STUDIO_TZ } from "@/lib/studio-timezone"
+import { classroomLinkFor, savedVenue } from "@/lib/lesson-venue"
 
 function SubmitButton() {
     const { pending } = useFormStatus()
@@ -72,6 +73,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
         ((student as any).primary_contact_role as string) || "student"
     )
     const [smsOptIn, setSmsOptIn] = useState<boolean>(Boolean((student as any).sms_opt_in))
+    const [inClassroom, setInClassroom] = useState<boolean>(savedVenue(student) === "classroom")
     const { toast } = useToast()
     const router = useRouter()
 
@@ -83,6 +85,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
         formData.set('pricingPlanId', pricingPlanId)
         formData.set('primaryContactRole', primaryContactRole)
         formData.set('smsOptIn', smsOptIn ? 'true' : 'false')
+        formData.set('lessonVenue', inClassroom ? 'classroom' : 'zoom')
 
         try {
             const result = await updateStudent(formData)
@@ -119,6 +122,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                 // Families can opt in themselves; start from what's saved, not
                 // what was saved when this page loaded.
                 if (next) setSmsOptIn(Boolean((student as any).sms_opt_in))
+                if (next) setInClassroom(savedVenue(student) === "classroom")
                 setOpen(next)
             }}
         >
@@ -158,6 +162,24 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             defaultValue={student.public_id || ''}
                             placeholder="e.g. 12345"
                         />
+                    </div>
+
+                    {/* #980: where their lessons happen. Zoom meetings are still made either way. */}
+                    <div className="space-y-1 rounded-md border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                            <Label htmlFor="lessonVenue" className="text-sm font-normal leading-snug">
+                                Lessons in the classroom (not Zoom)
+                            </Label>
+                            <Switch id="lessonVenue" checked={inClassroom} onCheckedChange={setInClassroom} />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            On: their reminders, lesson emails and portal Join button give the classroom link
+                            {student.public_id ? ` (${classroomLinkFor(student.public_id)})` : ''} and no Zoom link, and your
+                            9pm and morning emails mark their lessons &quot;classroom&quot;.
+                            {inClassroom && !student.public_id
+                                ? ' This student has no Public ID yet, so families still get Zoom until one is saved.'
+                                : ''}
+                        </p>
                     </div>
 
                     <div className="space-y-2">

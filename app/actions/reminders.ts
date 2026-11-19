@@ -7,6 +7,7 @@ import { differenceInMinutes, format } from 'date-fns'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
+import { familyLessonLinks } from '@/lib/lesson-venue'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -77,8 +78,8 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
             }
         }
 
-        const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
-        const classroomLink = lesson.student.public_id ? `${classroomBase}/${lesson.student.public_id}` : null
+        // A classroom student (#980) gets the classroom link instead of Zoom.
+        const links = familyLessonLinks(lesson.student, lesson.zoom_link || lesson.student.zoom_link) // Fallback to student's default link
 
         const { data: emailData, error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
@@ -88,8 +89,9 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
                 studentName: lesson.student.name,
                 // "5:30pm EST (2:30pm your time)" when the family's zone is set (Lionel's #729).
                 time: formatLessonTimeForFamily(lesson.date, lesson.time, lesson.student.timezone),
-                zoomLink: lesson.zoom_link || lesson.student.zoom_link, // Fallback to student's default link
-                classroomLink,
+                zoomLink: links.zoomLink,
+                classroomLink: links.classroomLink,
+                venue: links.venue,
                 variant: variant === 'exact' ? 'exact' : variant,
                 exactDuration: durationString
             })

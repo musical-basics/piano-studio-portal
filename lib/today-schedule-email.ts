@@ -22,11 +22,17 @@ function escapeHtml(s: string): string {
 
 const FLAG = 'display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:600'
 
-/** "4:30pm EST (1:30pm their time): Piano Student, 60 min, Zoom" */
+/**
+ * "4:30pm EST (1:30pm their time): Piano Student, 60 min, Zoom". Zoom or
+ * classroom follows the student's setting (#980) and links to the room.
+ */
 export function describeTodayLesson(l: EveningLesson): string {
-    const details = [`${l.minutes} min`, l.place].filter(Boolean).join(', ')
+    const place = !l.place ? ''
+        : l.joinUrl ? `<a href="${escapeHtml(l.joinUrl)}" style="color:#1d4ed8">${escapeHtml(l.place)}</a>`
+        : escapeHtml(l.place)
+    const details = [escapeHtml(`${l.minutes} min`), place].filter(Boolean).join(', ')
     const theirs = l.familyTime ? ` <span style="color:#57534e">(${escapeHtml(l.familyTime)})</span>` : ''
-    return `<b>${escapeHtml(l.studioTime)}</b>${theirs}: ${escapeHtml(l.name)}, ${escapeHtml(details)}`
+    return `<b>${escapeHtml(l.studioTime)}</b>${theirs}: ${escapeHtml(l.name)}, ${details}`
 }
 
 /** "Today: 3 lessons, first at 10:00am EST" for a subject; '' when there are none. */

@@ -93,6 +93,7 @@ import type { DropboxRecording } from "@/app/actions/recordings"
 import { formatRecordingName } from "@/lib/format-recording-name"
 import { studioTzAbbr, studioToday } from "@/lib/studio-timezone"
 import { familyLocalTime, formatLessonTimeForFamily } from "@/lib/family-time"
+import { classroomLinkFor, lessonVenue } from "@/lib/lesson-venue"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -142,9 +143,10 @@ const categoryColors: Record<string, string> = {
 export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
     const { toast } = useToast()
 
-    // Classroom Link (prioritized over Zoom)
-    const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
-    const classroomUrl = profile.public_id ? `${classroomBase}/${profile.public_id}` : null
+    // Classroom link. A classroom student (#980, profiles.lesson_venue) gets it
+    // as the only join button; everyone else keeps Zoom with it as the backup.
+    const classroomUrl = classroomLinkFor(profile.public_id)
+    const inClassroom = lessonVenue(profile) === "classroom"
 
     // Transform lessons to UI format
     const uiLessons: UILesson[] = lessons.map(lesson => ({
@@ -744,6 +746,20 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                                 <div className="flex flex-wrap gap-3">
 
+                                    {/* #980: a classroom student joins in the classroom; no Zoom button. */}
+                                    {inClassroom && classroomUrl ? (
+                                        <Button
+                                            size="lg"
+                                            className="flex-1 min-w-[200px] bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md shadow-indigo-900/10"
+                                            onClick={() => {
+                                                notifyStudentJoined('classroom') // fire-and-forget
+                                                window.open(classroomUrl, '_blank')
+                                            }}
+                                        >
+                                            <MonitorPlay className="h-5 w-5 mr-2" />
+                                            Join Classroom
+                                        </Button>
+                                    ) : (<>
                                     {/* 1. PRIMARY ACTION: Join Zoom Lesson */}
                                     {zoomLink ? (
                                         <Button
@@ -777,6 +793,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                         <MonitorPlay className="h-5 w-5 mr-2" />
                                         Classroom (Backup)
                                     </Button>
+                                    </>)}
 
                                     {/* 3. Existing Actions */}
                                     {/* The make-up picker (#927): moves the lesson right away. Off until Lionel says go. */}

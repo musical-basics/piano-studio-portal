@@ -73,7 +73,7 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'evening-preview',
         name: 'Evening email',
-        what: "Emails you tomorrow's lessons and the family messages still waiting for a reply, the evening before a lesson day.",
+        what: "Emails you tomorrow's lessons (with each student's last homework) and the family messages still waiting for a reply, the evening before a lesson day.",
         group: 'lessons',
         summarize: b => !b?.wouldEmail
             ? 'No lessons tomorrow, so no email'

@@ -8,6 +8,11 @@ interface LessonReminderEmailProps {
     time: string
     zoomLink?: string | null
     classroomLink?: string | null
+    /**
+     * #980: 'classroom' sends the family to the classroom link only (the join
+     * button too) and shows no Zoom link. Default 'zoom' is the old email.
+     */
+    venue?: 'zoom' | 'classroom'
     variant: '48h' | '24h' | '12h' | '2h' | '15m' | 'exact'
     exactDuration?: string
     /** e.g. "Saturday, August 8" — used by the 48h notice. */
@@ -31,6 +36,7 @@ export default function LessonReminderEmail({
     time,
     zoomLink,
     classroomLink,
+    venue = 'zoom',
     variant = '24h',
     exactDuration,
     dayLabel,
@@ -85,6 +91,12 @@ export default function LessonReminderEmail({
         ? { ...base, body: `Your piano lesson is ${whenPhrase}.` }
         : base
 
+    // A classroom student (#980) joins by the classroom link; Zoom is not shown.
+    const inClassroom = venue === 'classroom' && !!classroomLink
+    const joinLink = inClassroom ? classroomLink : zoomLink
+    const joinText = inClassroom ? 'Join the Classroom' : text.btnText
+    const imminent = variant === '15m' || variant === 'exact'
+
     return (
         <Html>
             <Head />
@@ -110,17 +122,17 @@ export default function LessonReminderEmail({
                             </Section>
                         )}
 
-                        {/* Show the Zoom link prominently for the imminent-start notices */}
-                        {(variant === '15m' || variant === 'exact') && zoomLink ? (
-                            <Button style={joinButton} href={zoomLink}>
-                                {text.btnText}
+                        {/* Show the join link prominently for the imminent-start notices */}
+                        {imminent && joinLink ? (
+                            <Button style={joinButton} href={joinLink}>
+                                {joinText}
                             </Button>
                         ) : (
                             <>
                                 <Button style={button} href={`${loginUrl}/login`}>
                                     {text.btnText}
                                 </Button>
-                                {zoomLink && (
+                                {zoomLink && !inClassroom && (
                                     <Text style={zoomLinkText}>
                                         <strong>Zoom Link:</strong>{' '}
                                         <a href={zoomLink} style={{ color: '#3b82f6', textDecoration: 'underline' }}>
@@ -131,7 +143,7 @@ export default function LessonReminderEmail({
                             </>
                         )}
 
-                        {classroomLink && (
+                        {classroomLink && !(imminent && inClassroom) && (
                             <Text style={zoomLinkText}>
                                 <strong>Classroom Link:</strong>{' '}
                                 <a href={classroomLink} style={{ color: '#10b981', textDecoration: 'underline' }}>

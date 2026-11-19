@@ -17,6 +17,8 @@ interface LessonScheduledEmailProps {
     time: string
     duration: number
     zoomLink?: string | null
+    /** #980: a classroom student's emails show this instead of the Zoom link. */
+    classroomLink?: string | null
     recipientName: string
     studioName?: string
 }
@@ -27,6 +29,7 @@ export function LessonScheduledEmail({
     time,
     duration,
     zoomLink,
+    classroomLink,
     recipientName,
     studioName = 'Lionel Yu Piano Studio',
 }: LessonScheduledEmailProps) {
@@ -56,7 +59,11 @@ export function LessonScheduledEmail({
                             <Text style={detailsRow}>
                                 <strong>Duration:</strong> {duration} minutes
                             </Text>
-                            {zoomLink && (
+                            {classroomLink ? (
+                                <Text style={detailsRow}>
+                                    <strong>Classroom Link:</strong> <a href={classroomLink} style={link}>{classroomLink}</a>
+                                </Text>
+                            ) : zoomLink && (
                                 <Text style={detailsRow}>
                                     <strong>Zoom Link:</strong> <a href={zoomLink} style={link}>{zoomLink}</a>
                                 </Text>

@@ -13,6 +13,7 @@ import {
 } from '@/lib/cron-alerts'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
+import { familyLessonLinks } from '@/lib/lesson-venue'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -153,8 +154,8 @@ async function handle(request: Request) {
 
             const { notice, superseded, lateByMinutes } = decision
             const confirmNudge = !isConfirmed
-            const classroomBase = process.env.NEXT_PUBLIC_CLASSROOM_URL || 'https://classroom.musicalbasics.com'
-            const classroomLink = lesson.profiles.public_id ? `${classroomBase}/${lesson.profiles.public_id}` : null
+            // A classroom student (#980) gets the classroom link instead of Zoom.
+            const links = familyLessonLinks(lesson.profiles, lesson.zoom_link)
 
             // Wording follows the real time remaining, not the notice key: a
             // recovered 24h notice must not tell someone "see you tomorrow"
@@ -184,8 +185,9 @@ async function handle(request: Request) {
                 react: LessonReminderEmail({
                     studentName: lesson.profiles.name || 'Student',
                     time: familyTimeLabel,
-                    zoomLink: lesson.zoom_link,
-                    classroomLink,
+                    zoomLink: links.zoomLink,
+                    classroomLink: links.classroomLink,
+                    venue: links.venue,
                     variant,
                     dayLabel,
                     confirmNudge,

@@ -232,6 +232,7 @@ export async function updateStudent(formData: FormData) {
         const parentContactNameRaw = (formData.get('parentContactName') as string | null)?.trim() || null
         const contactSalutationRaw = (formData.get('contactSalutation') as string | null)?.trim() || null
         const primaryContactRoleRaw = formData.get('primaryContactRole') as string | null
+        const lessonVenueRaw = formData.get('lessonVenue') as string | null
         const primaryContactRole =
             primaryContactRoleRaw === 'student' || primaryContactRoleRaw === 'parent'
                 ? primaryContactRoleRaw
@@ -275,6 +276,8 @@ export async function updateStudent(formData: FormData) {
                 contact_salutation: contactSalutationRaw,
                 primary_contact_role: primaryContactRole,
                 ...smsUpdates,
+                // #980: only when the form sent it, so other callers leave it alone.
+                ...(lessonVenueRaw === 'zoom' || lessonVenueRaw === 'classroom' ? { lesson_venue: lessonVenueRaw } : {}),
                 ...(credits !== undefined && { credits }), // Only update if provided
                 updated_at: new Date().toISOString()
             })

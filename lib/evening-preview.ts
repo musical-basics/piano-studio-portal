@@ -4,6 +4,8 @@ import { STUDIO_TZ, isoToStudioWallClock, shiftDateStr, studioWallClockToISO } f
 import { familyLocalTime, formatStudioTime } from '@/lib/family-time'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { appBaseUrl } from '@/lib/lesson-action-links'
+import { classroomLinkFor, lessonVenue } from '@/lib/lesson-venue'
+import { findLastHomework, type LastHomework } from '@/lib/last-homework'
 
 /**
  * The evening email (#759): at 9pm Eastern, one email to the studio inbox with
@@ -12,9 +14,11 @@ import { appBaseUrl } from '@/lib/lesson-action-links'
  * it changes nothing and no family is emailed.
  *
  * Lessons: Eastern time, the family's own time when their profile has a zone,
- * name, length, Zoom or classroom when the lesson's link says so, and a flag
- * when the family asked to skip, cancel or move that day (an active
- * lesson_intent_flags row) or has no lessons left.
+ * name, length, Zoom or classroom (the student's setting, #980, else the
+ * lesson's link; the word links to the room), and a flag when the family asked
+ * to skip, cancel or move that day (an active lesson_intent_flags row) or has
+ * no lessons left. Since #979 each lesson also shows the student's last
+ * homework (lib/last-homework.ts), cut to its first lines, to plan from.
  *
  * Messages: for each family thread, the family's latest message when Lionel has
  * not replied (or reacted to it) since, up to 14 days old, longest waiting
@@ -52,6 +56,7 @@ const AUTOMATIC_STUDIO_MESSAGES = [
 
 export type EveningLesson = {
     id: string
+    studentId: string
     date: string
     /** "17:30" */
     time: string
@@ -62,8 +67,12 @@ export type EveningLesson = {
     name: string
     minutes: number
     place: 'Zoom' | 'classroom' | null
+    /** The room to join: the classroom link for a classroom student, else the lesson's Zoom link. */
+    joinUrl: string | null
     status: string
     flags: string[]
+    /** The student's last homework (#979, evening email only); null when none. */
+    lastHomework?: LastHomework | null
 }
 
 export type WaitingThread = {
@@ -103,7 +112,11 @@ type Profile = {
     credits: number | null
     timezone: string | null
     lesson_duration: number | null
+    public_id: string | null
+    lesson_venue: string | null
 }
+
+const PROFILE_COLUMNS = 'id, name, role, status, credits, timezone, lesson_duration, public_id, lesson_venue'
 
 const counted = (p: Profile | undefined): p is Profile =>
     !!p && p.status !== 'other' && !isUntrackedTeacherAccount(p)
@@ -131,7 +144,18 @@ export function eveningAsOf(date: string, now: Date = new Date()): Date {
     return date < eveningLessonDate(now) ? evening : now
 }
 
-function placeOf(link: string | null, meetingId: string | null): EveningLesson['place'] {
+/** A link the email can open: a web address, nothing else. */
+function webUrl(url: string | null): string | null {
+    const s = (url || '').trim()
+    return /^https?:\/\/\S+$/i.test(s) ? s : null
+}
+
+/**
+ * Zoom or classroom. Every lesson carries a Zoom link, so the student's own
+ * setting decides first (#980, lib/lesson-venue.ts); the link is the fallback.
+ */
+function placeOf(p: Profile, link: string | null, meetingId: string | null): EveningLesson['place'] {
+    if (lessonVenue(p) === 'classroom') return 'classroom'
     const url = (link || '').toLowerCase()
     if (url.includes('classroom')) return 'classroom'
     if (url.includes('zoom.us') || (meetingId && /\d/.test(meetingId))) return 'Zoom'
@@ -187,7 +211,7 @@ export async function findDayLessons(
     if (!byId) {
         const ids = [...new Set((lessonRows || []).map(l => l.student_id as string))]
         const { data: profileRows, error: profileError } = ids.length
-            ? await client.from('profiles').select('id, name, role, status, credits, timezone, lesson_duration').in('id', ids)
+            ? await client.from('profiles').select(PROFILE_COLUMNS).in('id', ids)
             : { data: [], error: null }
         if (profileError) throw new Error(`profiles query failed: ${profileError.message}`)
         byId = new Map(((profileRows || []) as Profile[]).map(p => [p.id, p]))
@@ -210,6 +234,7 @@ export async function findDayLessons(
     return rows.map(l => {
         const p = people.get(l.student_id)!
         const time = String(l.time).slice(0, 5)
+        const place = placeOf(p, l.zoom_link, l.zoom_meeting_id)
         const flags = [...new Set((flagRows || [])
             .filter(f => f.student_id === l.student_id && (!f.lesson_id || f.lesson_id === l.id))
             .map(f => DATE_CONFLICT_INTENTS[f.intent as string]))]
@@ -223,13 +248,15 @@ export async function findDayLessons(
         }
         return {
             id: l.id,
+            studentId: l.student_id as string,
             date,
             time,
             studioTime: formatStudioTime(time, date),
             familyTime,
             name: displayName(p),
             minutes: Number(l.duration) || Number(p.lesson_duration) || 60,
-            place: placeOf(l.zoom_link, l.zoom_meeting_id),
+            place,
+            joinUrl: place === 'classroom' ? classroomLinkFor(p.public_id) : (place === 'Zoom' ? webUrl(l.zoom_link) : null),
             status: l.status,
             flags,
         }
@@ -243,7 +270,7 @@ export async function buildEveningPreview(
 ): Promise<EveningPreview> {
     const { data: profileRows, error: profileError } = await client
         .from('profiles')
-        .select('id, name, role, status, credits, timezone, lesson_duration')
+        .select(PROFILE_COLUMNS)
     if (profileError) throw new Error(`profiles query failed: ${profileError.message}`)
     const profiles = new Map(((profileRows || []) as Profile[]).map(p => [p.id, p]))
     const admin = [...profiles.values()].find(p => p.role === 'admin')
@@ -251,6 +278,7 @@ export async function buildEveningPreview(
 
     // ---- Tomorrow's lessons.
     const lessons = await findDayLessons(client, date, profiles)
+    await addLastHomework(client, lessons)
 
     // ---- Family messages still waiting on a reply.
     const since = new Date(asOf.getTime() - WAITING_MAX_DAYS * 24 * 60 * 60 * 1000).toISOString()
@@ -356,6 +384,50 @@ const ITEM = 'font-size:15px;margin:0 0 12px;line-height:1.45'
 const FLAG = 'display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:600'
 const QUOTE = 'margin:3px 0 0;padding:2px 0 2px 10px;border-left:3px solid #d1d5db;color:#374151;font-size:14px;word-break:break-word'
 const MUTED = 'font-size:13px;color:#555;margin:4px 0'
+const HOMEWORK = 'margin:4px 0 0;padding:2px 0 2px 10px;border-left:3px solid #d1d5db;color:#374151;font-size:14px;word-break:break-word'
+
+/** Lines of last homework the email shows (#979); more ends in "...". */
+export const HOMEWORK_LINES = 3
+const HOMEWORK_LINE_CHARS = 110
+
+/** The first HOMEWORK_LINES non-empty lines, each cut short, with "..." when there is more. */
+export function homeworkPreview(homework: string): string[] {
+    const all = homework.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+    const lines = all.slice(0, HOMEWORK_LINES)
+        .map(l => (l.length > HOMEWORK_LINE_CHARS ? `${l.slice(0, HOMEWORK_LINE_CHARS).trimEnd()}...` : l))
+    if (all.length > HOMEWORK_LINES) lines.push('...')
+    return lines
+}
+
+/**
+ * Each lesson's last homework (#979): the student's most recent logged lesson
+ * before it with any, the same rule as the Log it page's pre-fill. Never
+ * throws: a lesson whose lookup fails is listed without it.
+ */
+export async function addLastHomework(client: DbClient, lessons: EveningLesson[]): Promise<void> {
+    await Promise.all(lessons.map(async l => {
+        try {
+            l.lastHomework = await findLastHomework(client, l.studentId, { date: l.date, time: l.time })
+        } catch (e) {
+            console.error('[evening-preview] last homework lookup failed:', e instanceof Error ? e.message : e)
+            l.lastHomework = null
+        }
+    }))
+}
+
+function placeHtml(l: EveningLesson): string {
+    if (!l.place) return ''
+    return l.joinUrl
+        ? `<a href="${escapeHtml(l.joinUrl)}" style="color:#1d4ed8">${escapeHtml(l.place)}</a>`
+        : escapeHtml(l.place)
+}
+
+function homeworkHtml(l: EveningLesson): string {
+    if (!l.lastHomework) return ''
+    const day = new Date(`${l.lastHomework.date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    const lines = homeworkPreview(l.lastHomework.homework).map(escapeHtml).join('<br>')
+    return `<div style="${HOMEWORK}"><span style="color:#555">Last homework (${escapeHtml(day)}):</span><br>${lines}</div>`
+}
 
 export function renderEveningPreview(p: EveningPreview): { subject: string; html: string; footer: string } {
     const parts: string[] = []
@@ -363,12 +435,13 @@ export function renderEveningPreview(p: EveningPreview): { subject: string; html
 
     parts.push(`<h3 style="${H}">Lessons</h3>`)
     for (const l of p.lessons) {
-        const details = [`${l.minutes} min`, l.place].filter(Boolean).join(', ')
+        const details = [escapeHtml(`${l.minutes} min`), placeHtml(l)].filter(Boolean).join(', ')
         const flags = l.flags.map(f => `<span style="${FLAG}">${escapeHtml(f)}</span>`).join('')
         parts.push(`<div style="${ITEM}"><b>${escapeHtml(l.studioTime)}</b>`
             + `${l.familyTime ? ` <span style="color:#555">(${escapeHtml(l.familyTime)})</span>` : ''}`
-            + `<br>${escapeHtml(l.name)}, ${escapeHtml(details)}`
-            + `${flags ? `<br>${flags}` : ''}</div>`)
+            + `<br>${escapeHtml(l.name)}, ${details}`
+            + `${flags ? `<br>${flags}` : ''}`
+            + `${homeworkHtml(l)}</div>`)
     }
 
     parts.push(`<h3 style="${H}">Messages waiting on you</h3>`)
@@ -396,6 +469,8 @@ export function renderEveningPreview(p: EveningPreview): { subject: string; html
         footer: 'Sent at 9pm Eastern (10pm in summer) by the portal (/api/cron/evening-preview), only to you and only before a day with lessons. '
             + 'Nothing goes to families. "Their time" comes from the family\'s time zone in their profile. '
             + `Messages: the family wrote last within ${WAITING_MAX_DAYS} days and you have not replied or reacted since; drafts waiting for your yes are in the command center. `
+            + 'Zoom or classroom: the student\'s setting in Edit Student, else the lesson\'s link; tap it to open the room. '
+            + 'Last homework: from their most recent logged lesson that had any. '
             + 'Teacher and test accounts are left out.',
     }
 }

@@ -44,6 +44,8 @@ export interface Database {
                     parent_contact_name: string | null
                     contact_salutation: string | null
                     primary_contact_role: 'student' | 'parent' | null
+                    /** #980, lib/lesson-venue.ts. Optional here only so hand-built rows still type-check. */
+                    lesson_venue?: 'zoom' | 'classroom'
                     created_at: string
                     updated_at: string
                 }
@@ -66,6 +68,7 @@ export interface Database {
                     public_id?: string | null
                     status?: 'active' | 'inactive' | 'prospective' | 'other' | null
                     dropbox_recording_folder?: string | null
+                    lesson_venue?: 'zoom' | 'classroom'
                     created_at?: string
                     updated_at?: string
                 }
@@ -88,6 +91,7 @@ export interface Database {
                     public_id?: string | null
                     status?: 'active' | 'inactive' | 'prospective' | 'other' | null
                     dropbox_recording_folder?: string | null
+                    lesson_venue?: 'zoom' | 'classroom'
                     created_at?: string
                     updated_at?: string
                 }

@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { addDays, format } from 'date-fns'
 import { studioNow, studioToday, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
+import { familyLessonLinks } from '@/lib/lesson-venue'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
 import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
@@ -103,6 +104,8 @@ async function sendAutoScheduledLessonEmail({
         const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
         // The family's copy also shows their own clock (Lionel's #729); the teacher's stays Eastern.
         const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
+        // A classroom student (#980) is given the classroom link instead of Zoom.
+        const links = familyLessonLinks(student, zoomLink)
 
         await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
@@ -113,7 +116,8 @@ async function sendAutoScheduledLessonEmail({
                 date: formattedDate,
                 time: familyTime,
                 duration,
-                zoomLink: zoomLink || null,
+                zoomLink: links.zoomLink,
+                classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
                 recipientName: student.name || 'Student',
                 studioName,
             }),
@@ -129,7 +133,8 @@ async function sendAutoScheduledLessonEmail({
                     date: formattedDate,
                     time: formattedTime,
                     duration,
-                    zoomLink: zoomLink || null,
+                    zoomLink: links.zoomLink,
+                    classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
                     recipientName: adminName,
                     studioName,
                 }),
@@ -745,6 +750,8 @@ export async function scheduleLessonCore({
             const emailSubject = `Lesson Scheduled for ${student.name} on ${formattedDate} at ${formattedTime}`
             // The family's copy also shows their own clock (Lionel's #729); the teacher's stays Eastern.
             const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
+            // A classroom student (#980) is given the classroom link instead of Zoom.
+            const links = familyLessonLinks(student, zoomLink)
 
             await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
@@ -755,7 +762,8 @@ export async function scheduleLessonCore({
                     date: formattedDate,
                     time: familyTime,
                     duration,
-                    zoomLink,
+                    zoomLink: links.zoomLink,
+                    classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
                     recipientName: student.name || 'Student',
                     studioName,
                 }),
@@ -771,7 +779,8 @@ export async function scheduleLessonCore({
                         date: formattedDate,
                         time: formattedTime,
                         duration,
-                        zoomLink,
+                        zoomLink: links.zoomLink,
+                        classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
                         recipientName: adminName,
                         studioName,
                     }),

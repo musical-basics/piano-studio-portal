@@ -14,10 +14,10 @@ const now = new Date('2026-11-19T13:30:00Z')
 const baseUrl = 'https://example.test'
 
 const todayLesson: EveningLesson = {
-    id: 't1', date: '2026-11-19', time: '16:30', studioTime: '4:30pm EST', familyTime: '1:30pm their time',
+    id: 't1', studentId: 's1', joinUrl: null, date: '2026-11-19', time: '16:30', studioTime: '4:30pm EST', familyTime: '1:30pm their time',
     name: 'Piano Student', minutes: 60, place: 'Zoom', status: 'scheduled', flags: [],
 }
-const classroom: EveningLesson = { ...todayLesson, id: 't2', time: '18:00', studioTime: '6:00pm EST', familyTime: null, place: 'classroom', flags: ['0 lessons left'] }
+const classroom: EveningLesson = { ...todayLesson, id: 't2', time: '18:00', studioTime: '6:00pm EST', familyTime: null, place: 'classroom', joinUrl: 'https://classroom.example.test/abc', flags: ['0 lessons left'] }
 const unlogged: UnloggedLesson = {
     id: 'u1', date: '2026-11-18', time: '17:00', duration: 60, status: 'scheduled', studentId: 's1',
     studentName: 'Piano Student', accountStatus: 'active', zoomMeetingId: null, hasVideo: true, hasDropboxFolder: true,
@@ -29,7 +29,7 @@ const onlyToday = buildMorningEmail('2026-11-18', [], [], { now, baseUrl, today:
 assert.equal(onlyToday.subject, 'Today: 2 lessons, first at 4:30pm EST')
 assert.match(onlyToday.html, /^<h3[^>]*>Today, Thursday, Nov 19 \(2 lessons\)<\/h3>/)
 assert.match(onlyToday.html, /<b>4:30pm EST<\/b> <span[^>]*>\(1:30pm their time\)<\/span>: Piano Student, 60 min, Zoom/)
-assert.match(onlyToday.html, /6:00pm EST<\/b>: Piano Student, 60 min, classroom<br><span[^>]*>0 lessons left/)
+assert.match(onlyToday.html, /6:00pm EST<\/b>: Piano Student, 60 min, <a href="https:\/\/classroom\.example\.test\/abc"[^>]*>classroom<\/a><br><span[^>]*>0 lessons left/)
 assert.match(onlyToday.footer, /Nothing from Wednesday, Nov 18 is waiting to be logged/)
 assert.match(onlyToday.footer, /a lesson today/)
 

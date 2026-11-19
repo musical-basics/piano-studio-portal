@@ -2,10 +2,11 @@ import type { DbClient } from '@/lib/supabase/admin'
 
 /**
  * Last lesson's homework (Lionel's #943): the homework of the student's most
- * recent earlier lesson that has any. The email's Log it page and the admin
- * log dialogs pre-fill their Homework box with it, so only what changed needs
- * typing. It is only a starting text: edited or cleared, what is in the box
- * when he logs is what is saved.
+ * recent earlier logged lesson that has any. The email's Log it page and the
+ * admin log dialogs pre-fill their Homework box with it, so only what changed
+ * needs typing. It is only a starting text: edited or cleared, what is in the
+ * box when he logs is what is saved. The 9pm email (#979) shows it under each
+ * of tomorrow's lessons.
  */
 
 export type LastHomework = {
@@ -30,6 +31,7 @@ export async function findLastHomework(
         .from('lessons')
         .select('date, time, homework')
         .eq('student_id', studentId)
+        .eq('status', 'completed')
         .not('homework', 'is', null)
         .or(`date.lt.${date},and(date.eq.${date},time.lt.${time})`)
         .order('date', { ascending: false })
