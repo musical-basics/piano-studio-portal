@@ -1,4 +1,5 @@
 import { headers } from 'next/headers'
+import { labelLedgerChange } from '@/lib/credit-labels'
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
@@ -176,6 +177,9 @@ export async function POST(req: Request) {
                         }
 
                         console.log(`[Webhook] ✅ Added ${creditsToAdd} credits to user ${userId} (Checkout) | ${oldCredits} → ${newBalance}`)
+                        // #939: the family's History tab says what the lessons were for.
+                        await labelLedgerChange(supabaseAdmin as any, userId, oldCredits, newBalance,
+                            session.mode === 'subscription' ? 'monthly plan' : 'lesson package')
                     }
 
                     // The checkout took account credit off the price; use it up now.
@@ -297,6 +301,8 @@ export async function POST(req: Request) {
                 }
 
                 console.log(`[Webhook] ✅ Renewed subscription: Added ${creditsToAdd} credits to user ${userId} | ${oldCredits} → ${newBalance}`)
+                // #939: the family's History tab says what the lessons were for.
+                await labelLedgerChange(supabaseAdmin as any, userId, oldCredits, newBalance, 'monthly plan renewal')
 
                 // Send renewal confirmation emails (fire-and-forget)
                 const amountPaid = (invoice.amount_paid ?? 0) / 100

@@ -1218,7 +1218,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
                             {history && (
                                 <TabsContent value="history" className="space-y-4">
-                                    <LessonHistoryTab history={history} />
+                                    <LessonHistoryTab history={history} markersByLesson={markersByLesson} />
                                 </TabsContent>
                             )}
 

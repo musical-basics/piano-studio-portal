@@ -72,7 +72,16 @@ export default async function StudentPage() {
 
   // The Lesson history tab (#737), from the same rows. This read uses the
   // signed-in family's own session, so row security limits it to their lessons.
-  const history = buildLessonHistory(lessons || [], profile.credits ?? null, new Date(), profile.timezone)
+  // Balance changes that are not lessons (#939: purchases, renewals, adjustments
+  // with Lionel's reason). The ledger is service-role only; this reads only the
+  // effective student's rows (the signed-in family, or the admin's preview).
+  const { data: ledger } = await createAdminClient()
+    .from("credit_transactions")
+    .select("id, changed_at, delta, new_credits, source, note")
+    .eq("student_id", effectiveUserId)
+    .order("changed_at", { ascending: false })
+    .limit(200)
+  const history = buildLessonHistory(lessons || [], profile.credits ?? null, new Date(), profile.timezone, ledger || [])
 
   // Moments Lionel marked in classroom recordings (#874), for the lessons above
   // (already limited to this family by their own session).

@@ -14,8 +14,13 @@ import { familyLocalTime, formatStudioTime } from '@/lib/family-time'
  *     Nothing was taken; "Left after" is the unchanged balance.
  *   - Not counted: over, but never logged, so nothing was taken for it.
  *   - Upcoming: not over yet.
- * Cancelled lessons are deleted, so they never show. Notes, recordings and how
- * a lesson was logged stay out of this view on purpose.
+ * Cancelled lessons are deleted, so they never show. How a lesson was logged
+ * stays out of this view on purpose.
+ *
+ * Since #937-#939 each held lesson also carries its notes, homework and a
+ * recording link, and the balance changes that are not lessons (purchases,
+ * plan renewals, a free trial, Lionel's adjustments with their reason) are
+ * listed between them (balanceChangesFromLedger, from credit_transactions).
  */
 
 export type LessonHistoryStatus = 'counted' | 'free' | 'not_counted' | 'upcoming'
@@ -33,6 +38,24 @@ export type LessonHistoryRow = {
     status: LessonHistoryStatus
     /** Lessons left on the balance after this one, when it was counted and recorded. */
     leftAfter: number | null
+    /** What Lionel wrote for this lesson (#938), held lessons only. */
+    notes: string | null
+    homework: string | null
+    /** The lesson's recording (#937), held lessons only. */
+    videoUrl: string | null
+}
+
+/** A change to the balance that is not a lesson (#939). */
+export type BalanceChange = {
+    id: string
+    /** YYYY-MM-DD, studio (Eastern) date. */
+    date: string
+    /** When it happened, for ordering. */
+    at: string
+    delta: number
+    /** "monthly plan", "free trial", Lionel's reason; empty when the change was never labelled. */
+    label: string
+    leftAfter: number
 }
 
 export type LessonHistory = {
@@ -44,6 +67,8 @@ export type LessonHistory = {
     upcoming: number
     /** profiles.credits now. */
     leftNow: number | null
+    /** Purchases, renewals and adjustments, newest first (#939). */
+    changes: BalanceChange[]
 }
 
 type SourceLesson = {
@@ -54,6 +79,54 @@ type SourceLesson = {
     status: string
     credit_snapshot?: number | null
     free_reason?: string | null
+    notes?: string | null
+    homework?: string | null
+    video_url?: string | null
+}
+
+export type LedgerRow = {
+    id: string
+    changed_at: string
+    delta: number
+    new_credits: number
+    source: string | null
+    note: string | null
+}
+
+/** Ledger sources that are lessons being logged or charged (already shown as lessons). */
+const LESSON_SOURCES = [/^unlogged lesson logged late/i, /^logged by /i, /^late charge/i, /^no-show/i, /^no show/i]
+
+/**
+ * The balance changes a family should see (#939): every addition (purchase,
+ * renewal, free trial, a credit given back, an adjustment) and lessons Lionel
+ * took off with a reason. Lesson logs are left out (the lesson rows show
+ * them) and so are test entries.
+ */
+export function balanceChangesFromLedger(rows: LedgerRow[]): BalanceChange[] {
+    const out: BalanceChange[] = []
+    for (const r of rows) {
+        const source = (r.source || '').trim()
+        const note = (r.note || '').trim()
+        if (/^test\b/i.test(source) || /^test\b/i.test(note)) continue
+        if (!r.delta) continue
+        const adjustment = source === 'admin adjustment'
+        if (r.delta < 0 && !adjustment) continue
+        if (r.delta > 0 && LESSON_SOURCES.some(re => re.test(source)) && !adjustment) continue
+        let label: string
+        if (adjustment) label = note || (r.delta > 0 ? 'added by Lionel' : 'taken off by Lionel')
+        else if (/^log undone: /i.test(source)) label = `given back: ${source.replace(/^log undone: /i, '')}`
+        else if (source) label = source
+        else label = note
+        out.push({
+            id: r.id,
+            date: new Date(r.changed_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+            at: r.changed_at,
+            delta: r.delta,
+            label,
+            leftAfter: r.new_credits,
+        })
+    }
+    return out.sort((a, b) => b.at.localeCompare(a.at))
 }
 
 export function formatLessonClock(time: string): string {
@@ -85,6 +158,7 @@ export function buildLessonHistory(
     creditsNow: number | null,
     now: Date = new Date(),
     familyTz?: string | null,
+    ledger: LedgerRow[] = [],
 ): LessonHistory {
     const key = (l: SourceLesson) => `${l.date} ${String(l.time).slice(0, 5)}`
     const rows = [...lessons]
@@ -99,6 +173,9 @@ export function buildLessonHistory(
                 duration: l.duration || 60,
                 status,
                 leftAfter: (status === 'counted' || status === 'free') && typeof l.credit_snapshot === 'number' ? l.credit_snapshot : null,
+                notes: status === 'counted' || status === 'free' ? (l.notes || '').trim() || null : null,
+                homework: status === 'counted' || status === 'free' ? (l.homework || '').trim() || null : null,
+                videoUrl: status === 'counted' || status === 'free' ? l.video_url || null : null,
             }
         })
 
@@ -110,5 +187,6 @@ export function buildLessonHistory(
         notCounted: rows.filter(r => r.status === 'not_counted').length,
         upcoming: rows.filter(r => r.status === 'upcoming').length,
         leftNow: typeof creditsNow === 'number' ? creditsNow : null,
+        changes: balanceChangesFromLedger(ledger),
     }
 }

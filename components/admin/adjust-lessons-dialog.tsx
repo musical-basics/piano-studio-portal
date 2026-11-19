@@ -111,7 +111,7 @@ export function AdjustLessonsDialog({
                         </span>
                     </div>
                     <div className="space-y-1">
-                        <Label htmlFor="adjust-reason">Reason (goes in the credit history)</Label>
+                        <Label htmlFor="adjust-reason">Reason (the family sees it in their History tab)</Label>
                         <Input
                             id="adjust-reason"
                             value={reason}
