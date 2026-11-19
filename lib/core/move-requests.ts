@@ -21,6 +21,8 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { rescheduleLessonCore } from '@/lib/core/lessons'
 import { findFreeSlotsCore } from '@/lib/core/free-slots'
+import { LATE_CANCEL_WINDOW_HOURS } from '@/lib/billing-policy'
+import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import {
     familySlotLabel,
     lessonWeek,
@@ -46,7 +48,7 @@ export type MoveOptions = {
     lessonId: string
     /** "Thu, Nov 20 at 4:30pm EST (1:30pm your time)" */
     lessonLabel: string
-    /** "the week of Mon, Nov 17" */
+    /** The times offered: "the week of Mon, Nov 17" (#878) or "the next 2 weeks" (#927). */
     week: string
     duration: number
     slots: MoveOption[]
@@ -132,6 +134,12 @@ export async function sweepMoveRequests(client: DbClient, { studentId }: { stude
     const now = Date.now()
     const open: MoveRequestRow[] = []
     for (const request of pending) {
+        // A make-up claim (#927) holds its row only while it moves the lesson.
+        if (request.decided_via === 'family') {
+            if (now - Date.parse(request.created_at) > FAMILY_CLAIM_HOLD_MS) await expire(client, request.id, 'claim_failed: never finished')
+            else open.push(request)
+            continue
+        }
         const stale = staleReason(request, byId.get(request.lesson_id) ?? null, now)
         if (stale) {
             await expire(client, request.id, stale)
@@ -152,12 +160,26 @@ async function familyTimezone(client: DbClient, studentId: string): Promise<stri
     return (data?.timezone as string) ?? null
 }
 
+/** Days ahead (today included) the make-up picker offers (#927). */
+export const MAKEUP_PICKER_DAYS = 14
+
+/** A family's own make-up claim holds its lesson this long at most (see sweepMoveRequests). */
+const FAMILY_CLAIM_HOLD_MS = 5 * 60_000
+
 /**
- * The free times a family can ask for, for one of its lessons: Lionel's free
- * slots in that lesson's Monday-to-Sunday week, from now on (an hour's notice),
- * at the lesson's length, other than the lesson's own time. Changes nothing.
+ * The free times offered for one of a family's lessons, shared by "Request a
+ * different time" (#878: that lesson's Monday-to-Sunday week) and the make-up
+ * picker (#927: the next MAKEUP_PICKER_DAYS days). Lionel's free slots from now
+ * on (an hour's notice), at the lesson's length, other than the lesson's own
+ * time and times another family is already waiting on. Changes nothing except
+ * closing this family's requests that can no longer happen.
  */
-export async function getMoveOptionsCore(client: DbClient, studentId: string, lessonId: string): Promise<MoveOptions | { error: string }> {
+async function familyLessonOptions(
+    client: DbClient,
+    studentId: string,
+    lessonId: string,
+    span: 'week' | 'makeup',
+): Promise<MoveOptions | { error: string }> {
     const lesson = await loadLesson(client, lessonId)
     if (lesson && 'error' in lesson) return lesson
     if (!lesson || lesson.student_id !== studentId) return { error: 'This lesson was not found. It may have been moved or cancelled; refresh the page.' }
@@ -170,8 +192,12 @@ export async function getMoveOptionsCore(client: DbClient, studentId: string, le
     const pendingRow = open.find(r => r.lesson_id === lessonId) ?? null
 
     const duration = lesson.duration || 60
-    const week = lessonWeek(lesson.date)
-    const found = await findFreeSlotsCore({ client, duration, fromDate: week.start, days: 7, ignoreLessonIds: [lessonId] })
+    const today = studioToday()
+    const window = span === 'week'
+        ? lessonWeek(lesson.date)
+        : { start: today, end: shiftDateStr(today, MAKEUP_PICKER_DAYS - 1) }
+    const days = span === 'week' ? 7 : MAKEUP_PICKER_DAYS
+    const found = await findFreeSlotsCore({ client, duration, fromDate: window.start, days, ignoreLessonIds: [lessonId] })
     if ('error' in found) return { error: 'The free times could not be loaded just now. Please try again in a minute.' }
 
     // Times another family is already waiting on are not offered twice.
@@ -179,8 +205,8 @@ export async function getMoveOptionsCore(client: DbClient, studentId: string, le
         .from('lesson_move_requests')
         .select('lesson_id, to_date, to_time, duration')
         .eq('status', 'pending')
-        .gte('to_date', week.start)
-        .lte('to_date', week.end)
+        .gte('to_date', window.start)
+        .lte('to_date', window.end)
     const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
     const askedElsewhere = (date: string, start: number) => (others || []).some(o =>
         o.lesson_id !== lessonId && o.to_date === date &&
@@ -189,7 +215,7 @@ export async function getMoveOptionsCore(client: DbClient, studentId: string, le
     return {
         lessonId,
         lessonLabel: familySlotLabel(lesson.date, time, tz),
-        week: weekLabel(lesson.date),
+        week: span === 'week' ? weekLabel(lesson.date) : `the next ${MAKEUP_PICKER_DAYS / 7} weeks`,
         duration,
         slots: found.slots
             .filter(s => !(s.date === lesson.date && s.time === time))
@@ -197,6 +223,101 @@ export async function getMoveOptionsCore(client: DbClient, studentId: string, le
             .map(s => ({ date: s.date, time: s.time, label: familySlotLabel(s.date, s.time, tz) })),
         pending: pendingRow ? { requestId: pendingRow.id, toLabel: familySlotLabel(pendingRow.to_date, pendingRow.to_time, tz) } : null,
     }
+}
+
+/** "Request a different time" (#878): free times in the lesson's own week. Changes nothing. */
+export function getMoveOptionsCore(client: DbClient, studentId: string, lessonId: string): Promise<MoveOptions | { error: string }> {
+    return familyLessonOptions(client, studentId, lessonId, 'week')
+}
+
+/** The make-up picker (#927): free times in the next two weeks. Changes nothing. */
+export function getMakeupOptionsCore(client: DbClient, studentId: string, lessonId: string): Promise<MoveOptions | { error: string }> {
+    return familyLessonOptions(client, studentId, lessonId, 'makeup')
+}
+
+/**
+ * The make-up picker (#927): the family moves its own lesson to one of the
+ * offered free times straight away, the same way an admin reschedule does
+ * (rescheduleLessonCore: Zoom meeting, calendar event, the usual "Lesson
+ * Rescheduled" email in the family's own time). The caller must have checked
+ * that `studentId` is the signed-in family itself (never an admin preview).
+ *
+ * Guards: only the family's own lesson, still scheduled and more than
+ * LATE_CANCEL_WINDOW_HOURS away (a move inside that window is a late change,
+ * which goes through Lionel: "Request a different time"); the time must still
+ * be one of the free ones offered; no request of theirs may be waiting on the
+ * same lesson. The claim holds the lesson's one pending row in
+ * lesson_move_requests while it moves, so a double tap or a second tab can't
+ * move it twice; the row stays as the record (decided_via 'family').
+ */
+export async function claimMakeupSlotCore(
+    client: DbClient,
+    { studentId, lessonId, date, time }: { studentId: string; lessonId: string; date: string; time: string },
+): Promise<{ success: true; toLabel: string } | { error: string }> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return { error: 'Pick one of the times in the list.' }
+
+    const options = await getMakeupOptionsCore(client, studentId, lessonId)
+    if ('error' in options) return options
+    if (options.pending) {
+        return { error: `You already asked to move this lesson to ${options.pending.toLabel}. Withdraw that request first to pick another time.` }
+    }
+    const lesson = await loadLesson(client, lessonId)
+    if (!lesson || 'error' in lesson) return { error: 'This lesson could not be read just now. Please try again.' }
+    const from = hhmm(lesson.time)
+    if (studioStartMs(lesson.date, from) - Date.now() < LATE_CANCEL_WINDOW_HOURS * 3_600_000) {
+        return { error: `This lesson is less than ${LATE_CANCEL_WINDOW_HOURS} hours away, so it can't be moved here. Use "Request a different time" (your teacher approves it) or message your teacher.` }
+    }
+    const picked = options.slots.find(s => s.date === date && s.time === time)
+    if (!picked) return { error: 'That time is no longer free. Please pick another one.' }
+
+    const { data: hold, error: holdError } = await client.from('lesson_move_requests').insert({
+        lesson_id: lessonId,
+        student_id: studentId,
+        from_date: lesson.date,
+        from_time: from,
+        to_date: date,
+        to_time: time,
+        duration: options.duration,
+        status: 'pending',
+        decided_via: 'family',
+    }).select('id').single()
+    if (holdError || !hold) {
+        if (holdError?.code === '23505') return { error: 'This lesson is already being moved. Refresh the page to see where it is now.' }
+        console.error('[move-requests] make-up claim hold failed:', holdError?.message)
+        return { error: 'Your lesson could not be moved just now. Please try again in a minute.' }
+    }
+    const close = (status: 'approved' | 'expired', outcome: string) => client
+        .from('lesson_move_requests')
+        .update({ status, outcome, decided_at: new Date().toISOString() })
+        .eq('id', hold.id)
+
+    // The usual reschedule email goes out in the studio's name, like an admin move.
+    const { data: admin } = await client.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
+    if (!admin?.id) {
+        await close('expired', 'claim_failed: studio account not found')
+        return { error: 'Your lesson could not be moved just now. Please try again in a minute.' }
+    }
+    const result = await rescheduleLessonCore({
+        client,
+        adminId: admin.id as string,
+        lessonId,
+        newDate: date,
+        newTime: time,
+        newDuration: options.duration,
+        // The family picked this time itself just now, which outranks an older
+        // skip/move note of theirs for that day.
+        confirmOverride: true,
+    })
+    if ('error' in result && result.error) {
+        const taken = /already booked/i.test(String(result.error))
+        await close('expired', taken ? 'slot_taken' : `claim_failed: ${result.error}`)
+        return taken
+            ? { error: 'That time was just taken. Please pick another one.' }
+            : { error: 'Your lesson could not be moved just now. Nothing changed; please try again in a minute.' }
+    }
+    await close('approved', 'moved: the family picked it (make-up picker)')
+    console.log(`[move-requests] make-up picker: student ${studentId} moved lesson ${lessonId} ${lesson.date} ${from} -> ${date} ${time}`)
+    return { success: true, toLabel: picked.label }
 }
 
 /**
@@ -293,7 +414,8 @@ export async function familyMoveStatesCore(
 
 /** Every request waiting for Lionel, oldest first, after the sweep. */
 export async function listPendingMoveRequestsCore(client: DbClient): Promise<PendingMoveRequest[]> {
-    const open = await sweepMoveRequests(client)
+    // A make-up claim in progress (#927) is not Lionel's to decide.
+    const open = (await sweepMoveRequests(client)).filter(r => r.decided_via !== 'family')
     if (open.length === 0) return []
     const { data: students } = await client
         .from('profiles')

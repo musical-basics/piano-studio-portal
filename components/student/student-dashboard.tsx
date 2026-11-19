@@ -41,6 +41,9 @@ import {
     mockEvents,
 } from "@/lib/mock-data"
 import { MakeupScheduler } from "./makeup-scheduler"
+import { FAMILY_MAKEUP_PICKER_ON } from "@/lib/studio-policy"
+import { studioStartMs } from "@/lib/move-requests"
+import { LATE_CANCEL_WINDOW_HOURS } from "@/lib/billing-policy"
 import { RecordingConsentDialog } from "./recording-consent-dialog"
 import { PracticeTab } from "./practice-tab"
 import { CancellationModal } from "./cancellation-modal"
@@ -221,10 +224,11 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         }
     }, [activeTab, profile.id])
 
-    const [showMakeupScheduler, setShowMakeupScheduler] = useState(false)
     const [showCancellationModal, setShowCancellationModal] = useState(false)
     // "Request a different time" (#878): the lesson whose free times are open.
     const [moveLessonId, setMoveLessonId] = useState<string | null>(null)
+    // The make-up picker (#927, only while FAMILY_MAKEUP_PICKER_ON): the lesson being moved.
+    const [makeupLessonId, setMakeupLessonId] = useState<string | null>(null)
     const [selectedLesson, setSelectedLesson] = useState<UILesson | null>(null)
     const [showLessonDetail, setShowLessonDetail] = useState(false)
     const [showPurchaseModal, setShowPurchaseModal] = useState(false)
@@ -319,9 +323,16 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
     }
 
-    // const handleReschedule = () => {
-    //     setShowMakeupScheduler(true)
-    // }
+    // The make-up picker (#927) offers a lesson only while it is switched on, the
+    // lesson is more than 24 hours away (a later change goes through "Request a
+    // different time") and no request of theirs is waiting on it. The server
+    // checks all of this again.
+    const canPickNow = (lessonId: string) => {
+        if (!FAMILY_MAKEUP_PICKER_ON) return false
+        const l = movableLessons.find(x => x.id === lessonId)
+        if (!l || moveStates[lessonId]?.status === "pending") return false
+        return studioStartMs(l.date, l.time) - Date.now() > LATE_CANCEL_WINDOW_HOURS * 3_600_000
+    }
 
     const handleCancel = () => {
         setShowCancellationModal(true)
@@ -754,10 +765,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     </Button>
 
                                     {/* 3. Existing Actions */}
-                                    {/* <Button size="lg" variant="outline" onClick={handleReschedule}>
-                                        <CalendarClock className="h-5 w-5 mr-2" />
-                                        Reschedule
-                                    </Button> */}
+                                    {/* The make-up picker (#927): moves the lesson right away. Off until Lionel says go. */}
+                                    {nextLesson.id && canPickNow(nextLesson.id) && (
+                                        <Button size="lg" variant="outline" onClick={() => setMakeupLessonId(nextLesson.id!)}>
+                                            <CalendarClock className="h-5 w-5 mr-2" />
+                                            Pick a new time
+                                        </Button>
+                                    )}
                                     {nextLesson.id && movableLessons.some(l => l.id === nextLesson.id) && moveStates[nextLesson.id]?.status !== "pending" && (
                                         <Button size="lg" variant="outline" onClick={() => setMoveLessonId(nextLesson.id!)}>
                                             <CalendarClock className="h-5 w-5 mr-2" />
@@ -789,12 +803,20 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                                             <LocalTimeDisplay date={l.date} time={l.time} />
                                                         </div>
                                                     </div>
-                                                    {moveStates[l.id]?.status !== "pending" && (
-                                                        <Button size="sm" variant="outline" onClick={() => setMoveLessonId(l.id)}>
-                                                            <CalendarClock className="h-4 w-4 mr-2" />
-                                                            Request a different time
-                                                        </Button>
-                                                    )}
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {canPickNow(l.id) && (
+                                                            <Button size="sm" variant="outline" onClick={() => setMakeupLessonId(l.id)}>
+                                                                <CalendarClock className="h-4 w-4 mr-2" />
+                                                                Pick a new time
+                                                            </Button>
+                                                        )}
+                                                        {moveStates[l.id]?.status !== "pending" && (
+                                                            <Button size="sm" variant="outline" onClick={() => setMoveLessonId(l.id)}>
+                                                                <CalendarClock className="h-4 w-4 mr-2" />
+                                                                Request a different time
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <MoveRequestStatus state={moveStates[l.id]} isPreview={isAdminPreview} />
                                             </div>
@@ -1413,12 +1435,13 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             </main>
 
             {/* Modals */}
-            <MakeupScheduler
-                open={showMakeupScheduler}
-                onOpenChange={setShowMakeupScheduler}
-                lessonId={nextLesson?.id}
-                onSuccess={() => window.location.reload()}
-            />
+            {FAMILY_MAKEUP_PICKER_ON && (
+                <MakeupScheduler
+                    lessonId={makeupLessonId}
+                    onClose={() => setMakeupLessonId(null)}
+                    isPreview={isAdminPreview}
+                />
+            )}
 
             <MoveRequestDialog
                 lessonId={moveLessonId}

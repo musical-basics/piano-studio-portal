@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import {
     Dialog,
@@ -13,26 +13,62 @@ import {
 import { Button } from "@/components/ui/button"
 import { CalendarClock, CheckCircle2, Clock, Info, Loader2 } from "lucide-react"
 import { getMoveOptions, requestLessonMove, withdrawLessonMove, type MoveOptions } from "@/app/actions/move-requests"
+import { claimMakeupSlot, getMakeupOptions } from "@/app/actions/makeup-slots"
 import type { FamilyMoveState } from "@/lib/core/move-requests"
 
 /**
- * "Request a different time" (#878): the family picks one of the teacher's free
- * times in that lesson's week. Nothing moves until the teacher approves; then
- * the usual "Lesson Rescheduled" email goes out and the new time shows here.
+ * The family picks one of the teacher's free times for one of its lessons.
+ * Two kinds share this dialog and the same slot finder:
+ *   - "request" (#878, Request a different time): that lesson's week; nothing
+ *     moves until the teacher approves.
+ *   - "makeup" (#927, the make-up picker, only while FAMILY_MAKEUP_PICKER_ON):
+ *     the next two weeks; the lesson moves right away, the usual reschedule.
  */
 
 const key = (s: { date: string; time: string }) => `${s.date}_${s.time}`
 
-interface MoveRequestDialogProps {
+type Kind = "request" | "makeup"
+
+const TEXT: Record<Kind, {
+    title: string
+    after: string
+    send: string
+    picked: string
+    preview: string
+    done: (label: string) => ReactNode
+}> = {
+    request: {
+        title: "Request a different time",
+        after: "Your teacher approves it first; until then your lesson stays where it is.",
+        send: "Send request",
+        picked: "You are asking for",
+        preview: "Preview: only the family can send a request.",
+        done: label => <>Request sent for <span className="font-medium">{label}</span>. If your teacher approves it, you will get the
+            usual &quot;Lesson Rescheduled&quot; email and the new time shows here. Until then your lesson stays at its time.</>,
+    },
+    makeup: {
+        title: "Pick a new time",
+        after: "Your lesson moves right away: Zoom and the calendar follow, and you get the usual \"Lesson Rescheduled\" email.",
+        send: "Move my lesson",
+        picked: "Moving it to",
+        preview: "Preview: only the family can move its lesson.",
+        done: label => <>Done: your lesson is now on <span className="font-medium">{label}</span>. You will get the usual
+            &quot;Lesson Rescheduled&quot; email.</>,
+    },
+}
+
+interface FreeTimeDialogProps {
     /** The lesson to move; null keeps the dialog closed. */
     lessonId: string | null
     onClose: () => void
     /** An admin previewing this student: the list shows, sending is off. */
     isPreview?: boolean
+    kind?: Kind
 }
 
-export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: MoveRequestDialogProps) {
+export function MoveRequestDialog({ lessonId, onClose, isPreview = false, kind = "request" }: FreeTimeDialogProps) {
     const router = useRouter()
+    const text = TEXT[kind]
     const [options, setOptions] = useState<MoveOptions | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
     const [picked, setPicked] = useState("")
@@ -48,7 +84,8 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
         setPicked("")
         setSendError(null)
         setSentLabel(null)
-        getMoveOptions(lessonId)
+        const load = kind === "makeup" ? getMakeupOptions : getMoveOptions
+        load(lessonId)
             .then(res => {
                 if (cancelled) return
                 if ("error" in res) setLoadError(res.error)
@@ -56,7 +93,7 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
             })
             .catch(() => { if (!cancelled) setLoadError("The free times could not be loaded just now. Please try again in a minute.") })
         return () => { cancelled = true }
-    }, [lessonId])
+    }, [lessonId, kind])
 
     // "Thu, Nov 20 at 4:30pm EST (1:30pm your time)" -> grouped by day, with
     // "4:30pm EST" on the button and "1:30pm your time" under it.
@@ -81,15 +118,17 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
         setIsSending(true)
         setSendError(null)
         try {
-            const res = await requestLessonMove(lessonId, date, time)
+            const res = kind === "makeup"
+                ? await claimMakeupSlot(picked, lessonId)
+                : await requestLessonMove(lessonId, date, time)
             if ("error" in res) {
                 setSendError(res.error)
             } else {
-                setSentLabel(res.toLabel)
+                setSentLabel("toLabel" in res ? res.toLabel : pickedLabel ?? picked)
                 router.refresh()
             }
         } catch {
-            setSendError("Your request could not be sent just now. Please try again in a minute.")
+            setSendError("That did not go through just now. Please try again in a minute.")
         } finally {
             setIsSending(false)
         }
@@ -101,22 +140,19 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
                 <DialogHeader>
                     <DialogTitle className="text-xl font-serif flex items-center gap-2">
                         <CalendarClock className="h-5 w-5" />
-                        Request a different time
+                        {text.title}
                     </DialogTitle>
                     <DialogDescription>
                         {options
-                            ? <>Your lesson: <span className="font-medium text-foreground">{options.lessonLabel}</span>. Pick a free time in {options.week}. Your teacher approves it first; until then your lesson stays where it is.</>
+                            ? <>Your lesson: <span className="font-medium text-foreground">{options.lessonLabel}</span>. Pick a free time in {options.week}. {text.after}</>
                             : "Finding your teacher's free times..."}
                     </DialogDescription>
                 </DialogHeader>
 
                 {sentLabel ? (
-                    <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950/40 dark:text-green-300">
+                    <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950/40 dark:text-green-300" data-testid="move-done">
                         <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                        <span>
-                            Request sent for <span className="font-medium">{sentLabel}</span>. If your teacher approves it, you will get the
-                            usual &quot;Lesson Rescheduled&quot; email and the new time shows here. Until then your lesson stays at its time.
-                        </span>
+                        <span>{text.done(sentLabel)}</span>
                     </div>
                 ) : loadError ? (
                     <p className="text-sm text-destructive">{loadError}</p>
@@ -161,13 +197,13 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
                         ))}
                         {pickedLabel && (
                             <p className="text-sm">
-                                You are asking for <span className="font-medium">{pickedLabel}</span> ({options.duration} minutes).
+                                {text.picked} <span className="font-medium">{pickedLabel}</span> ({options.duration} minutes).
                             </p>
                         )}
                         {isPreview && (
                             <p className="flex items-start gap-2 text-sm text-amber-700">
                                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
-                                Preview: only the family can send a request.
+                                {text.preview}
                             </p>
                         )}
                         {sendError && <p className="text-sm text-destructive">{sendError}</p>}
@@ -183,7 +219,7 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false }: Move
                                 Not now
                             </Button>
                             <Button onClick={handleSend} disabled={!options || !picked || isSending || isPreview}>
-                                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send request"}
+                                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : text.send}
                             </Button>
                         </>
                     )}

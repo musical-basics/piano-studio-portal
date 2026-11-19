@@ -111,6 +111,7 @@ export function outcomeForAdmin(outcome: string | null): string {
         case 'slot_passed': return 'the time they picked has passed'
         case 'lesson_passed': return "the lesson's own time has come"
         case 'lesson_changed': return 'the lesson was moved, logged or cancelled some other way'
+        case 'claim_failed': return "the family's own make-up pick did not go through"
         default: return outcome || 'it was closed'
     }
 }
