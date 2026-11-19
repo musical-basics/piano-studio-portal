@@ -29,7 +29,7 @@ export type WeeklySummary = {
         logged: number
         unlogged: SummaryLesson[]
         /** How the logged ones were logged. */
-        loggedBy: { zoom: number; classroom: number; you: number; assistant: number; repair: number; unknown: number }
+        loggedBy: { zoom: number; classroom: number; attendance: number; you: number; assistant: number; repair: number; unknown: number }
     }
     videos: {
         zoom: number
@@ -120,7 +120,7 @@ export async function buildWeeklySummary(
     const lessons = (lessonRows || []).filter(l =>
         tracked(l.student_id) && Date.parse(studioWallClockToISO(l.date, String(l.time).slice(0, 5))) <= now.getTime())
 
-    const loggedBy = { zoom: 0, classroom: 0, you: 0, assistant: 0, repair: 0, unknown: 0 }
+    const loggedBy = { zoom: 0, classroom: 0, attendance: 0, you: 0, assistant: 0, repair: 0, unknown: 0 }
     const videos = { zoom: 0, classroom: 0, other: 0, loggedWithout: 0 }
     const unlogged: SummaryLesson[] = []
     let logged = 0
@@ -142,6 +142,7 @@ export async function buildWeeklySummary(
             case 'zoom_webhook': loggedBy.zoom++; break
             // 'system' is the classroom auto-log, and also the old credit-repair route.
             case 'system': if (classroomVideo) loggedBy.classroom++; else loggedBy.repair++; break
+            case 'classroom_attendance': loggedBy.attendance++; break
             case 'admin_ui': loggedBy.you++; break
             case 'agent_log': loggedBy.assistant++; break
             default: loggedBy.unknown++
@@ -250,6 +251,7 @@ export function renderWeeklySummary(s: WeeklySummary): { subject: string; html: 
     const byParts = [
         by.zoom && `Zoom ${by.zoom}`,
         by.classroom && `classroom (automatic) ${by.classroom}`,
+        by.attendance && `classroom attendance (automatic) ${by.attendance}`,
         by.you && `you ${by.you}`,
         by.assistant && `your assistant ${by.assistant}`,
         by.repair && `credit repair ${by.repair}`,

@@ -351,7 +351,8 @@ export type LogLessonArgs = {
     videoUrl?: string
     sheetMusicUrl?: string
     awaitNotifications?: boolean
-    completedSource?: 'agent_log' | 'zoom_webhook' | 'admin_ui' | 'system'
+    /** 'classroom_attendance' (#795): Lionel and the student were in the classroom 20+ minutes. */
+    completedSource?: 'agent_log' | 'zoom_webhook' | 'admin_ui' | 'system' | 'classroom_attendance'
     /**
      * Log it free (#756): no credit taken. Both snapshots hold the current
      * balance and lessons.free_reason keeps the optional reason ('' for none).

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { attachClassroomRecordings } from '@/lib/classroom-recordings'
 import { syncClassroomDropboxCopies } from '@/lib/classroom-dropbox-copies'
+import { logByClassroomAttendance } from '@/lib/classroom-attendance'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { withCronRun } from '@/lib/cron-runs'
 
@@ -17,6 +18,10 @@ export const maxDuration = 120
 // (lib/classroom-dropbox-copies.ts). Manual runs: ?days=N to look further back,
 // ?copy_days=N to queue older recordings for Dropbox, ?dry=1 to report without
 // writing (result.logged = what it would log, dropbox.started = what it would copy).
+// Since #795 it also logs lessons by classroom attendance (teacher and student in
+// the room together 20+ minutes, lib/classroom-attendance.ts) for the last 7
+// days, in case the classroom's call never arrived (attendance.lessons: action
+// 'would log' in a dry run).
 export const GET = withCronRun('classroom-recordings', handle)
 
 async function handle(request: Request) {
@@ -60,7 +65,22 @@ async function handle(request: Request) {
             dropbox = { error: err?.message || String(err) }
             console.error(`[Cron/classroom-recordings] dropbox copies failed: ${dropbox.error}`)
         }
-        return NextResponse.json({ success: true, dryRun, result, dropbox, logs })
+        // Attendance logging (#795). Its own failure must not fail the run either.
+        let attendance: Awaited<ReturnType<typeof logByClassroomAttendance>> | { error: string }
+        try {
+            attendance = await logByClassroomAttendance({
+                days: 7,
+                dryRun,
+                log: (msg) => {
+                    console.log(`[Cron/classroom-recordings] attendance: ${msg}`)
+                    logs.push(`attendance: ${msg}`)
+                },
+            })
+        } catch (err: any) {
+            attendance = { error: err?.message || String(err) }
+            console.error(`[Cron/classroom-recordings] attendance failed: ${attendance.error}`)
+        }
+        return NextResponse.json({ success: true, dryRun, result, dropbox, attendance, logs })
     } catch (err: any) {
         const detail = err?.message || String(err)
         console.error(`[Cron/classroom-recordings] Failed: ${detail}`)

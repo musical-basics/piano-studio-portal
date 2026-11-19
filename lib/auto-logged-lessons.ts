@@ -16,7 +16,9 @@ import { appBaseUrl } from '@/lib/lesson-action-links'
  *   - system:       the classroom hand-off (#537, a 20+ minute classroom
  *                   video), or the old credit-repair route;
  *   - agent_log:    an assistant through the agent API (Elephant logs as
- *                   admin_ui, since Lionel pressed the button there).
+ *                   admin_ui, since Lionel pressed the button there);
+ *   - classroom_attendance: Lionel and the student in the classroom together
+ *                   20+ minutes (#795, lib/classroom-attendance.ts).
  * admin_ui (admin, the email buttons, Elephant) is Lionel's own log and is
  * left out.
  *
@@ -28,9 +30,9 @@ import { appBaseUrl } from '@/lib/lesson-action-links'
  * own date.
  */
 
-export type AutoLogSource = 'zoom' | 'classroom' | 'assistant' | 'portal'
+export type AutoLogSource = 'zoom' | 'classroom' | 'attendance' | 'assistant' | 'portal'
 
-export const AUTO_LOG_SOURCES = ['zoom_webhook', 'system', 'agent_log'] as const
+export const AUTO_LOG_SOURCES = ['zoom_webhook', 'system', 'agent_log', 'classroom_attendance'] as const
 
 export type AutoLoggedLesson = {
     id: string
@@ -62,6 +64,7 @@ export function autoLogSource(completedSource: string | null, videoUrl: string |
         case 'zoom_webhook': return 'zoom'
         case 'system': return classroomVideo(videoUrl) ? 'classroom' : 'portal'
         case 'agent_log': return 'assistant'
+        case 'classroom_attendance': return 'attendance'
         default: return null
     }
 }
@@ -69,6 +72,7 @@ export function autoLogSource(completedSource: string | null, videoUrl: string |
 export const AUTO_LOG_LABEL: Record<AutoLogSource, string> = {
     zoom: 'Zoom recording',
     classroom: 'classroom video',
+    attendance: 'attendance (you and the student in the classroom 20+ min)',
     assistant: 'an assistant (agent API)',
     portal: 'the portal (credit repair)',
 }

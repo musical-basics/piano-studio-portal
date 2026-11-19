@@ -2,7 +2,7 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock, shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { notifyRecordingReady } from '@/lib/recording-ready-email'
-import { logLessonCore } from '@/lib/core/lessons'
+import { autoLogClassroomLesson, studioAdminId } from '@/lib/classroom-auto-log'
 
 /**
  * Hand-off from the classroom app (classroom.musicalbasics.com, same Supabase
@@ -25,7 +25,10 @@ import { logLessonCore } from '@/lib/core/lessons'
  *   - the lesson is still 'scheduled' (re-read right before logging), so a
  *     lesson already logged by Zoom or by hand is never touched;
  *   - the lesson started within the last 7 days.
- * Attaching a recording by hand (the admin page) never logs.
+ * Attaching a recording by hand (the admin page) never logs. Since #795 a
+ * lesson can also be logged by classroom attendance (lib/classroom-attendance.ts);
+ * both go through lib/classroom-auto-log.ts, which logs each lesson once,
+ * whichever gets there first.
  */
 
 // LiveKit egress (the classroom's recorder since 2026-07-02) names the file when
@@ -79,7 +82,7 @@ export type ClassroomAttachOptions = {
 }
 
 type RecordingRow = { id: string; student_id: string; url: string; created_at: string; size_bytes: number | null }
-type LessonRow = { id: string; date: string; time: string; duration: number | null; status: string | null; video_url: string | null }
+export type LessonRow = { id: string; date: string; time: string; duration: number | null; status: string | null; video_url: string | null }
 
 export function recordingStartMs(url: string): number | null {
     const m = url.match(START_MS_RE)
@@ -98,23 +101,17 @@ export function recordingMinutes(rec: { url: string; created_at: string }): numb
 function autoLogBlockReason(lesson: LessonRow, minutes: number | null, now: Date): string | null {
     if (minutes === null) return 'no start stamp, length unknown'
     if (minutes < AUTO_LOG_MIN_MINUTES) return `video is ${Math.round(minutes)} min, under ${AUTO_LOG_MIN_MINUTES}`
+    return lessonAutoLogBlock(lesson, now)
+}
+
+/** Shared by the video and attendance auto-logs: only an unlogged lesson from the last 7 days. */
+export function lessonAutoLogBlock(lesson: { status: string | null; date: string; time: string }, now: Date): string | null {
     if (lesson.status !== 'scheduled') return `lesson is already ${lesson.status}`
     if (now.getTime() - lessonStartMs(lesson) > AUTO_LOG_WITHIN_MS) return 'lesson is more than 7 days old'
     return null
 }
 
-async function studioAdminId(supabase: DbClient): Promise<string | null> {
-    const { data } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'admin')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    return data?.id ?? null
-}
-
-function lessonStartMs(lesson: LessonRow): number {
+export function lessonStartMs(lesson: { date: string; time: string }): number {
     return Date.parse(studioWallClockToISO(lesson.date, String(lesson.time).slice(0, 5)))
 }
 
@@ -128,17 +125,31 @@ export function matchLesson(
     lessons: LessonRow[]
 ): LessonRow | null {
     const startMs = recordingStartMs(rec.url)
-    const stopMs = Date.parse(rec.created_at)
-    const anchor = startMs ?? stopMs
-    let best: { lesson: LessonRow; distance: number } | null = null
+    return startMs !== null
+        ? matchLessonByStart(startMs, lessons)
+        : bestLesson(Date.parse(rec.created_at), lessons, (stopMs, begins, ends) => stopMs >= begins && stopMs <= ends + LATE_STOP_MS)
+}
+
+/**
+ * The lesson whose slot holds this start time (a little before the slot or any
+ * time during it), closest start first. Also used for classroom attendance
+ * (#795): the moment teacher and student are first in the room together.
+ */
+export function matchLessonByStart<L extends LessonRow>(startMs: number, lessons: L[]): L | null {
+    return bestLesson(startMs, lessons, (at, begins, ends) => at >= begins - EARLY_START_MS && at <= ends + LATE_START_MS)
+}
+
+function bestLesson<L extends LessonRow>(
+    anchor: number,
+    lessons: L[],
+    fitsSlot: (anchor: number, begins: number, ends: number) => boolean,
+): L | null {
+    let best: { lesson: L; distance: number } | null = null
     for (const lesson of lessons) {
         if (lesson.status === 'cancelled') continue
         const begins = lessonStartMs(lesson)
         const ends = begins + (lesson.duration || 60) * MINUTE
-        const fits = startMs !== null
-            ? startMs >= begins - EARLY_START_MS && startMs <= ends + LATE_START_MS
-            : stopMs >= begins && stopMs <= ends + LATE_STOP_MS
-        if (!fits) continue
+        if (!fitsSlot(anchor, begins, ends)) continue
         const distance = Math.abs(anchor - begins)
         if (!best || distance < best.distance) best = { lesson, distance }
     }
@@ -275,9 +286,14 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
             log(`not logging lesson ${lesson.id}: ${logBlock}`)
             continue
         }
-        const logged = await autoLogLesson(supabase, lesson, log, async () => {
-            if (adminId === undefined) adminId = await studioAdminId(supabase)
-            return adminId
+        const logged = await autoLogClassroomLesson(supabase, lesson, {
+            source: 'classroom_video',
+            minutes: minutes!,
+            log,
+            getAdminId: async () => {
+                if (adminId === undefined) adminId = await studioAdminId(supabase)
+                return adminId
+            },
         })
         if (logged) {
             result.logged.push({ recordingId: rec.id, lessonId: lesson.id, date: lesson.date, time: lesson.time, minutes: Math.round(minutes!), creditDeducted: logged.creditDeducted })
@@ -285,62 +301,6 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
     }
 
     return result
-}
-
-/**
- * Log a lesson whose 20+ minute classroom video just landed on it: the same
- * logLessonCore Lionel's "Log" button runs. Re-reads the lesson first and only
- * goes ahead while it is still 'scheduled' with no credit taken, so a lesson the
- * Zoom webhook or Lionel logged in the meantime is left alone.
- */
-async function autoLogLesson(
-    supabase: DbClient,
-    lesson: LessonRow,
-    log: (msg: string) => void,
-    getAdminId: () => Promise<string | null>,
-): Promise<{ creditDeducted: boolean } | null> {
-    const { data: fresh, error } = await supabase
-        .from('lessons')
-        .select('status, credit_snapshot_before, credit_snapshot')
-        .eq('id', lesson.id)
-        .maybeSingle()
-    if (error || !fresh) {
-        log(`not logging lesson ${lesson.id}: re-read failed (${error?.message ?? 'lesson gone'})`)
-        return null
-    }
-    if (fresh.status !== 'scheduled' || fresh.credit_snapshot_before !== null || fresh.credit_snapshot !== null) {
-        log(`not logging lesson ${lesson.id}: it was logged meanwhile (${fresh.status})`)
-        return null
-    }
-
-    const adminId = await getAdminId()
-    if (!adminId) {
-        log(`not logging lesson ${lesson.id}: no admin profile found`)
-        return null
-    }
-
-    try {
-        const res = await logLessonCore({
-            client: supabase,
-            adminId,
-            lessonId: lesson.id,
-            notes: '',
-            // 'system' = logged by the portal itself (the column's check
-            // constraint has no separate value for the classroom).
-            completedSource: 'system',
-            // Wait for the emails: a serverless function may stop once it returns.
-            awaitNotifications: true,
-        })
-        if ('error' in res) {
-            log(`logging lesson ${lesson.id} failed: ${res.error}`)
-            return null
-        }
-        log(`logged lesson ${lesson.id} (${lesson.date} ${lesson.time}): ${res.message}`)
-        return { creditDeducted: res.credit_deducted }
-    } catch (err: any) {
-        log(`logging lesson ${lesson.id} threw: ${err?.message ?? err}`)
-        return null
-    }
 }
 
 // ---------------------------------------------------------------------------
