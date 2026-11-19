@@ -334,15 +334,16 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                         </Select>
                     </div>
 
-                    <div className="space-y-2">
-                        <Label htmlFor="credits">Current Credits</Label>
-                        <Input
-                            id="credits"
-                            name="credits"
-                            type="number"
-                            defaultValue={student.credits}
-                            required
-                        />
+                    {/* #934: credits change only through Adjust lessons (the circled + on the
+                        roster), so every change keeps a reason in the credit history. Saving
+                        this form no longer writes credits, so it can't undo a change made
+                        meanwhile either. */}
+                    <div className="space-y-1">
+                        <Label>Current Credits</Label>
+                        <p className="text-sm">
+                            <span className="font-semibold">{student.credits}</span>
+                            <span className="text-muted-foreground"> · to change, use Adjust lessons (the circled + on the roster) so the reason is kept</span>
+                        </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign, User, Eye } from "lucide-react"
+import { AlertCircle, Upload, Plus, Trash2, ArrowUpDown, MessageCircle, MonitorPlay, CalendarClock, Loader2, Download, DollarSign, User, Eye, PlusCircle } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { bulkScheduleLessons } from "@/app/actions/lessons"
 import { impersonateStudent } from "@/app/actions/impersonate"
@@ -17,6 +17,7 @@ const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroo
 import type { StudentRoster } from "@/types/admin"
 import { AddStudentModal } from "./add-student-modal"
 import { ChargeStudentModal } from "./charge-student-modal"
+import { AdjustLessonsDialog } from "./adjust-lessons-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -317,6 +318,8 @@ function StudentTable({
     pricingPlans: PricingPlan[]
 }) {
     const [chargeStudent, setChargeStudent] = useState<StudentRoster | null>(null)
+    // #934: add or take lessons with a reason
+    const [adjustStudent, setAdjustStudent] = useState<StudentRoster | null>(null)
     const [profileStudent, setProfileStudent] = useState<StudentRoster | null>(null)
 
     return (
@@ -440,6 +443,16 @@ function StudentTable({
                                             <DollarSign className="h-4 w-4" />
                                         </Button>
 
+                                        {/* #934: add or take lessons, with a reason in the credit history */}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setAdjustStudent(student)}
+                                            title="Adjust lessons (add or take, with a reason)"
+                                        >
+                                            <PlusCircle className="h-4 w-4" />
+                                        </Button>
+
                                         {/* --- NEW BUTTON: JOIN CLASSROOM --- */}
                                         <Button
                                             size="sm"
@@ -500,6 +513,16 @@ function StudentTable({
                 />
             )
             }
+
+            {adjustStudent && (
+                <AdjustLessonsDialog
+                    open={!!adjustStudent}
+                    onOpenChange={(open) => !open && setAdjustStudent(null)}
+                    studentId={adjustStudent.id}
+                    studentName={adjustStudent.name || 'Student'}
+                    credits={adjustStudent.credits ?? 0}
+                />
+            )}
 
             <StudentProfileSheet
                 student={profileStudent}
