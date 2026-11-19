@@ -75,11 +75,13 @@ type Loaded =
 async function loadMissedLesson(client: DbClient, lessonId: string): Promise<Loaded> {
     const { data: lesson, error } = await client
         .from('lessons')
-        .select('id, student_id, date, time, status, duration, notes, credit_snapshot_before, credit_snapshot')
+        .select('id, student_id, date, time, status, duration, notes, credit_snapshot_before, credit_snapshot, on_hold_reason')
         .eq('id', lessonId)
         .maybeSingle()
     if (error) return { error: `Could not read the lesson: ${error.message}` }
     if (!lesson) return { error: 'Lesson not found. It may already have been removed.' }
+    // #989: nothing happens to a held lesson until Lionel releases it.
+    if ((lesson as any).on_hold_reason) return { error: `This lesson is on hold (${(lesson as any).on_hold_reason}). Release it in admin first.` }
 
     // A logged lesson took a credit. Undoing that is a judgment call (refund the
     // credit? keep the notes?), so this button refuses rather than guess.

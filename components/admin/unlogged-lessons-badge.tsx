@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { AlertTriangle, CalendarX, CheckCircle2, DollarSign, Loader2, Mail, MessageCircle, XCircle } from "lucide-react"
-import { logUnloggedLesson, removeUnloggedLesson, type AdminUnloggedLesson } from "@/app/actions/unlogged-lessons"
+import { holdUnloggedLesson, logUnloggedLesson, releaseHeldLesson, removeUnloggedLesson, type AdminUnloggedLesson } from "@/app/actions/unlogged-lessons"
+import { Input } from "@/components/ui/input"
 import { getMissedLessonPreview, markLessonMissed, type MissedLessonPreview } from "@/app/actions/missed-lesson"
 import { getLastHomework } from "@/app/actions/last-homework"
 import type { LastHomework } from "@/lib/last-homework"
@@ -50,7 +51,50 @@ function LessonLine({ lesson }: { lesson: AdminUnloggedLesson }) {
     )
 }
 
-export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson[] }) {
+/**
+ * #989: put a lesson on hold (out of the count, the emails and every button)
+ * with a reason, or release it. Shown on each row of the list.
+ */
+function HoldControls({ lesson, onDone }: { lesson: AdminUnloggedLesson; onDone: (text: string, ok: boolean) => void }) {
+    const [editing, setEditing] = useState(false)
+    const [reason, setReason] = useState("")
+    const [busy, setBusy] = useState(false)
+    if (lesson.onHold) {
+        return (
+            <Button size="sm" variant="outline" disabled={busy} onClick={async () => {
+                setBusy(true)
+                const r = await releaseHeldLesson(lesson.id)
+                setBusy(false)
+                onDone(r.text, r.ok)
+            }}>
+                {busy && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}Release
+            </Button>
+        )
+    }
+    if (!editing) {
+        return <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setEditing(true)}>Hold</Button>
+    }
+    return (
+        <form className="flex w-full gap-2" onSubmit={async (e) => {
+            e.preventDefault()
+            setBusy(true)
+            const r = await holdUnloggedLesson(lesson.id, reason)
+            setBusy(false)
+            if (r.ok) setEditing(false)
+            onDone(r.text, r.ok)
+        }}>
+            <Input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="Why it waits, e.g. waiting on the parent's OK" className="h-8 text-sm" />
+            <Button size="sm" type="submit" disabled={busy || !reason.trim()}>{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Hold"}</Button>
+            <Button size="sm" type="button" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+        </form>
+    )
+}
+
+export function UnloggedLessonsBadge({ lessons: allLessons }: { lessons: AdminUnloggedLesson[] }) {
+    // #989: held lessons are listed apart and left out of the red count.
+    const lessons = allLessons.filter(l => !l.onHold)
+    const held = allLessons.filter(l => l.onHold)
+    const [holdNote, setHoldNote] = useState<{ text: string; ok: boolean } | null>(null)
     const router = useRouter()
     const [open, setOpen] = useState(false)
     const [step, setStep] = useState<Step>({ view: "list" })
@@ -143,6 +187,16 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
 
     return (
         <>
+            {count === 0 && held.length > 0 && (
+                <button
+                    type="button"
+                    onClick={openList}
+                    className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted/80"
+                    title="Lessons on hold (left out of the count and the emails)"
+                >
+                    {held.length} on hold
+                </button>
+            )}
             {count > 0 && (
                 <button
                     type="button"
@@ -170,9 +224,12 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
                         </DialogDescription>
                     </DialogHeader>
 
+                    {step.view === "list" && holdNote && (
+                        <p className={`text-sm rounded-md px-3 py-2 ${holdNote.ok ? "bg-muted" : "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300"}`}>{holdNote.text}</p>
+                    )}
                     {step.view === "list" && (
                         count === 0 ? (
-                            <p className="text-sm text-muted-foreground">Every past lesson is logged.</p>
+                            <p className="text-sm text-muted-foreground">{held.length ? "Nothing left to log apart from the lessons on hold below." : "Every past lesson is logged."}</p>
                         ) : (
                             <ul className="space-y-3">
                                 {lessons.map(lesson => (
@@ -188,11 +245,28 @@ export function UnloggedLessonsBadge({ lessons }: { lessons: AdminUnloggedLesson
                                             <Button size="sm" variant="outline" className="border-amber-700 text-amber-800 hover:bg-amber-50 hover:text-amber-900 dark:border-amber-400 dark:text-amber-300 dark:hover:bg-amber-950/40" onClick={() => ask("missed", lesson)}>
                                                 I missed it
                                             </Button>
+                                            <HoldControls lesson={lesson} onDone={(text, ok) => { setHoldNote({ text, ok }); if (ok) router.refresh() }} />
                                         </div>
                                     </li>
                                 ))}
                             </ul>
                         )
+                    )}
+                    {step.view === "list" && held.length > 0 && (
+                        <div className="space-y-2 border-t pt-3">
+                            <p className="text-sm font-medium">On hold ({held.length}), out of the count and the emails</p>
+                            <ul className="space-y-2">
+                                {held.map(lesson => (
+                                    <li key={lesson.id} className="flex items-start justify-between gap-3 rounded-lg border border-dashed p-3">
+                                        <div className="min-w-0">
+                                            <LessonLine lesson={lesson} />
+                                            <p className="text-xs text-muted-foreground mt-1">On hold: {lesson.onHold}</p>
+                                        </div>
+                                        <HoldControls lesson={lesson} onDone={(text, ok) => { setHoldNote({ text, ok }); if (ok) router.refresh() }} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     )}
 
                     {step.view === "confirm" && step.kind === "log" && (

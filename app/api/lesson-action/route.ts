@@ -68,6 +68,8 @@ type LessonRow = {
     homework: string | null
     video_url: string | null
     zoom_meeting_id: string | null
+    /** #989: set while the lesson is on hold. */
+    on_hold_reason?: string | null
 }
 
 const NO_STORE = {
@@ -185,7 +187,7 @@ type Checked =
 async function checkLesson(client: DbClient, claims: LessonActionClaims): Promise<Checked> {
     const { data: lesson, error } = await client
         .from('lessons')
-        .select('id, student_id, date, time, duration, status, notes, homework, video_url, zoom_meeting_id')
+        .select('id, student_id, date, time, duration, status, notes, homework, video_url, zoom_meeting_id, on_hold_reason')
         .eq('id', claims.l)
         .maybeSingle()
     if (error) {
@@ -195,6 +197,10 @@ async function checkLesson(client: DbClient, claims: LessonActionClaims): Promis
         return { ok: false, outcome: 'nothing: lesson already gone', response: message('This lesson is already gone', 'It is no longer in the portal (removed or cancelled since the email). Nothing changed.') }
     }
     const row = lesson as LessonRow
+    // #989: nothing is logged, removed or no-showed while Lionel holds it.
+    if (row.on_hold_reason) {
+        return { ok: false, outcome: 'nothing: on hold', response: message('This lesson is on hold', `It is on hold (${row.on_hold_reason}), so nothing was changed. Release it in admin first.`) }
+    }
     if (row.status === 'completed') {
         return { ok: false, outcome: 'nothing: already logged', response: message('Already logged', 'This lesson was logged already, so its credit was already taken. Nothing changed.') }
     }

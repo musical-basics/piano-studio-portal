@@ -36,11 +36,13 @@ export async function markNoShowCore(lessonId: string): Promise<NoShowResult> {
 
     const { data: before, error: readError } = await client
         .from('lessons')
-        .select('id, student_id, status')
+        .select('id, student_id, status, on_hold_reason')
         .eq('id', lessonId)
         .maybeSingle()
     if (readError) return { ok: false, error: `lesson lookup failed: ${readError.message}` }
     if (!before) return { ok: false, changed: true, status: null }
+    // #989: nothing happens to a held lesson until Lionel releases it.
+    if ((before as any).on_hold_reason) return { ok: false, error: `this lesson is on hold (${(before as any).on_hold_reason}); release it in admin first` }
     if (!UNLOGGED_STATUSES.includes(before.status as string)) return { ok: false, changed: true, status: before.status as string }
 
     // Claim the lesson while it is still unlogged: a double tap, or a log from

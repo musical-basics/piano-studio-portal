@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import {
     logUnloggedLessonForAdmin,
     removeUnloggedLessonForAdmin,
+    setLessonHold,
     type AdminUnloggedLesson,
     type ExpectedLesson,
     type UnloggedActionResult,
@@ -39,4 +40,18 @@ export async function removeUnloggedLesson(expected: ExpectedLesson): Promise<Un
     const admin = await adminId()
     if (typeof admin !== 'string') return admin
     return removeUnloggedLessonForAdmin(createAdminClient(), expected)
+}
+
+/** #989: put a lesson on hold with a reason (out of the count and the emails). */
+export async function holdUnloggedLesson(lessonId: string, reason: string): Promise<UnloggedActionResult> {
+    const admin = await adminId()
+    if (typeof admin !== 'string') return admin
+    return setLessonHold(createAdminClient(), lessonId, reason)
+}
+
+/** #989: release a held lesson back to the unlogged list. */
+export async function releaseHeldLesson(lessonId: string): Promise<UnloggedActionResult> {
+    const admin = await adminId()
+    if (typeof admin !== 'string') return admin
+    return setLessonHold(createAdminClient(), lessonId, null)
 }

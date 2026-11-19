@@ -84,6 +84,7 @@ export async function findUnloggedLessons(client: DbClient, date: string): Promi
         .select('id, date, time, duration, status, student_id, zoom_meeting_id, video_url')
         .eq('date', date)
         .in('status', UNLOGGED_STATUSES)
+        .is('on_hold_reason', null) // #989: held lessons wait for Lionel
         .order('time', { ascending: true })
     if (error) throw new Error(`lessons query failed: ${error.message}`)
     return withStudents(client, lessons || [])
@@ -105,6 +106,7 @@ export async function findPastUnloggedLessons(client: DbClient, now: Date = new 
         .select('id, date, time, duration, status, student_id, zoom_meeting_id, video_url')
         .lte('date', lastDate)
         .in('status', UNLOGGED_STATUSES)
+        .is('on_hold_reason', null) // #989: held lessons wait for Lionel
         .order('date', { ascending: true })
         .order('time', { ascending: true })
         .limit(1000)

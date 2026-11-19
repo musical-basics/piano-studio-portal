@@ -386,12 +386,18 @@ export async function logLessonCore({
 
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, status, date, time, duration, zoom_link, credit_snapshot_before, credit_snapshot')
+        .select('student_id, status, date, time, duration, zoom_link, credit_snapshot_before, credit_snapshot, on_hold_reason')
         .eq('id', lessonId)
         .single()
 
     if (lessonFetchError || !lesson) {
         return { error: 'Lesson not found' }
+    }
+
+    // #989: a held lesson waits for Lionel; nothing (admin, email, Zoom or
+    // classroom auto-log) logs it until he releases it.
+    if ((lesson as any).on_hold_reason) {
+        return { error: `This lesson is on hold (${(lesson as any).on_hold_reason}). Release it in admin first.` }
     }
 
     // Three possible states:
