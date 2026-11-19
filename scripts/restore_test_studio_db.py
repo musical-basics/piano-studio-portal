@@ -30,11 +30,20 @@ The container has no network at all, a random name, its data in memory
 by absolute path (launchd's PATH lacks /usr/local/bin); if Docker Desktop is
 not running it is started and quit again afterwards.
 
+Once a quarter (Lionel's #779: the runs in January, April, July and October)
+the copy tested is the newest one in Dropbox instead of the Mac's own: it is
+downloaded, decrypted with the Keychain key (backup_studio_db.py,
+"encryption") into a folder only this user can read, tested the same way,
+and deleted again. That proves the Dropbox copy alone can bring the studio
+back. The email says which copy was used.
+
 Secrets, the Management API token and mail come from backup_studio_db.py
 (imported from this file's folder: install_backup_agent.sh copies both).
 STUDIO_BACKUP_MAIL=off silences the email, as for the backup.
 
-    python3 scripts/restore_test_studio_db.py                    # test the newest copy
+    python3 scripts/restore_test_studio_db.py                    # test the newest copy (Dropbox's in Jan/Apr/Jul/Oct)
+    python3 scripts/restore_test_studio_db.py --dropbox          # test the newest Dropbox copy now
+    python3 scripts/restore_test_studio_db.py --local            # test the Mac's own newest copy, any month
     python3 scripts/restore_test_studio_db.py --archive FILE     # test one archive
 """
 import datetime
@@ -43,6 +52,7 @@ import os
 import pathlib
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -63,6 +73,9 @@ LABEL = "musicalbasics.studio-restore-test"
 STALE_HOURS = 36
 SUPABASE_ROLES = ("anon", "authenticated", "service_role")
 LOG = b.BACKUP_ROOT / "restore-test.log"
+QUARTER_MONTHS = (1, 4, 7, 10)  # Lionel's #779: these months test the Dropbox copy
+DROPBOX_WORK = ".restore-test-dropbox"  # the downloaded, decrypted copy; always removed
+DROPBOX_BEHIND_HOURS = 30  # a Dropbox copy this much older than the Mac's newest is a warning
 MEMBER_RE = re.compile(r"(public|auth)\.([A-Za-z0-9_]+)\.json")
 TYPE_RE = re.compile(r"[a-z0-9 _()\[\]]+")
 
@@ -186,7 +199,8 @@ def wait_for_running_backup():
             return False
 
     for _ in range(60):
-        busy = [p for p in b.BACKUP_ROOT.glob(".tmp-*") if recent(p)]
+        # .tmp-* while it reads the database, the Dropbox folder while it uploads
+        busy = [p for p in [*b.BACKUP_ROOT.glob(".tmp-*"), b.BACKUP_ROOT / b.DROPBOX_WORK] if recent(p)]
         if not busy:
             return
         print("a backup is running: waiting for it to finish")
@@ -198,6 +212,44 @@ def newest_archive():
     if not complete:
         raise RuntimeError(f"no complete backup archive in {b.BACKUP_ROOT}")
     return max(complete)[1]
+
+
+def dropbox_archive(work):
+    """Downloads the newest complete encrypted archive from the Dropbox copy
+    into work and decrypts it there. Returns (archive path, note on how far
+    it is behind the Mac's newest, or None)."""
+    key = b.encryption_key()
+    dbx = b.Dropbox()
+    complete = []
+    for name in b.dropbox_archives(dbx):
+        m = b.ARCHIVE_RE.fullmatch(name)
+        if not m[4]:
+            complete.append((datetime.datetime.fromisoformat(f"{m[1]}T{m[2]}:{m[3]}"), name))
+    if not complete:
+        raise RuntimeError(f"no complete encrypted copy in Dropbox {b.DROPBOX_ROOT}")
+    when, name = max(complete)
+    enc = work / (name + b.ENC_SUFFIX)
+    meta = dbx.download(f"{b.DROPBOX_ROOT}/{name}{b.ENC_SUFFIX}", enc)
+    if meta and meta.get("content_hash") and b.dropbox_content_hash(enc) != meta["content_hash"]:
+        raise RuntimeError(f"{name}{b.ENC_SUFFIX}: the download does not match Dropbox's own hash")
+    out = work / name
+    b.openssl_enc(True, enc, out, key)
+    enc.unlink()
+    print(f"downloaded {name}{b.ENC_SUFFIX} from Dropbox ({meta.get('size', 0) / 1e6:.1f} MB) and decrypted it")
+    behind = None
+    local = [w for _, w, ok in b.restore_points(b.BACKUP_ROOT) if ok]
+    if local and (max(local) - when).total_seconds() / 3600 > DROPBOX_BEHIND_HOURS:
+        behind = (f"the newest Dropbox copy is {(max(local) - when).total_seconds() / 86400:.1f} days older "
+                  f"than the Mac's newest: the nightly Dropbox step has been failing")
+    return out, behind
+
+
+def use_dropbox(args, today):
+    if "--dropbox" in args:
+        return True
+    if "--local" in args or "--archive" in args:
+        return False
+    return today.month in QUARTER_MONTHS
 
 
 def read_archive(path):
@@ -481,6 +533,9 @@ def compare_live(tables, restored, fingerprints, problems, warnings):
     return live
 
 
+SOURCE = "the Mac's own copy"  # which copy this run tests, for the emails (main sets it)
+
+
 RUN_JOB = "studio-restore-test"
 
 
@@ -510,20 +565,43 @@ def record_run(ok, detail):
 
 
 def main():
+    global SOURCE
     started = datetime.datetime.now()
     args = sys.argv[1:]
-    if "--archive" in args:
+    from_dropbox = use_dropbox(args, started.date())
+    SOURCE = "the Dropbox copy" if from_dropbox else "the Mac's own copy"
+    work = b.private_workdir(DROPBOX_WORK) if from_dropbox else None
+    try:
+        return run_test(started, args, from_dropbox, work)
+    finally:
+        if work:  # the decrypted copy holds every sign-in: never left behind
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def run_test(started, args, from_dropbox, work):
+    behind = None
+    if from_dropbox:
+        wait_for_running_backup()  # tonight's copy reaches Dropbox at the end of the backup
+        t0 = time.time()
+        archive, behind = dropbox_archive(work)
+        source_line = (f"Source:    the Dropbox copy ({b.DROPBOX_ROOT}), downloaded and decrypted in "
+                       f"{time.time() - t0:.0f}s: the quarterly check that Dropbox alone can bring the studio back")
+    elif "--archive" in args:
         archive = pathlib.Path(args[args.index("--archive") + 1]).expanduser().resolve()
+        source_line = f"Source:    {archive.parent}"
     else:
         wait_for_running_backup()
         archive = newest_archive()
+        source_line = f"Source:    the Mac's own copy ({b.BACKUP_ROOT})"
     made = next((when for path, when, _ in b.restore_points(archive.parent) if path.name == archive.name), None)
     age_h = (started - made).total_seconds() / 3600 if made else None
-    print(f"restore test of {archive.name}" + (f" ({age_h:.1f} h old)" if age_h is not None else ""))
+    print(f"restore test of {archive.name}, from {SOURCE}" + (f" ({age_h:.1f} h old)" if age_h is not None else ""))
 
     tables, data, restored, fingerprints, stats, problems, warnings = restore_and_check(archive)
     if age_h is not None and age_h > STALE_HOURS:
         warnings.insert(0, f"the newest copy is {age_h / 24:.1f} days old: the nightly backup has not been running")
+    if behind:
+        warnings.insert(0, behind)
     live = compare_live(tables, restored, fingerprints, problems, warnings)
 
     secs = (datetime.datetime.now() - started).total_seconds()
@@ -545,6 +623,7 @@ def main():
              f"{s('functions')} functions, {s('triggers')} triggers, row-level security on {s('rls')} tables, "
              f"{s('policies')} policies, {s('grants')} grants")
     summary = [
+        source_line,
         f"Copy:      {archive.name}" + (f", made {age_h:.1f} hours before the test" if age_h is not None else ""),
         f"Restored:  {len(public)} tables, {rows:,} rows, {users} sign-ins ({idents} identities), "
         f"every row INSERTed into a throwaway Postgres",
@@ -561,13 +640,14 @@ def main():
         + ([""] + ["Warnings:"] + [f"  - {w}" for w in warnings] if warnings else [])
         + ["", "Per table (rows in the copy / restored / live now):"] + table_lines
         + ["", f"Log: {LOG}",
-           "Runs on the 1st of each month at 04:30 (launchd com.musicalbasics.studio-restore-test)."])
+           "Runs on the 1st of each month at 04:30 (launchd com.musicalbasics.studio-restore-test); "
+           "in January, April, July and October it tests the Dropbox copy."])
     if problems:
-        subject = f"Studio restore test FAILED: {problems[0][:70]}"
+        subject = f"Studio restore test FAILED, from {SOURCE}: {problems[0][:60]}"
     else:
-        subject = (f"Studio restore test OK: {len(public)} tables, {rows:,} rows, {users} sign-ins"
+        subject = (f"Studio restore test OK, from {SOURCE}: {len(public)} tables, {rows:,} rows, {users} sign-ins"
                    + (f" ({len(warnings)} warning{'s' * (len(warnings) != 1)})" if warnings else ""))
-    print(f"restore test {'FAILED' if problems else 'ok'}: {len(public)} tables, {rows} rows, "
+    print(f"restore test {'FAILED' if problems else 'ok'} from {SOURCE}: {len(public)} tables, {rows} rows, "
           f"{users} sign-ins, {secs:.0f}s")
     print(f"--- email ---\n{subject}\n\n{body}\n---")
     b.alert(subject, body)
@@ -583,8 +663,8 @@ if __name__ == "__main__":
     except Exception as e:
         traceback.print_exc()
         msg = f"{type(e).__name__}: {e}"
-        b.alert(f"Studio restore test FAILED: {msg[:70]}", "\n".join([
-            f"The monthly restore test could not finish: {msg}", "",
+        b.alert(f"Studio restore test FAILED, from {SOURCE}: {msg[:60]}", "\n".join([
+            f"The monthly restore test of {SOURCE} could not finish: {msg}", "",
             "The throwaway database was removed (or never started). The backups themselves are untouched.",
             f"Host: {socket.gethostname()}",
             f"When: {datetime.datetime.now().isoformat(timespec='seconds')}",

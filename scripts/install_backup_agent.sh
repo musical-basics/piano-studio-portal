@@ -2,6 +2,7 @@
 # Installs the studio database backup's two macOS launchd agents:
 #   com.musicalbasics.studio-backup        nightly at 03:30   scripts/backup_studio_db.py
 #   com.musicalbasics.studio-restore-test  the 1st at 04:30   scripts/restore_test_studio_db.py
+#     (in January, April, July and October it tests the newest Dropbox copy, not the Mac's own)
 # If the Mac is asleep then, launchd runs them when the Mac wakes. Re-run this
 # after ANY edit to either script: the agents run COPIES kept outside
 # ~/Documents, because macOS denies launchd agents any read under ~/Documents
@@ -116,7 +117,7 @@ write_agent com.musicalbasics.studio-restore-test restore_test_studio_db.py "$BA
   '<dict><key>Day</key><integer>1</integer><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>' \
   ''
 
-echo "installed: nightly studio backup at 03:30, restore test on the 1st of each month at 04:30"
+echo "installed: nightly studio backup at 03:30, restore test on the 1st of each month at 04:30 (Dropbox copy in Jan/Apr/Jul/Oct)"
 echo "  runs:   copies in $AGENT_DIR (re-run this after edits)"
 echo "  output: $BACKUP_DIR/  (logs: backup.log, restore-test.log)"
 echo "run one now:  launchctl kickstart gui/$(id -u)/com.musicalbasics.studio-backup        then look for 'backup ok' in backup.log"
