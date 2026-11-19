@@ -37,6 +37,7 @@ import type { Resource } from "@/app/actions/resources"
 import type { CalendarLesson } from "./master-calendar"
 import { DashboardTab } from "@/components/admin/dashboard-tab"
 import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
+import { RunningLateDialog } from "@/components/admin/running-late-dialog"
 import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
@@ -152,6 +153,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     // Manual Reminder State
     // "I missed this": the lesson whose confirm dialog is open
     const [missedLessonId, setMissedLessonId] = useState<string | null>(null)
+    // "Running late": today's lesson whose confirm dialog is open (#788)
+    const [runningLateLessonId, setRunningLateLessonId] = useState<string | null>(null)
 
     const [showReminderModal, setShowReminderModal] = useState(false)
     const [lessonForReminder, setLessonForReminder] = useState<TodayLesson | null>(null)
@@ -180,6 +183,17 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
         if (!date) return
         setPickedDate(date === studioToday() ? null : date)
     }
+
+    // Links from the studio emails (#793): /admin?day=YYYY-MM-DD opens the
+    // Today tab on that day's schedule, where the lesson and its buttons are.
+    React.useEffect(() => {
+        const day = new URLSearchParams(window.location.search).get('day')
+        if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+            setActiveTab("dashboard")
+            showScheduleForDate(day)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     // Lesson props change whenever a lesson action revalidates the page, and
     // calendarVersion on schedule/cancel, so the fetched day refreshes with them.
@@ -889,6 +903,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onNoShow={handleMarkNoShow}
                             onCancel={handleCancelLesson}
                             onMissed={(lesson) => setMissedLessonId(lesson.id)}
+                            onRunningLate={(lesson) => setRunningLateLessonId(lesson.id)}
                             onRemind={(lesson) => {
                                 setLessonForReminder(lesson)
                                 setShowReminderModal(true)
@@ -901,6 +916,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             lessonId={missedLessonId}
                             onClose={() => setMissedLessonId(null)}
                             onDone={() => setCalendarVersion(v => v + 1)}
+                        />
+
+                        <RunningLateDialog
+                            lessonId={runningLateLessonId}
+                            onClose={() => setRunningLateLessonId(null)}
                         />
 
                         {/* Student Roster */}

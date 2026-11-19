@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX } from "lucide-react"
+import { Calendar, Clock, Music, Video, Upload, XCircle, Bell, MessageCircle, MonitorPlay, CheckCircle2, HelpCircle, Users, ChevronLeft, ChevronRight, Loader2, Pencil, PlayCircle, CalendarX, Timer } from "lucide-react"
 import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/admin"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 
@@ -32,6 +32,8 @@ interface DashboardTabProps {
     onMissed?: (lesson: TodayLesson) => void
     onRemind: (lesson: TodayLesson) => void
     onMessage: (studentId: string) => void
+    /** "Running late" note to this family (today's lessons only, asks first). */
+    onRunningLate?: (lesson: TodayLesson) => void
     isLoading?: boolean
 }
 
@@ -51,6 +53,7 @@ export function DashboardTab({
     onMissed,
     onRemind,
     onMessage,
+    onRunningLate,
     isLoading = false
 }: DashboardTabProps) {
 
@@ -190,9 +193,10 @@ export function DashboardTab({
                         ) : (
                             (({ lesson }) => (
                             <Card key={lesson.id} className="border-2">
-                                <CardContent className="flex items-center justify-between p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex flex-col items-center justify-center h-14 w-14 bg-primary text-primary-foreground rounded-lg">
+                                {/* On a phone the buttons go under the lesson, so the page keeps the phone's width. */}
+                                <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <div className="flex flex-col items-center justify-center h-14 w-14 shrink-0 bg-primary text-primary-foreground rounded-lg">
                                             <span className="text-xs font-medium">
                                                 {formatTime(lesson.time).split(' ')[0]}
                                             </span>
@@ -200,7 +204,7 @@ export function DashboardTab({
                                         </div>
                                         <div>
                                             <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
-                                            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="h-3 w-3" />
                                                     <span>{lesson.duration || 60} min</span>
@@ -230,7 +234,7 @@ export function DashboardTab({
                                         </div>
                                     </div>
                                     {lesson.status === 'completed' ? (
-                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
+                                    <div className="flex gap-2 flex-wrap sm:justify-end sm:max-w-[50%]">
                                         {lesson.video_url && (
                                             <Button size="sm" variant="outline" asChild>
                                                 <a href={lesson.video_url} target="_blank" rel="noopener noreferrer">
@@ -259,7 +263,7 @@ export function DashboardTab({
                                         </Button>
                                     </div>
                                     ) : (
-                                    <div className="flex gap-2 flex-wrap justify-end max-w-[50%]">
+                                    <div className="flex gap-2 flex-wrap sm:justify-end sm:max-w-[50%]">
                                         {(lesson.zoom_link || lesson.student.zoom_link || adminZoomLink) && (
                                             <Button
                                                 size="sm"
@@ -309,6 +313,18 @@ export function DashboardTab({
                                             <MessageCircle className="h-4 w-4 mr-1" />
                                             Message
                                         </Button>
+                                        {onRunningLate && lesson.date === studioToday() && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => onRunningLate(lesson)}
+                                                disabled={isLoading}
+                                                title="Tell this family you're running late (pick the minutes, asks first)"
+                                            >
+                                                <Timer className="h-4 w-4 mr-1" />
+                                                Running late
+                                            </Button>
+                                        )}
                                         <Button
                                             size="sm"
                                             variant="outline"

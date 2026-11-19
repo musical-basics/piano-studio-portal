@@ -176,12 +176,13 @@ export function RosterTab({ students, onLog, onSchedule, onDelete, onMessage, pr
     return (
         <Card>
             <CardHeader>
-                <div className="flex items-center justify-between">
+                {/* Buttons go under the title on a phone, so the page keeps the phone's width. */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <CardTitle className="text-2xl font-serif">Student Roster</CardTitle>
                         <CardDescription>Complete overview of all active students</CardDescription>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <Button variant="outline" onClick={() => {
                             const headers = ["Name", "Contact Email", "Weekday", "Credits"]
                             const csvContent = [
