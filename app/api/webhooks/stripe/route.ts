@@ -6,6 +6,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { recordBillingTransaction, consumeAccountCreditForCheckoutCore } from '@/lib/core/billing'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
+import { PLAN_EVENT_TYPES, planEventFromStripe, processPlanEvent } from '@/lib/plan-payment-alerts'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-11-17.clover' as any,
@@ -332,6 +333,19 @@ export async function POST(req: Request) {
             notifyAdminOfPendingCapture(paymentIntent).catch(err => {
                 console.error('[Webhook] Failed to notify admin:', err)
             })
+        }
+
+        // 4. Plan payment watch (#984): failed twice in a row, or ended unpaid.
+        // The hourly plan-payment-check cron reads the same events from Stripe;
+        // each event and each email is recorded once, so the two never double
+        // up. Never fails the webhook.
+        if ((PLAN_EVENT_TYPES as readonly string[]).includes(event.type)) {
+            try {
+                const planEvent = planEventFromStripe(event)
+                if (planEvent) await processPlanEvent(supabaseAdmin as any, planEvent)
+            } catch (e) {
+                console.error('[Webhook] plan payment watch failed (non-blocking):', e)
+            }
         }
 
         // Mark Webhook log as successful

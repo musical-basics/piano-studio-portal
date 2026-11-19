@@ -61,6 +61,10 @@
             "schedule": "20 * * * *"
         },
         {
+            "path": "/api/cron/plan-payment-check",
+            "schedule": "40 * * * *"
+        },
+        {
             "path": "/api/cron/weekly-summary",
             "schedule": "30 13 * * 1"
         },

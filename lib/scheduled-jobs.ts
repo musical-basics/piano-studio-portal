@@ -206,6 +206,17 @@ export const PORTAL_JOBS: JobInfo[] = [
         ].filter(Boolean).join(', '),
     },
     {
+        job: 'plan-payment-check',
+        name: 'Plan payment watch',
+        what: "Reads Stripe's plan payments every hour and emails you once when a family's payment fails twice in a row, and once more if Stripe ends the plan unpaid.",
+        group: 'payments',
+        summarize: b => [
+            `${plural(Number(b?.events) || 0, 'payment event')} checked`,
+            b?.emailed ? `emailed you about ${plural(b.emailed, 'plan')}` : '',
+            b?.emailFailed ? `${b.emailFailed} email failed, will retry` : '',
+        ].filter(Boolean).join(', '),
+    },
+    {
         job: 'classroom-server-watch',
         name: 'Classroom server check',
         what: "Checks the classroom's own call server is answering and emails you if it stops. Off until the classroom moves to it.",
