@@ -2,6 +2,7 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { formatStudioTime } from '@/lib/backup-watchdog'
 import { nextHealth, readReport, saveAlerts, type HealthAlerts, type HealthEmail } from '@/lib/classroom-server-health'
+import { classroomOnFallback, classroomSwitchUrl } from '@/lib/classroom-switch'
 
 /**
  * Watch on the classroom's call server (Lionel's #724).
@@ -81,7 +82,10 @@ function serverName(url: string): string {
  * email goes out; the runner keeps it false when sending fails, so the next run
  * tries again.
  */
-export function nextWatchState(prev: WatchState, probe: Probe, now: Date, url: string): { state: WatchState; email: WatchEmail | null } {
+/** #950: one-tap switch links for the emails, when they can be signed. */
+export type SwitchLinks = { toCloud?: string | null; toMain?: string | null; onCloud?: boolean }
+
+export function nextWatchState(prev: WatchState, probe: Probe, now: Date, url: string, links: SwitchLinks = {}): { state: WatchState; email: WatchEmail | null } {
     const server = serverName(url)
     if (probe.ok) {
         const state: WatchState = { lastOkAt: now.toISOString(), consecutiveFailures: 0, downSince: null, alerted: false, lastError: null }
@@ -94,6 +98,7 @@ export function nextWatchState(prev: WatchState, probe: Probe, now: Date, url: s
                 lines: [
                     `The classroom's call server (${server}) is back since ${formatStudioTime(now)}. Classroom lessons can connect again.`,
                     prev.downSince ? `It stopped answering at ${formatStudioTime(new Date(prev.downSince))}.` : '',
+                    links.onCloud && links.toMain ? `The classroom is still on LiveKit Cloud. Switch it back to your own server with one tap: ${links.toMain}` : '',
                 ].filter(Boolean),
             },
         }
@@ -111,7 +116,9 @@ export function nextWatchState(prev: WatchState, probe: Probe, now: Date, url: s
             lines: [
                 `The classroom's call server (${server}) has not answered for 10 minutes since ${formatStudioTime(new Date(downSince))}. `
                 + `Classroom lessons can't connect until it's back.`,
-                `Quick fix: switch the classroom back to LiveKit Cloud (see music-lesson-dashboard docs/self-hosted-livekit.md, "Roll back"), or restart it on the server.`,
+                links.toCloud
+                    ? `Quick fix: switch the classroom to LiveKit Cloud with one tap (no redeploy; you can switch back the same way): ${links.toCloud}`
+                    : `Quick fix: switch the classroom back to LiveKit Cloud (see music-lesson-dashboard docs/self-hosted-livekit.md, "Roll back"), or restart it on the server.`,
                 `Last check: ${probe.reason}.`,
             ],
         },
@@ -175,7 +182,7 @@ async function runHealthReport(
     send: (e: HealthEmail) => Promise<boolean>,
 ): Promise<HealthResult> {
     const { report, alerts: prev } = await readReport(client)
-    const { alerts, emails } = nextHealth(prev, report, now, inUse)
+    const { alerts, emails } = nextHealth(prev, report, now, inUse, classroomSwitchUrl('cloud', now))
     const after: HealthAlerts = { ...alerts }
     const sent: string[] = []
     for (const e of emails) {
@@ -210,7 +217,10 @@ export async function runClassroomServerWatch(opts: WatchOptions): Promise<Watch
 
     const before = await readState(opts.client)
     const probe = await probeServer(url, opts.fetchImpl, opts.timeoutMs)
-    const { state, email } = nextWatchState(before, probe, now, url)
+    // #950: the "back" email offers to switch back only while the classroom is on Cloud.
+    const onCloud = probe.ok && before.alerted ? await classroomOnFallback(opts.client).catch(() => false) : false
+    const links: SwitchLinks = { toCloud: classroomSwitchUrl('cloud', now), toMain: classroomSwitchUrl('main', now), onCloud }
+    const { state, email } = nextWatchState(before, probe, now, url, links)
 
     let emailed = false
     let after = state
