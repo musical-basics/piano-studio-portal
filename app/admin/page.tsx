@@ -7,6 +7,7 @@ import type { RecurringSlotRow } from "@/components/admin/weekly-schedule-tab"
 import { getInquiries } from "@/app/actions/inquiries"
 import { getResources } from "@/app/actions/resources"
 import { findUnloggedForAdmin, type AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
+import { findWaitingMessages, type WaitingThread } from "@/lib/waiting-messages"
 import { listPendingMoveRequestsCore, type PendingMoveRequest } from "@/lib/core/move-requests"
 import { homeworkStatusByStudent } from "@/lib/core/homework"
 import type { HomeworkStatus } from "@/lib/homework"
@@ -151,6 +152,14 @@ export default async function AdminPage() {
     console.error("Unlogged lessons fetch error:", e)
   }
 
+  // #990: family threads where the family wrote last, for the "N messages waiting" pill.
+  let waitingMessages: WaitingThread[] = []
+  try {
+    waitingMessages = await findWaitingMessages(createAdminClient(), user.id)
+  } catch (e) {
+    console.error("Waiting messages fetch error:", e)
+  }
+
   // Families asking to move a lesson (#878), waiting for Approve or Decline.
   // The read also closes requests that can no longer happen.
   let moveRequests: PendingMoveRequest[] = []
@@ -196,6 +205,7 @@ export default async function AdminPage() {
       resources={resources || []}
       pricingPlans={pricingPlans || []}
       unloggedLessons={unloggedLessons}
+      waitingMessages={waitingMessages}
       moveRequests={moveRequests}
       homeworkByStudent={homeworkByStudent}
     />

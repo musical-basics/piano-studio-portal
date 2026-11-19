@@ -45,6 +45,8 @@ import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
 import { BalancesTab } from "@/components/admin/balances-tab"
 import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
+import { WaitingMessagesPill } from "@/components/admin/waiting-messages-pill"
+import type { WaitingThread } from "@/lib/waiting-messages"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { MoveRequestsCard } from "@/components/admin/move-requests-card"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
@@ -82,13 +84,15 @@ export interface AdminDashboardProps {
     pricingPlans: PricingPlan[]
     /** Past lessons nobody logged, for the red "N unlogged" badge (#760). */
     unloggedLessons?: AdminUnloggedLesson[]
+    /** #990: family threads waiting for a reply. */
+    waitingMessages?: WaitingThread[]
     /** Families asking to move a lesson, waiting for Approve or Decline (#878). */
     moveRequests?: PendingMoveRequest[]
     /** Each student's current homework and what they ticked (#945), by student id. */
     homeworkByStudent?: Record<string, HomeworkStatus>
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [], homeworkByStudent = {} }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [], homeworkByStudent = {}, waitingMessages = [] }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -835,6 +839,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h1 className="text-xl font-serif font-semibold">{admin.studio_name || "Teacher Admin Portal"}</h1>
                                     <UnloggedLessonsBadge lessons={unloggedLessons} />
+                                    <WaitingMessagesPill threads={waitingMessages} onOpen={handleJumpToMessage} />
                                 </div>
                                 <p className="text-sm text-muted-foreground">{admin.name || 'Admin'}</p>
                             </div>
