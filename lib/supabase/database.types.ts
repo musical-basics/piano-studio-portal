@@ -285,6 +285,8 @@ export type Profile = Database['public']['Tables']['profiles']['Row'] & {
     sms_opt_in?: boolean
     sms_opt_in_at?: string | null
     sms_opt_in_source?: 'portal' | 'teacher' | 'text' | null
+    /** When the family agreed lessons may be recorded for their own review (#876); null = not yet. */
+    recording_consent_at?: string | null
 }
 export type Lesson = Database['public']['Tables']['lessons']['Row']
 /**

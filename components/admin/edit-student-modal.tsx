@@ -235,6 +235,14 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                         </p>
                     </div>
 
+                    {/* #876: the one-time "lessons may be recorded" tick box in their portal */}
+                    <p className="text-xs text-muted-foreground rounded-md border px-3 py-2">
+                        Recording consent:{' '}
+                        {(student as any).recording_consent_at
+                            ? `agreed in the portal on ${new Date((student as any).recording_consent_at).toLocaleDateString()}.`
+                            : 'not yet. They see the tick box next time they log in.'}
+                    </p>
+
                     <div className="space-y-2">
                         <Label htmlFor="parentContactName">Parent / Contact Name</Label>
                         <Input

@@ -40,6 +40,7 @@ import {
     mockEvents,
 } from "@/lib/mock-data"
 import { MakeupScheduler } from "./makeup-scheduler"
+import { RecordingConsentDialog } from "./recording-consent-dialog"
 import { CancellationModal } from "./cancellation-modal"
 import { LessonDetailModal } from "@/components/admin/lesson-detail-modal"
 import { PurchaseCreditsModal } from "./purchase-credits-modal"
@@ -1345,6 +1346,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             )}
 
             <PurchaseCreditsModal open={showPurchaseModal} onOpenChange={setShowPurchaseModal} />
+
+            {/* #876: once per family, until they tick it */}
+            <RecordingConsentDialog consentAt={profile.recording_consent_at} />
 
             <ChatWidget
                 studentId={profile.id}
