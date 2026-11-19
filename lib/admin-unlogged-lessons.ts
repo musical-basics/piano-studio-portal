@@ -96,6 +96,7 @@ export async function findUnloggedForAdmin(client: DbClient, now: Date = new Dat
             time,
             duration,
             status: l.status as string,
+            studentId: l.student_id as string,
             studentName: (s?.name as string) || 'Unknown student',
             accountStatus: (s?.status as string) ?? null,
             zoomMeetingId: meeting || null,

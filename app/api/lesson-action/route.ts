@@ -2,10 +2,12 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { verifyLessonAction, type LessonActionClaims } from '@/lib/lesson-action-links'
 import { logLessonCore } from '@/lib/core/lessons'
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
-import { studioTzAbbr } from '@/lib/studio-timezone'
+import { studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { QUIET_LOG_AFTER_DAYS, isTooOldForUsualLog, logOldLessonQuietly } from '@/lib/late-lesson-log'
 import { lessonEndMs } from '@/lib/unlogged-lessons'
 import { MISSED_LESSON_CREDIT_CENTS, getMissedLessonPreviewCore, missedLessonCore } from '@/lib/core/missed-lesson'
+import { markNoShowCore } from '@/lib/core/no-show'
+import { attendanceNote, zoomAttendance } from '@/lib/zoom-attendance'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +34,11 @@ export const dynamic = 'force-dynamic'
  *             email. The page shows the exact message; the POST carries it
  *             back and the core refuses if it would now read differently. That
  *             core is safe to repeat, so a failed press gives the link back.
+ *   - noshow: "No-Show" (#797), offered only where Zoom shows nobody but
+ *             Lionel joined. Runs markNoShowCore, the admin No-Show button's
+ *             path: the lesson is kept as a no-show and 1 credit is taken (no
+ *             refund). Nothing is sent to the family. The page re-asks Zoom
+ *             who joined, as a last look before confirming.
  * Both re-check at POST time that the lesson is still unlogged and still at the
  * date and time the email showed; otherwise they say so and change nothing.
  */
@@ -45,6 +52,7 @@ type LessonRow = {
     status: string
     notes: string | null
     video_url: string | null
+    zoom_meeting_id: string | null
 }
 
 const NO_STORE = {
@@ -79,6 +87,7 @@ function page(title: string, bodyHtml: string, status = 200): Response {
   .log { background: #15803d; }
   .remove { background: #b91c1c; }
   .missed { background: #b45309; }
+  .noshow { background: #92400e; }
   .quote { white-space: pre-wrap; background: #f5f5f4; border-left: 3px solid #d6d3d1; border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; font-size: 16px; }
   ul.effects { margin: 0 0 12px; padding-left: 20px; }
   ul.effects li { margin: 0 0 4px; }
@@ -122,7 +131,7 @@ type Checked =
 async function checkLesson(client: DbClient, claims: LessonActionClaims): Promise<Checked> {
     const { data: lesson, error } = await client
         .from('lessons')
-        .select('id, student_id, date, time, duration, status, notes, video_url')
+        .select('id, student_id, date, time, duration, status, notes, video_url, zoom_meeting_id')
         .eq('id', claims.l)
         .maybeSingle()
     if (error) {
@@ -135,6 +144,9 @@ async function checkLesson(client: DbClient, claims: LessonActionClaims): Promis
     if (row.status === 'completed') {
         return { ok: false, outcome: 'nothing: already logged', response: message('Already logged', 'This lesson was logged already, so its credit was already taken. Nothing changed.') }
     }
+    if (row.status === 'cancelled') {
+        return { ok: false, outcome: 'nothing: already a no-show', response: message('Already a no-show', 'This lesson was marked a no-show already, so its credit was already taken. Nothing changed.') }
+    }
     if (!UNLOGGED_STATUSES.includes(row.status)) {
         return { ok: false, outcome: `nothing: status ${row.status}`, response: message('Already handled', `This lesson is marked "${row.status}" now. Nothing changed.`) }
     }
@@ -145,6 +157,22 @@ async function checkLesson(client: DbClient, claims: LessonActionClaims): Promis
 
     const { data: student } = await client.from('profiles').select('name').eq('id', row.student_id).maybeSingle()
     return { ok: true, lesson: row, studentName: (student?.name as string) || 'this student' }
+}
+
+/** A last look at who joined on Zoom, for the No-Show page (#797). Never throws. */
+async function zoomNoteForPage(lesson: LessonRow, endMs: number): Promise<string | null> {
+    const meeting = lesson.zoom_meeting_id ? String(lesson.zoom_meeting_id).replace(/\D/g, '') : ''
+    if (!meeting) return null
+    try {
+        const { getZoomAccessToken } = await import('@/lib/zoom')
+        const token = await getZoomAccessToken()
+        if (!token) return null
+        const start = Date.parse(studioWallClockToISO(lesson.date, String(lesson.time).slice(0, 5)))
+        const note = attendanceNote(await zoomAttendance(meeting, token, start, endMs))
+        return note.replace(/^No-show\? /, '')
+    } catch {
+        return null
+    }
 }
 
 async function usedOutcome(client: DbClient, tokenId: string): Promise<{ used: boolean; outcome: string | null }> {
@@ -160,6 +188,7 @@ function alreadyUsed(outcome: string | null): Response {
     const did = outcome?.startsWith('logged') ? ' It logged the lesson.'
         : outcome?.startsWith('removed') ? ' It removed the lesson.'
         : outcome?.startsWith('missed') ? ' It sent the apology, added the credit and removed the lesson.'
+        : outcome?.startsWith('no-show') ? ' It marked the lesson a no-show and took 1 credit.'
         : ''
     return message('This link was already used', `Each button works once.${did} Nothing changed this time.`)
 }
@@ -203,6 +232,31 @@ export async function GET(request: Request) {
 <li>Removes the lesson (no cancellation email)</li>
 </ul>
 ${form('Send apology and remove lesson', 'missed', `<input type="hidden" name="m" value="${esc(preview.message)}">`)}`)
+    }
+
+    if (claims.a === 'noshow') {
+        const end = lessonEndMs({ date: lesson.date, time: String(lesson.time).slice(0, 5), duration: lesson.duration || 60 })
+        if (end > Date.now()) {
+            return message('Not over yet', "This lesson hasn't finished yet, so it can't be marked a no-show. Nothing changed.")
+        }
+        const { data: student } = await client.from('profiles').select('credits').eq('id', lesson.student_id).maybeSingle()
+        const credits = typeof student?.credits === 'number' ? student.credits : null
+        const zoom = await zoomNoteForPage(lesson, end)
+        const recording = lesson.video_url
+            ? `<p class="warn">A recording is attached to this lesson, so it may have happened. Check it before marking a no-show.</p>`
+            : ''
+        return page('Mark this lesson a no-show?', `
+<h1>Mark ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)} a no-show?</h1>
+<p class="muted">${esc(when)}</p>
+${zoom ? `<p>${esc(zoom)}</p>` : ''}
+${recording}
+<ul class="effects">
+<li>${esc(credits !== null ? `Takes 1 credit, no refund (${credits} → ${credits - 1})` : 'Takes 1 credit, no refund')}</li>
+<li>Keeps the lesson, marked as a no-show (the family's History tab counts it as a lesson used)</li>
+<li>Sends nothing: no email, portal message or text to the family</li>
+<li>Leaves the Zoom meeting, the calendar and the next lesson as they are</li>
+</ul>
+${form('Mark no-show', 'noshow')}`)
     }
 
     if (claims.a === 'log') {
@@ -321,6 +375,28 @@ export async function POST(request: Request) {
         await record(`missed: ${result.summary}`, lesson.student_id)
         console.log(`[lesson-action] missed ${lesson.id} from email: ${result.summary}`)
         return message('Done', `${label}: ${result.summary}`)
+    }
+
+    if (claims.a === 'noshow') {
+        const giveBack = () => client.from('lesson_action_link_uses').delete().eq('token_id', claims.j)
+        if (lessonEndMs({ date: lesson.date, time: String(lesson.time).slice(0, 5), duration: lesson.duration || 60 }) > Date.now()) {
+            await giveBack()
+            return message('Not over yet', "This lesson hasn't finished yet, so it can't be marked a no-show. Nothing changed.")
+        }
+        const result = await markNoShowCore(lesson.id)
+        if (!result.ok && result.changed) {
+            await record('nothing: changed while confirming', lesson.student_id)
+            return message('Already handled', 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.')
+        }
+        if (!result.ok) {
+            // The core undoes its own claim on failure, so the link may try again.
+            await giveBack()
+            console.error(`[lesson-action] no-show failed for ${lesson.id}: ${result.error}`)
+            return message('Not finished', `The portal said: ${result.error}. Nothing changed. Please try again, or use the admin dashboard.`, 500)
+        }
+        await record(`no-show: credits ${result.previousCredits} -> ${result.newCredits}`, lesson.student_id)
+        console.log(`[lesson-action] no-show ${lesson.id} from email (credits ${result.previousCredits} -> ${result.newCredits})`)
+        return message('Marked no-show', `${label} is marked a no-show and 1 credit was taken (${result.newCredits} left). Nobody was told.`)
     }
 
     if (claims.a === 'log' && isTooOldForUsualLog(lesson.date)) {

@@ -4,6 +4,8 @@ import { isoToStudioWallClock, studioTzAbbr, studioWallClockToISO } from '@/lib/
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { LINK_TTL_DAYS, appBaseUrl, lessonActionUrl, signLessonAction } from '@/lib/lesson-action-links'
 import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile } from '@/lib/zoom-recordings'
+import { attendanceNote, looksLikeNoShow, zoomAttendance, type ZoomAttendance } from '@/lib/zoom-attendance'
+import { autoLoggedSection, findAutoLoggedLessons, type AutoLoggedLesson } from '@/lib/auto-logged-lessons'
 
 /**
  * Lessons from a given studio day that nobody logged. A lesson takes its credit
@@ -20,6 +22,11 @@ import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile 
  * unlogged (findPastUnloggedLessons).
  *
  * Teacher accounts are left out of all of these (#734, isUntrackedTeacherAccount).
+ *
+ * The morning email also lists what the portal logged by itself that day
+ * (#793, lib/auto-logged-lessons.ts), and asks Zoom who joined each unlogged
+ * Zoom lesson (#797, lib/zoom-attendance.ts): a lesson only Lionel joined is
+ * marked "No-show?" with a one-tap No-Show button.
  */
 
 export type UnloggedLesson = {
@@ -28,12 +35,22 @@ export type UnloggedLesson = {
     time: string
     duration: number
     status: string
+    studentId: string
     studentName: string
     accountStatus: string | null
     /** What decides whether Zoom's webhook will log it on its own (tonight's list). */
     zoomMeetingId: string | null
     hasVideo: boolean
     hasDropboxFolder: boolean
+    /** Who joined on Zoom (morning email only, #797); undefined when not asked. */
+    attendance?: ZoomAttendance
+    /** A classroom recording of this student was made around the lesson. */
+    classroomRecording?: boolean
+}
+
+/** Offer the No-Show button (#797): Zoom shows only Lionel, and no recording says otherwise. */
+export function suggestsNoShow(lesson: UnloggedLesson): boolean {
+    return looksLikeNoShow(lesson.attendance) && !lesson.hasVideo && !lesson.classroomRecording
 }
 
 // Statuses a lesson has before it is logged. 'logging' is a log that started and
@@ -97,6 +114,7 @@ async function withStudents(client: DbClient, lessons: any[]): Promise<UnloggedL
                 time: String(l.time).slice(0, 5),
                 duration: (l.duration as number) || 60,
                 status: l.status as string,
+                studentId: l.student_id as string,
                 studentName: (s?.name as string) || 'Unknown student',
                 accountStatus: (s?.status as string) ?? null,
                 zoomMeetingId: meeting || null,
@@ -127,7 +145,21 @@ export function describeUnlogged(lesson: UnloggedLesson, { withDate = false }: {
     const account = lesson.accountStatus && lesson.accountStatus !== 'active' ? ` (account: ${lesson.accountStatus})` : ''
     const half = lesson.status === 'logging' ? ', logging started but never finished' : ''
     const day = withDate ? `${shortDay(lesson.date)}, ` : ''
-    return `${escapeHtml(lesson.studentName)}${account}: ${day}${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}`
+    return `${escapeHtml(lesson.studentName)}${account}: ${day}${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}${zoomSuffix(lesson)}`
+}
+
+/** What Zoom says about the lesson (#797), as the end of its email line. */
+function zoomSuffix(lesson: UnloggedLesson): string {
+    const a = lesson.attendance
+    if (!a) return ''
+    let note = attendanceNote(a)
+    if (looksLikeNoShow(a) && !suggestsNoShow(lesson)) {
+        // Zoom alone, but a recording says the lesson may have happened elsewhere.
+        note = note.replace(/^No-show\? /, '')
+        note += lesson.classroomRecording ? ', but a classroom recording was made then' : ', but a recording is attached'
+    }
+    const strong = suggestsNoShow(lesson)
+    return `<br><span style="color:${strong ? '#92400e' : '#57534e'};font-size:14px">${strong ? '<b>' : ''}${escapeHtml(note)}${strong ? '</b>' : ''}</span>`
 }
 
 export type UnloggedEmailKind = 'morning' | 'tonight'
@@ -136,6 +168,7 @@ const BUTTON = 'display:inline-block;padding:11px 18px;margin:0 8px 6px 0;border
 const LOG_STYLE = `${BUTTON};background:#15803d;color:#ffffff;border:1px solid #15803d`
 const REMOVE_STYLE = `${BUTTON};background:#ffffff;color:#b91c1c;border:1px solid #b91c1c`
 const MISSED_STYLE = `${BUTTON};background:#ffffff;color:#92400e;border:1px solid #b45309`
+const NO_SHOW_STYLE = `${BUTTON};background:#92400e;color:#ffffff;border:1px solid #92400e`
 
 /**
  * The lessons as email blocks, each with its one-time buttons (#441). Falls back
@@ -154,14 +187,19 @@ export function unloggedLessonBlocks(
         const missed = lessonEndMs(lesson) <= now.getTime()
             ? signLessonAction({ lessonId: lesson.id, action: 'missed', date: lesson.date, time: lesson.time }, now)
             : null
+        // "No-Show" (#797) only where Zoom shows nobody but Lionel joined.
+        const noShow = suggestsNoShow(lesson)
+            ? signLessonAction({ lessonId: lesson.id, action: 'noshow', date: lesson.date, time: lesson.time }, now)
+            : null
         if (!log || !remove) {
             buttons = false
             return `<li>${lines[i]}</li>`
         }
         const missedButton = missed ? `<a href="${escapeHtml(lessonActionUrl(missed, baseUrl))}" style="${MISSED_STYLE}">I missed it</a>` : ''
+        const noShowButton = noShow ? `<a href="${escapeHtml(lessonActionUrl(noShow, baseUrl))}" style="${NO_SHOW_STYLE}">No-Show</a>` : ''
         return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px">
 <div style="font-size:15px;margin:0 0 10px">${lines[i]}</div>
-<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>${missedButton}
+${noShowButton}<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>${missedButton}
 </div>`
     })
     const html = buttons ? blocks.join('\n') : `<ul>${blocks.join('')}</ul>`
@@ -172,6 +210,10 @@ export function unloggedLessonBlocks(
 export const MISSED_IT_NOTE = `<b>I missed it</b> is for a lesson you missed: it removes the lesson (no cancellation email), ` +
     `puts $15 Account Credit on the family's next purchase and sends your apology. Each press: 1 family, 1 portal message ` +
     `(with the usual email notice, and a text if they opted in). Its page shows the exact message first.`
+
+/** The "No-Show" button (#797), for the footer when a lesson carries it. */
+export const NO_SHOW_NOTE = `<b>No-Show</b> (only where Zoom shows nobody but you joined) keeps the lesson as a no-show and ` +
+    `takes 1 credit, no refund. Nobody is emailed, messaged or texted.`
 
 /** What the buttons do, for the footer of any email that carries them. */
 export function unloggedButtonsNote(n: number): string {
@@ -205,13 +247,16 @@ export function buildUnloggedEmail(
     const these = n === 1 ? 'this lesson' : 'these lessons'
     const when = kind === 'tonight'
         ? 'This email comes only on evenings with a lesson from today still unlogged. Lessons Zoom recorded are left out, since Zoom logs those itself. The 8:30am email is the backstop.'
-        : 'This email comes only on mornings with something unlogged.'
+        : MORNING_WHEN
+    const noShow = lessons.some(suggestsNoShow) ? ` ${NO_SHOW_NOTE}` : ''
     const footer = buttons
-        ? `${unloggedButtonsNote(n)} The <a href="${admin}">admin dashboard</a> works too. ${when}`
+        ? `${unloggedButtonsNote(n)}${noShow} The <a href="${admin}">admin dashboard</a> works too. ${when}`
         : `Nobody logged ${these}, so no credit was taken. If it happened, log it in the <a href="${admin}">admin dashboard</a> (that takes the credit). If it didn't, cancel it there. ${when}`
 
     return { subject, lines, html, footer, buttons }
 }
+
+const MORNING_WHEN = 'This email comes only on mornings with a lesson unlogged or logged automatically.'
 
 /** Emails the studio inbox about the day's unlogged lessons. No email when there are none. */
 export async function alertUnloggedLessons(
@@ -223,6 +268,124 @@ export async function alertUnloggedLessons(
     if (lessons.length === 0) return false
     const { subject, lines, html, footer } = buildUnloggedEmail(date, lessons, { kind })
     return sendCronAlert(client, { subject, lines, html, footer })
+}
+
+// ---------------------------------------------------------------------------
+// The morning email: yesterday's unlogged lessons with what Zoom saw (#797),
+// and what the portal logged by itself that day (#793).
+// ---------------------------------------------------------------------------
+
+/**
+ * Asks Zoom who joined each unlogged Zoom lesson that is over (#797), and
+ * notes classroom recordings made around them (a lesson moved to the classroom
+ * looks like a no-show on Zoom). Fills lesson.attendance in place. Never
+ * throws: without Zoom the email simply goes out without the notes.
+ */
+export async function addZoomAttendance(client: DbClient, lessons: UnloggedLesson[], now: Date = new Date()): Promise<void> {
+    const over = lessons.filter(l => lessonEndMs(l) <= now.getTime())
+    const zoomLessons = over.filter(l => l.zoomMeetingId)
+    if (zoomLessons.length === 0) return
+
+    let token: string | null = null
+    try {
+        const { getZoomAccessToken } = await import('@/lib/zoom')
+        token = await getZoomAccessToken()
+    } catch (e) {
+        console.error('[unlogged-lessons] Zoom token failed:', e instanceof Error ? e.message : e)
+    }
+    for (const lesson of zoomLessons) {
+        const start = Date.parse(studioWallClockToISO(lesson.date, lesson.time))
+        lesson.attendance = token
+            ? await zoomAttendance(lesson.zoomMeetingId!, token, start, lessonEndMs(lesson))
+            : { kind: 'unknown', reason: 'Zoom could not be reached' }
+    }
+
+    try {
+        const studentIds = [...new Set(zoomLessons.map(l => l.studentId))]
+        const starts = zoomLessons.map(l => Date.parse(studioWallClockToISO(l.date, l.time)))
+        const ends = zoomLessons.map(l => lessonEndMs(l))
+        const { data: recs, error } = await client
+            .from('classroom_recordings')
+            .select('student_id, created_at')
+            .in('student_id', studentIds)
+            .gte('created_at', new Date(Math.min(...starts) - 30 * 60_000).toISOString())
+            .lte('created_at', new Date(Math.max(...ends) + 3 * 60 * 60_000).toISOString())
+        if (error) throw new Error(error.message)
+        for (const lesson of zoomLessons) {
+            const start = Date.parse(studioWallClockToISO(lesson.date, lesson.time))
+            const end = lessonEndMs(lesson)
+            lesson.classroomRecording = (recs || []).some(r => {
+                const at = Date.parse(r.created_at as string)
+                return r.student_id === lesson.studentId && at >= start - 30 * 60_000 && at <= end + 3 * 60 * 60_000
+            })
+        }
+    } catch (e) {
+        // Unknown: keep the No-Show button off rather than guess.
+        console.error('[unlogged-lessons] classroom recordings lookup failed:', e instanceof Error ? e.message : e)
+        for (const lesson of zoomLessons) lesson.classroomRecording = true
+    }
+}
+
+export type MorningEmail = { subject: string; lines: string[]; html: string; footer: string }
+
+/** The whole morning email, without sending it (dry runs render this). */
+export function buildMorningEmail(
+    date: string,
+    unlogged: UnloggedLesson[],
+    autoLogged: AutoLoggedLesson[],
+    { now = new Date(), baseUrl = appBaseUrl() }: { now?: Date; baseUrl?: string } = {},
+): MorningEmail {
+    const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+        weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC',
+    })
+    const n = unlogged.length
+    const m = autoLogged.length
+    const auto = autoLoggedSection(autoLogged, date, { baseUrl })
+    const admin = `${baseUrl}/admin`
+
+    if (n === 0) {
+        return {
+            subject: `${m} lesson${m === 1 ? '' : 's'} logged automatically on ${day}`,
+            lines: auto.lines,
+            html: auto.html,
+            footer: `Everything from ${day} is logged. The <a href="${admin}">admin dashboard</a> has the rest. ${MORNING_WHEN}`,
+        }
+    }
+
+    const unloggedEmail = buildUnloggedEmail(date, unlogged, { kind: 'morning', now, baseUrl })
+    const noShows = unlogged.filter(suggestsNoShow).length
+    const subject = unloggedEmail.subject +
+        (noShows ? ` (${noShows} No-show?)` : '') +
+        (m ? `, ${m} logged automatically` : '')
+    const html = m
+        ? `<h3 style="font-size:16px;margin:4px 0 8px">Not logged yet (${n})</h3>\n${unloggedEmail.html}\n${auto.html}`
+        : unloggedEmail.html
+    return { subject, lines: [...unloggedEmail.lines, ...auto.lines], html, footer: unloggedEmail.footer }
+}
+
+export type MorningRun = {
+    unlogged: UnloggedLesson[]
+    autoLogged: AutoLoggedLesson[]
+    email: MorningEmail | null
+    emailed: boolean
+}
+
+/**
+ * The 8:30am email about `date` (yesterday): sent when there is an unlogged
+ * lesson or an automatic log to show. `dryRun` builds it without sending.
+ */
+export async function runMorningEmail(
+    client: DbClient,
+    date: string,
+    { dryRun = false, now = new Date() }: { dryRun?: boolean; now?: Date } = {},
+): Promise<MorningRun> {
+    const unlogged = await findUnloggedLessons(client, date)
+    await addZoomAttendance(client, unlogged, now)
+    const autoLogged = await findAutoLoggedLessons(client, date)
+    if (unlogged.length === 0 && autoLogged.length === 0) return { unlogged, autoLogged, email: null, emailed: false }
+    const email = buildMorningEmail(date, unlogged, autoLogged, { now })
+    const emailed = dryRun ? false : await sendCronAlert(client, email)
+    return { unlogged, autoLogged, email, emailed }
 }
 
 // ---------------------------------------------------------------------------

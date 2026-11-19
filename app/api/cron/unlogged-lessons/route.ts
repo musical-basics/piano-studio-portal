@@ -3,13 +3,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { withCronRun } from '@/lib/cron-runs'
 import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
-import { alertUnloggedLessons, findUnloggedLessons } from '@/lib/unlogged-lessons'
+import { runMorningEmail } from '@/lib/unlogged-lessons'
 
 export const dynamic = 'force-dynamic'
 
 // Each morning: email the studio inbox about yesterday's lessons that nobody
-// logged (so no credit was taken). Silent when there are none. Manual runs:
-// ?date=YYYY-MM-DD for another day, ?dry=1 to list without emailing.
+// logged (so no credit was taken), with what Zoom saw for each (#797: "No-show?"
+// and a No-Show button when only Lionel joined), and what the portal logged by
+// itself that day (#793). Silent when there is neither. Manual runs:
+// ?date=YYYY-MM-DD for another day, ?dry=1 to build without emailing (the
+// reply then carries the email's subject and html).
 export const GET = withCronRun('unlogged-lessons', handle)
 
 async function handle(request: Request) {
@@ -24,15 +27,16 @@ async function handle(request: Request) {
 
     try {
         const client = createAdminClient()
-        const lessons = await findUnloggedLessons(client, date)
-        const emailed = dryRun ? false : await alertUnloggedLessons(client, date, lessons)
-        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
+        const { unlogged: lessons, autoLogged, email, emailed } = await runMorningEmail(client, date, { dryRun })
+        console.log(`[Cron/unlogged-lessons] ${date}: ${lessons.length} unlogged, ${autoLogged.length} logged automatically${emailed ? ', emailed' : ''}${dryRun ? ' (dry run)' : ''}`)
         return NextResponse.json({
             success: true,
             date,
             dryRun,
             emailed,
-            unlogged: lessons.map(l => ({ id: l.id, time: l.time, status: l.status })),
+            unlogged: lessons.map(l => ({ id: l.id, time: l.time, status: l.status, zoom: l.attendance?.kind ?? null })),
+            autoLogged: autoLogged.map(l => ({ id: l.id, date: l.date, time: l.time, by: l.by, before: l.before, after: l.after })),
+            ...(dryRun && email ? { subject: email.subject, html: email.html, footer: email.footer } : {}),
         })
     } catch (err: any) {
         const detail = err?.message || String(err)

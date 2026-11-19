@@ -17,6 +17,7 @@ import {
     updateLessonWithOptionalHomework,
 } from '@/lib/core/lessons'
 import { resolveNotificationEmail } from '@/lib/notification-email'
+import { markNoShowCore } from '@/lib/core/no-show'
 import { shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import type { AdminTodayEvent, LessonWithStudent } from '@/types/admin'
 
@@ -300,7 +301,10 @@ export async function logPastLesson(
 }
 
 /**
- * Mark a lesson as no-show - updates status and deducts 1 credit (penalty)
+ * Mark a lesson as no-show: the lesson is kept as a no-show ('cancelled') and
+ * 1 credit is taken (no refund). Nobody is emailed or messaged. The work is
+ * markNoShowCore (lib/core/no-show.ts), which the morning email's No-Show
+ * button (#797) runs too.
  */
 export async function markNoShow(lessonId: string) {
     const supabase = await createClient()
@@ -321,46 +325,12 @@ export async function markNoShow(lessonId: string) {
         return { error: 'Only admins can mark no-shows' }
     }
 
-    // Get the lesson to find the student_id
-    const { data: lesson, error: lessonFetchError } = await supabase
-        .from('lessons')
-        .select('student_id, status')
-        .eq('id', lessonId)
-        .single()
-
-    if (lessonFetchError || !lesson) {
-        return { error: 'Lesson not found' }
-    }
-
-    if (lesson.status !== 'scheduled') {
-        return { error: 'Can only mark scheduled lessons as no-show' }
-    }
-
-    // Update the lesson status
-    const { error: lessonError } = await supabase
-        .from('lessons')
-        .update({
-            status: 'cancelled',
-            notes: 'Marked as No-Show by teacher. Credit forfeited.'
-        })
-        .eq('id', lessonId)
-
-    if (lessonError) {
-        return { error: lessonError.message }
-    }
-
-    // Deduct 1 credit from the student (penalty - no refund)
-    const { data: student } = await supabase
-        .from('profiles')
-        .select('credits')
-        .eq('id', lesson.student_id)
-        .single()
-
-    if (student) {
-        await supabase
-            .from('profiles')
-            .update({ credits: student.credits - 1 })
-            .eq('id', lesson.student_id)
+    const result = await markNoShowCore(lessonId)
+    if (!result.ok) {
+        if (result.changed) {
+            return { error: result.status === null ? 'Lesson not found' : 'Can only mark scheduled lessons as no-show' }
+        }
+        return { error: result.error }
     }
 
     revalidatePath('/admin')

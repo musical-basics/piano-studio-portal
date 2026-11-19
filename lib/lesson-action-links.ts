@@ -3,7 +3,8 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 /**
  * One-time links for the unlogged-lessons email: "Log it" and "Didn't happen"
  * (Lionel's #441), so a lesson can be cleared from a phone without opening admin.
- * Since #752 also "I missed it" (the admin "I missed this" button by link).
+ * Since #752 also "I missed it" (the admin "I missed this" button by link),
+ * and since #797 "No-Show", offered when Zoom shows the student never joined.
  *
  * A link carries the lesson, the action, the date and time the email showed,
  * an expiry and a random token id, signed with an HMAC. The key is derived from
@@ -16,9 +17,9 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
  * their own. It shows a confirm page whose button POSTs.
  */
 
-export type LessonAction = 'log' | 'remove' | 'missed'
+export type LessonAction = 'log' | 'remove' | 'missed' | 'noshow'
 
-const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed']
+const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed', 'noshow']
 
 export const LINK_TTL_DAYS = 7
 
