@@ -176,12 +176,18 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'backfill-recordings',
         name: 'Catch missed Zoom recordings',
-        what: 'Looks for recent Zoom lessons with no video and pulls in any recording the instant hand-off missed.',
+        what: "Saves who joined each Zoom lesson once it's over (Zoom only keeps that about a year), then looks for recent Zoom lessons with no video and pulls in any recording the instant hand-off missed.",
         group: 'recordings',
         summarize: b => {
             const got = len(b?.result?.recovered)
             const errors = len(b?.result?.errors)
-            return `${got ? `${plural(got, 'recording')} recovered` : 'Nothing missing'}${errors ? `, ${plural(errors, 'problem')}` : ''}`
+            const attendance = len(b?.attendance?.saved)
+            return [
+                got ? `${plural(got, 'recording')} recovered` : 'Nothing missing',
+                errors ? plural(errors, 'problem') : '',
+                attendance ? `attendance saved for ${plural(attendance, 'lesson')}` : '',
+                b?.attendance?.error ? `attendance failed: ${b.attendance.error}` : '',
+            ].filter(Boolean).join(', ')
         },
     },
     {

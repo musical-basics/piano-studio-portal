@@ -44,7 +44,7 @@ export type ZoomAttendance =
 export const STUDENT_JOINED_MIN_SECONDS = 120
 
 /** Participants count when they joined this close to the lesson. */
-const WINDOW_MS = 60 * 60 * 1000
+export const WINDOW_MS = 60 * 60 * 1000
 
 const minutes = (seconds: number) => Math.round(seconds / 60)
 
@@ -79,12 +79,20 @@ export function classifyAttendance(
     return { kind: 'other_time' }
 }
 
-/** Zoom's participants for a meeting, every page. `never_started` on Zoom's 404. */
+/**
+ * Zoom's participants for a meeting, every page. `never_started` on Zoom's 404.
+ * For a meeting used more than once this is its LATEST use only; pass an
+ * instance's uuid (see fetchPastInstances) for an earlier one.
+ */
 export async function fetchPastParticipants(
     meetingId: string,
     token: string,
+    { uuid }: { uuid?: string } = {},
 ): Promise<{ ok: true; participants: ZoomParticipant[] } | { ok: false; neverStarted: boolean; reason: string }> {
-    const id = meetingId.replace(/\D/g, '')
+    // A uuid starting with "/" or holding "//" must be encoded twice (Zoom's rule).
+    const id = uuid
+        ? (/^\/|\/\//.test(uuid) ? encodeURIComponent(encodeURIComponent(uuid)) : encodeURIComponent(uuid))
+        : meetingId.replace(/\D/g, '')
     if (!id) return { ok: false, neverStarted: false, reason: 'no Zoom meeting id' }
     const participants: ZoomParticipant[] = []
     let pageToken = ''
@@ -109,6 +117,36 @@ export async function fetchPastParticipants(
         if (!pageToken) break
     }
     return { ok: true, participants }
+}
+
+export type ZoomInstance = { uuid: string; start_time?: string }
+
+/**
+ * Every past use of a meeting (GET /past_meetings/{id}/instances, scope
+ * meeting:read:list_past_instances:admin). `missingScope` when the Zoom app
+ * has not been given that permission, so callers can fall back to the latest
+ * use only.
+ */
+export async function fetchPastInstances(
+    meetingId: string,
+    token: string,
+): Promise<{ ok: true; instances: ZoomInstance[] } | { ok: false; neverStarted: boolean; missingScope: boolean; reason: string }> {
+    const id = meetingId.replace(/\D/g, '')
+    if (!id) return { ok: false, neverStarted: false, missingScope: false, reason: 'no Zoom meeting id' }
+    let res: Response
+    try {
+        res = await fetch(`https://api.zoom.us/v2/past_meetings/${id}/instances`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) })
+    } catch (e) {
+        return { ok: false, neverStarted: false, missingScope: false, reason: `Zoom did not answer (${e instanceof Error ? e.message : 'error'})` }
+    }
+    const body = await res.json().catch(() => ({})) as { meetings?: ZoomInstance[]; code?: number; message?: string }
+    if (res.ok) return { ok: true, instances: (body.meetings ?? []).filter(m => m.uuid) }
+    if (res.status === 404 && (body.code === 3001 || /does not exist/i.test(body.message || ''))) {
+        return { ok: false, neverStarted: true, missingScope: false, reason: 'never started' }
+    }
+    // {"code":4711,"message":"Invalid access token, does not contain scopes:[...]"}
+    const missingScope = body.code === 4711 || /scope/i.test(body.message || '')
+    return { ok: false, neverStarted: false, missingScope, reason: `Zoom answered ${res.status}${body.code ? ` (${body.code})` : ''}` }
 }
 
 export async function zoomAttendance(
