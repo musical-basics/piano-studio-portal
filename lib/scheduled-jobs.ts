@@ -89,9 +89,13 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'unlogged-lessons',
         name: 'Unlogged lessons, morning',
-        what: "Emails you yesterday's lessons that nobody logged (no credit was taken for them).",
+        what: "Emails you today's lessons and yesterday's lessons that nobody logged (no credit was taken for them).",
         group: 'lessons',
-        summarize: b => len(b?.unlogged) ? `${plural(len(b.unlogged), 'lesson')} unlogged${b.emailed ? ', emailed you' : ''}` : 'Nothing unlogged',
+        summarize: b => {
+            const today = len(b?.today?.lessons)
+            const todayPart = today ? `, ${plural(today, 'lesson')} today` : ''
+            return `${len(b?.unlogged) ? `${plural(len(b.unlogged), 'lesson')} unlogged` : 'Nothing unlogged'}${todayPart}${b?.emailed ? ', emailed you' : ''}`
+        },
     },
     {
         job: 'calendar-sync',

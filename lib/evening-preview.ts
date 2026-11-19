@@ -164,20 +164,17 @@ function previewOf(content: string | null, attachments: unknown): string {
     return text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS).trimEnd()}...` : text
 }
 
-export async function buildEveningPreview(
+/**
+ * A studio day's lessons, earliest first, as the evening email lists them:
+ * Eastern time, the family's own time, name, length, Zoom or classroom, and
+ * flags. Teacher and test accounts are left out. Also the morning email's
+ * "Today" list (#942). `profiles` saves a query when the caller has them all.
+ */
+export async function findDayLessons(
     client: DbClient,
     date: string,
-    { asOf = eveningAsOf(date) }: { asOf?: Date } = {},
-): Promise<EveningPreview> {
-    const { data: profileRows, error: profileError } = await client
-        .from('profiles')
-        .select('id, name, role, status, credits, timezone, lesson_duration')
-    if (profileError) throw new Error(`profiles query failed: ${profileError.message}`)
-    const profiles = new Map(((profileRows || []) as Profile[]).map(p => [p.id, p]))
-    const admin = [...profiles.values()].find(p => p.role === 'admin')
-    if (!admin) throw new Error('no admin profile found')
-
-    // ---- Tomorrow's lessons.
+    profiles?: Map<string, Profile>,
+): Promise<EveningLesson[]> {
     const { data: lessonRows, error: lessonError } = await client
         .from('lessons')
         .select('id, student_id, date, time, duration, status, zoom_link, zoom_meeting_id')
@@ -185,7 +182,18 @@ export async function buildEveningPreview(
         .neq('status', 'cancelled')
         .order('time', { ascending: true })
     if (lessonError) throw new Error(`lessons query failed: ${lessonError.message}`)
-    const rows = (lessonRows || []).filter(l => counted(profiles.get(l.student_id)))
+
+    let byId = profiles
+    if (!byId) {
+        const ids = [...new Set((lessonRows || []).map(l => l.student_id as string))]
+        const { data: profileRows, error: profileError } = ids.length
+            ? await client.from('profiles').select('id, name, role, status, credits, timezone, lesson_duration').in('id', ids)
+            : { data: [], error: null }
+        if (profileError) throw new Error(`profiles query failed: ${profileError.message}`)
+        byId = new Map(((profileRows || []) as Profile[]).map(p => [p.id, p]))
+    }
+    const people = byId
+    const rows = (lessonRows || []).filter(l => counted(people.get(l.student_id)))
 
     const studentIds = [...new Set(rows.map(l => l.student_id as string))]
     const { data: flagRows, error: flagError } = studentIds.length
@@ -199,8 +207,8 @@ export async function buildEveningPreview(
         : { data: [], error: null }
     if (flagError) throw new Error(`lesson_intent_flags query failed: ${flagError.message}`)
 
-    const lessons: EveningLesson[] = rows.map(l => {
-        const p = profiles.get(l.student_id)!
+    return rows.map(l => {
+        const p = people.get(l.student_id)!
         const time = String(l.time).slice(0, 5)
         const flags = [...new Set((flagRows || [])
             .filter(f => f.student_id === l.student_id && (!f.lesson_id || f.lesson_id === l.id))
@@ -226,6 +234,23 @@ export async function buildEveningPreview(
             flags,
         }
     })
+}
+
+export async function buildEveningPreview(
+    client: DbClient,
+    date: string,
+    { asOf = eveningAsOf(date) }: { asOf?: Date } = {},
+): Promise<EveningPreview> {
+    const { data: profileRows, error: profileError } = await client
+        .from('profiles')
+        .select('id, name, role, status, credits, timezone, lesson_duration')
+    if (profileError) throw new Error(`profiles query failed: ${profileError.message}`)
+    const profiles = new Map(((profileRows || []) as Profile[]).map(p => [p.id, p]))
+    const admin = [...profiles.values()].find(p => p.role === 'admin')
+    if (!admin) throw new Error('no admin profile found')
+
+    // ---- Tomorrow's lessons.
+    const lessons = await findDayLessons(client, date, profiles)
 
     // ---- Family messages still waiting on a reply.
     const since = new Date(asOf.getTime() - WAITING_MAX_DAYS * 24 * 60 * 60 * 1000).toISOString()

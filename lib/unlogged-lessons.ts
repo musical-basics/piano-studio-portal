@@ -1,6 +1,6 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
-import { isoToStudioWallClock, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { isoToStudioWallClock, shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { LINK_TTL_DAYS, appBaseUrl, lessonActionUrl, signLessonAction } from '@/lib/lesson-action-links'
 import { MIN_LESSON_RECORDING_MINUTES, recordingMinutes, type ZoomRecordingFile } from '@/lib/zoom-recordings'
@@ -8,6 +8,9 @@ import { attendanceNote, looksLikeNoShow, zoomAttendance, type ZoomAttendance } 
 import { autoLoggedSection, findAutoLoggedLessons, type AutoLoggedLesson } from '@/lib/auto-logged-lessons'
 import { moveRequestsSection } from '@/lib/move-requests-email'
 import type { PendingMoveRequest } from '@/lib/core/move-requests'
+import type { LessonRow as ClassroomLessonRow } from '@/lib/classroom-recordings'
+import { findDayLessons } from '@/lib/evening-preview'
+import { todayScheduleSection, todaySubject, type TodaySchedule } from '@/lib/today-schedule-email'
 
 /**
  * Lessons from a given studio day that nobody logged. A lesson takes its credit
@@ -33,6 +36,11 @@ import type { PendingMoveRequest } from '@/lib/core/move-requests'
  * Since #878 it also lists families asking to move a lesson, with one-tap
  * Approve / Decline buttons (lib/move-requests-email.ts), and goes out on a
  * morning with only those too.
+ *
+ * Since #940 each unlogged lesson with a recording (on the lesson, or a
+ * classroom video made in its slot) carries a "Watch" button, and since #942
+ * the email opens with today's lessons (lib/today-schedule-email.ts) and goes
+ * out on any morning with a lesson today, even with nothing unlogged.
  */
 
 export type UnloggedLesson = {
@@ -52,6 +60,13 @@ export type UnloggedLesson = {
     attendance?: ZoomAttendance
     /** A classroom recording of this student was made around the lesson. */
     classroomRecording?: boolean
+    /**
+     * The recording to watch before choosing (#940): the lesson's own video_url,
+     * else (morning email) a classroom video made in its slot. See addRecordingLinks.
+     */
+    recordingUrl?: string | null
+    /** That recording's length, when known (classroom videos with a start stamp). */
+    recordingMinutes?: number | null
 }
 
 /** Offer the No-Show button (#797): Zoom shows only Lionel, and no recording says otherwise. */
@@ -126,8 +141,15 @@ async function withStudents(client: DbClient, lessons: any[]): Promise<UnloggedL
                 zoomMeetingId: meeting || null,
                 hasVideo: !!l.video_url,
                 hasDropboxFolder: !!s?.dropbox_recording_folder,
+                recordingUrl: watchableUrl(l.video_url),
             }
         })
+}
+
+/** A link the Watch button can open: a web address, nothing else. */
+function watchableUrl(url: unknown): string | null {
+    const s = typeof url === 'string' ? url.trim() : ''
+    return /^https?:\/\/\S+$/i.test(s) ? s : null
 }
 
 export function formatClock(time: string): string {
@@ -175,6 +197,19 @@ const LOG_STYLE = `${BUTTON};background:#15803d;color:#ffffff;border:1px solid #
 const REMOVE_STYLE = `${BUTTON};background:#ffffff;color:#b91c1c;border:1px solid #b91c1c`
 const MISSED_STYLE = `${BUTTON};background:#ffffff;color:#92400e;border:1px solid #b45309`
 const NO_SHOW_STYLE = `${BUTTON};background:#92400e;color:#ffffff;border:1px solid #92400e`
+const WATCH_STYLE = `${BUTTON};background:#ffffff;color:#1d4ed8;border:1px solid #1d4ed8`
+
+/** "Watch" or "Watch (32 min)" (#940): opens the recording itself, changes nothing. */
+function watchLabel(lesson: UnloggedLesson): string {
+    const m = lesson.recordingMinutes
+    return typeof m === 'number' && m > 0 ? `Watch (${Math.round(m)} min)` : 'Watch'
+}
+
+function watchButton(lesson: UnloggedLesson): string {
+    return lesson.recordingUrl
+        ? `<a href="${escapeHtml(lesson.recordingUrl)}" style="${WATCH_STYLE}">${watchLabel(lesson)}</a>`
+        : ''
+}
 
 /**
  * The lessons as email blocks, each with its one-time buttons (#441). Falls back
@@ -199,13 +234,14 @@ export function unloggedLessonBlocks(
             : null
         if (!log || !remove) {
             buttons = false
-            return `<li>${lines[i]}</li>`
+            const watch = lesson.recordingUrl ? ` (<a href="${escapeHtml(lesson.recordingUrl)}">${watchLabel(lesson)}</a>)` : ''
+            return `<li>${lines[i]}${watch}</li>`
         }
         const missedButton = missed ? `<a href="${escapeHtml(lessonActionUrl(missed, baseUrl))}" style="${MISSED_STYLE}">I missed it</a>` : ''
         const noShowButton = noShow ? `<a href="${escapeHtml(lessonActionUrl(noShow, baseUrl))}" style="${NO_SHOW_STYLE}">No-Show</a>` : ''
         return `<div style="margin:0 0 14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px">
 <div style="font-size:15px;margin:0 0 10px">${lines[i]}</div>
-${noShowButton}<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>${missedButton}
+${watchButton(lesson)}${noShowButton}<a href="${escapeHtml(lessonActionUrl(log, baseUrl))}" style="${LOG_STYLE}">Log it</a><a href="${escapeHtml(lessonActionUrl(remove, baseUrl))}" style="${REMOVE_STYLE}">Didn't happen</a>${missedButton}
 </div>`
     })
     const html = buttons ? blocks.join('\n') : `<ul>${blocks.join('')}</ul>`
@@ -220,6 +256,10 @@ export const MISSED_IT_NOTE = `<b>I missed it</b> is for a lesson you missed: it
 /** The "No-Show" button (#797), for the footer when a lesson carries it. */
 export const NO_SHOW_NOTE = `<b>No-Show</b> (only where Zoom shows nobody but you joined) keeps the lesson as a no-show and ` +
     `takes 1 credit, no refund. Nobody is emailed, messaged or texted.`
+
+/** The "Watch" button (#940), for the footer when a lesson carries it. */
+export const WATCH_NOTE = `<b>Watch</b> opens the lesson's recording (the one on the lesson, or the classroom video made ` +
+    `in its slot) so you can see what happened before choosing. It changes nothing.`
 
 /** What the buttons do, for the footer of any email that carries them. */
 export function unloggedButtonsNote(n: number): string {
@@ -255,14 +295,15 @@ export function buildUnloggedEmail(
         ? 'This email comes only on evenings with a lesson from today still unlogged. Lessons Zoom recorded are left out, since Zoom logs those itself. The 8:30am email is the backstop.'
         : MORNING_WHEN
     const noShow = lessons.some(suggestsNoShow) ? ` ${NO_SHOW_NOTE}` : ''
+    const watch = lessons.some(l => l.recordingUrl) ? ` ${WATCH_NOTE}` : ''
     const footer = buttons
-        ? `${unloggedButtonsNote(n)}${noShow} The <a href="${admin}">admin dashboard</a> works too. ${when}`
+        ? `${unloggedButtonsNote(n)}${noShow}${watch} The <a href="${admin}">admin dashboard</a> works too. ${when}`
         : `Nobody logged ${these}, so no credit was taken. If it happened, log it in the <a href="${admin}">admin dashboard</a> (that takes the credit). If it didn't, cancel it there. ${when}`
 
     return { subject, lines, html, footer, buttons }
 }
 
-const MORNING_WHEN = 'This email comes only on mornings with a lesson unlogged or logged automatically, or a family asking to move a lesson.'
+const MORNING_WHEN = 'This email comes only on mornings with a lesson today, a lesson unlogged or logged automatically, or a family asking to move a lesson.'
 
 /** Emails the studio inbox about the day's unlogged lessons. No email when there are none. */
 export async function alertUnloggedLessons(
@@ -332,17 +373,87 @@ export async function addZoomAttendance(client: DbClient, lessons: UnloggedLesso
     }
 }
 
+/**
+ * Finds a recording to watch for each unlogged lesson that has none on it yet
+ * (#940): a classroom lesson video made in its slot, matched the way the
+ * hand-off attaches one (matchLesson in lib/classroom-recordings.ts, against
+ * all of the student's lessons around then) and not already on another
+ * lesson. Recordings under 5 minutes are no-shows and never linked; one
+ * without a start stamp needs its saved size to pass as a lesson. Several in
+ * one slot (a restart): the longest. Zoom recordings still on their way to
+ * Dropbox are not looked for; they show once attached. Never throws.
+ */
+export async function addRecordingLinks(client: DbClient, lessons: UnloggedLesson[]): Promise<void> {
+    const missing = lessons.filter(l => !l.recordingUrl)
+    if (missing.length === 0) return
+    try {
+        const cr = await import('@/lib/classroom-recordings')
+        const studentIds = [...new Set(missing.map(l => l.studentId))]
+        const starts = missing.map(l => Date.parse(studioWallClockToISO(l.date, l.time)))
+        const ends = missing.map(l => lessonEndMs(l))
+        // A stamped recording starts at most 30 minutes early and is saved when
+        // it stops; three hours after the slot covers a long one.
+        const { data: recs, error } = await client
+            .from('classroom_recordings')
+            .select('id, student_id, url, created_at, size_bytes')
+            .eq('kind', cr.LESSON_KIND)
+            .in('student_id', studentIds)
+            .gte('created_at', new Date(Math.min(...starts) - 30 * 60_000).toISOString())
+            .lte('created_at', new Date(Math.max(...ends) + 3 * 60 * 60_000).toISOString())
+        if (error) throw new Error(`classroom_recordings query failed: ${error.message}`)
+        if (!recs || recs.length === 0) return
+
+        const dates = missing.map(l => l.date).sort()
+        const { data: around, error: lessonError } = await client
+            .from('lessons')
+            .select('id, student_id, date, time, duration, status, video_url')
+            .in('student_id', studentIds)
+            .gte('date', shiftDateStr(dates[0], -1))
+            .lte('date', shiftDateStr(dates[dates.length - 1], 1))
+        if (lessonError) throw new Error(`lessons query failed: ${lessonError.message}`)
+        const onALesson = new Set((around || []).map(l => l.video_url as string | null).filter(Boolean))
+
+        for (const rec of recs) {
+            const url = watchableUrl(rec.url)
+            if (!url || onALesson.has(rec.url)) continue
+            const minutes = cr.recordingMinutes(rec)
+            if (minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES) continue
+            if (minutes === null && !(Number(rec.size_bytes) >= cr.MIN_BYTES_WITHOUT_START)) continue
+            const studentLessons = (around || []).filter(l => l.student_id === rec.student_id) as ClassroomLessonRow[]
+            const match = cr.matchLesson(rec, studentLessons)
+            const lesson = match ? missing.find(l => l.id === match.id) : undefined
+            if (!lesson) continue
+            if (!lesson.recordingUrl || (minutes ?? 0) > (lesson.recordingMinutes ?? 0)) {
+                lesson.recordingUrl = url
+                lesson.recordingMinutes = minutes
+                lesson.classroomRecording = true
+            }
+        }
+    } catch (e) {
+        // The email still goes out, just without these Watch buttons.
+        console.error('[unlogged-lessons] recording links failed:', e instanceof Error ? e.message : e)
+    }
+}
+
 export type MorningEmail = { subject: string; lines: string[]; html: string; footer: string }
 
+const TODAY_NOTE = "Today's list: Eastern times, with the family's own time when their profile's zone reads differently. Teacher and test accounts are left out."
+
 /**
- * The whole morning email, without sending it (dry runs render this). Families
- * asking to move a lesson (#878) come first: they wait on Lionel's answer.
+ * The whole morning email, without sending it (dry runs render this). Today's
+ * lessons (#942) come first when `today` is given, then families asking to
+ * move a lesson (#878), who wait on Lionel's answer.
  */
 export function buildMorningEmail(
     date: string,
     unlogged: UnloggedLesson[],
     autoLogged: AutoLoggedLesson[],
-    { now = new Date(), baseUrl = appBaseUrl(), moveRequests = [] }: { now?: Date; baseUrl?: string; moveRequests?: PendingMoveRequest[] } = {},
+    { now = new Date(), baseUrl = appBaseUrl(), moveRequests = [], today }: {
+        now?: Date
+        baseUrl?: string
+        moveRequests?: PendingMoveRequest[]
+        today?: TodaySchedule
+    } = {},
 ): MorningEmail {
     const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
         weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC',
@@ -350,46 +461,60 @@ export function buildMorningEmail(
     const n = unlogged.length
     const m = autoLogged.length
     const k = moveRequests.length
+    const schedule = today ? todayScheduleSection(today) : { lines: [], html: '' }
     const auto = autoLoggedSection(autoLogged, date, { baseUrl })
-    const moves = moveRequestsSection(moveRequests, { now, baseUrl, heading: n > 0 || m > 0 })
+    const moves = moveRequestsSection(moveRequests, { now, baseUrl, heading: n > 0 || m > 0 || !!today })
     const movesSubject = k ? `${k === 1 ? '1 family asks' : `${k} families ask`} to move a lesson` : ''
     const admin = `${baseUrl}/admin`
+    const todayNote = today ? ` ${TODAY_NOTE}` : ''
 
     if (n === 0) {
         const autoSubject = m ? `${m} lesson${m === 1 ? '' : 's'} logged automatically on ${day}` : ''
+        const parts = [movesSubject, autoSubject].filter(Boolean)
         return {
-            subject: [movesSubject, autoSubject].filter(Boolean).join('; '),
-            lines: [...moves.lines, ...auto.lines],
-            html: [moves.html, m ? auto.html : ''].filter(Boolean).join('\n'),
-            footer: `${m ? `Everything from ${day} is logged.` : `Nothing from ${day} is waiting to be logged.`} The <a href="${admin}">admin dashboard</a> has the rest. ${MORNING_WHEN}`,
+            subject: parts.length
+                ? [...parts, todaySubject(today, { lead: false })].filter(Boolean).join('; ')
+                : todaySubject(today, { lead: true }),
+            lines: [...schedule.lines, ...moves.lines, ...auto.lines],
+            html: [schedule.html, moves.html, m ? auto.html : ''].filter(Boolean).join('\n'),
+            footer: `${m ? `Everything from ${day} is logged.` : `Nothing from ${day} is waiting to be logged.`} The <a href="${admin}">admin dashboard</a> has the rest.${todayNote} ${MORNING_WHEN}`,
         }
     }
 
     const unloggedEmail = buildUnloggedEmail(date, unlogged, { kind: 'morning', now, baseUrl })
     const noShows = unlogged.filter(suggestsNoShow).length
+    const todayPart = todaySubject(today, { lead: false })
     const subject = (k ? `${movesSubject}; ` : '') +
         unloggedEmail.subject +
         (noShows ? ` (${noShows} No-show?)` : '') +
-        (m ? `, ${m} logged automatically` : '')
-    const unloggedHtml = m || k
+        (m ? `, ${m} logged automatically` : '') +
+        (todayPart ? `; ${todayPart}` : '')
+    const unloggedHtml = m || k || today
         ? `<h3 style="font-size:16px;margin:4px 0 8px">Not logged yet (${n})</h3>\n${unloggedEmail.html}`
         : unloggedEmail.html
-    const html = [moves.html, unloggedHtml, m ? auto.html : ''].filter(Boolean).join('\n')
-    return { subject, lines: [...moves.lines, ...unloggedEmail.lines, ...auto.lines], html, footer: unloggedEmail.footer }
+    const html = [schedule.html, moves.html, unloggedHtml, m ? auto.html : ''].filter(Boolean).join('\n')
+    return {
+        subject,
+        lines: [...schedule.lines, ...moves.lines, ...unloggedEmail.lines, ...auto.lines],
+        html,
+        footer: `${unloggedEmail.footer}${todayNote}`,
+    }
 }
 
 export type MorningRun = {
     unlogged: UnloggedLesson[]
     autoLogged: AutoLoggedLesson[]
     moveRequests: PendingMoveRequest[]
+    today: TodaySchedule
     email: MorningEmail | null
     emailed: boolean
 }
 
 /**
- * The 8:30am email about `date` (yesterday): sent when there is an unlogged
- * lesson, an automatic log, or a family's move request (#878) to show.
- * `dryRun` builds it without sending.
+ * The 8:30am email about `date` (yesterday): sent when there is a lesson
+ * today (#942), an unlogged lesson, an automatic log, or a family's move
+ * request (#878) to show. It opens with today's lessons. `dryRun` builds it
+ * without sending.
  */
 export async function runMorningEmail(
     client: DbClient,
@@ -398,6 +523,14 @@ export async function runMorningEmail(
 ): Promise<MorningRun> {
     const unlogged = await findUnloggedLessons(client, date)
     await addZoomAttendance(client, unlogged, now)
+    await addRecordingLinks(client, unlogged)
+    const today: TodaySchedule = { date: shiftDateStr(date, 1), lessons: null }
+    try {
+        today.lessons = await findDayLessons(client, today.date)
+    } catch (e) {
+        // The rest still goes out, saying the list could not be loaded.
+        console.error("[unlogged-lessons] today's lessons lookup failed:", e instanceof Error ? e.message : e)
+    }
     const autoLogged = await findAutoLoggedLessons(client, date)
     let moveRequests: PendingMoveRequest[] = []
     try {
@@ -408,12 +541,12 @@ export async function runMorningEmail(
         // The rest of the email still goes out; admin shows the requests.
         console.error('[unlogged-lessons] move requests lookup failed:', e instanceof Error ? e.message : e)
     }
-    if (unlogged.length === 0 && autoLogged.length === 0 && moveRequests.length === 0) {
-        return { unlogged, autoLogged, moveRequests, email: null, emailed: false }
+    if (unlogged.length === 0 && autoLogged.length === 0 && moveRequests.length === 0 && !today.lessons?.length) {
+        return { unlogged, autoLogged, moveRequests, today, email: null, emailed: false }
     }
-    const email = buildMorningEmail(date, unlogged, autoLogged, { now, moveRequests })
+    const email = buildMorningEmail(date, unlogged, autoLogged, { now, moveRequests, today })
     const emailed = dryRun ? false : await sendCronAlert(client, email)
-    return { unlogged, autoLogged, moveRequests, email, emailed }
+    return { unlogged, autoLogged, moveRequests, today, email, emailed }
 }
 
 // ---------------------------------------------------------------------------
