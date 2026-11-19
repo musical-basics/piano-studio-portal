@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Play, Pause, Bookmark } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { RecordingMarker } from "@/lib/recording-markers"
@@ -10,6 +10,11 @@ interface VideoPlayerProps {
   title?: string
   /** Moments Lionel marked during the lesson (#874); tapping one jumps there. */
   markers?: RecordingMarker[]
+  /**
+   * Jump to this many seconds and play (the transcript search, #954). A new
+   * key jumps again, even to the same time.
+   */
+  seekTo?: { seconds: number; key: number }
 }
 
 /** Seconds of lead-in before a marked moment: he taps just after it happens. */
@@ -44,10 +49,25 @@ function toDirectUrl(url: string): string {
   return url
 }
 
-export function VideoPlayer({ url, title, markers = [] }: VideoPlayerProps) {
+export function VideoPlayer({ url, title, markers = [], seekTo }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
+  // A jump asked for before the video knows its length waits for it.
+  const pendingSeek = useRef<number | null>(null)
+
+  const seekAndPlay = (video: HTMLVideoElement, seconds: number) => {
+    video.currentTime = Math.max(0, seconds)
+    video.play().catch(() => { /* autoplay refused: the position is still set */ })
+  }
+
+  useEffect(() => {
+    if (!seekTo) return
+    const video = videoRef.current
+    if (video && video.readyState >= 1) seekAndPlay(video, seekTo.seconds)
+    else pendingSeek.current = seekTo.seconds
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seekTo?.key])
 
   const videoSrc = toDirectUrl(url)
 
@@ -69,7 +89,13 @@ export function VideoPlayer({ url, title, markers = [] }: VideoPlayerProps) {
           controls
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          onLoadedMetadata={(e) => {
+            setDuration(e.currentTarget.duration || 0)
+            if (pendingSeek.current !== null) {
+              seekAndPlay(e.currentTarget, pendingSeek.current)
+              pendingSeek.current = null
+            }
+          }}
         >
           <track kind="captions" />
         </video>
