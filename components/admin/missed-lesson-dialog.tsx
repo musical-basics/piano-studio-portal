@@ -17,8 +17,8 @@ interface MissedLessonDialogProps {
 /**
  * Confirm step for "I missed this": shows exactly what will happen (the message
  * text word for word, the credit, the removal) before anything is done, and then
- * what actually happened. The outcome is shown in the dialog itself rather than
- * a toast, because the admin page only mounts a toaster on the Inquiries tab.
+ * what actually happened. The outcome is shown in the dialog itself, next to
+ * the details it refers to.
  */
 export function MissedLessonDialog({ lessonId, onClose, onDone }: MissedLessonDialogProps) {
     const [preview, setPreview] = useState<MissedLessonPreview | null>(null)

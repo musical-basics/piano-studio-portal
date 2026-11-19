@@ -325,9 +325,14 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     }
 
     const handleMarkNoShow = async (lesson: TodayLesson) => {
-        if (confirm(`Mark ${lesson.student.name} as No - Show ? This will deduct 1 credit without refund or makeup option.`)) {
+        if (confirm(`Mark ${lesson.student.name} as No-Show? This will deduct 1 credit without refund or makeup option.`)) {
             setIsLoading(true)
-            const result = await markNoShow(lesson.id)
+            let result: { error?: string }
+            try {
+                result = await markNoShow(lesson.id)
+            } catch {
+                result = { error: "The request failed before an answer came back. Check the lesson before trying again." }
+            }
             setIsLoading(false)
 
             if (result.error) {
@@ -339,7 +344,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             } else {
                 toast({
                     title: "No-Show Recorded",
-                    description: `${lesson.student.name} marked as No - Show.Credit forfeited.`
+                    description: `${lesson.student.name} marked as No-Show. Credit forfeited.`
                 })
             }
         }
@@ -401,12 +406,16 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     }
 
     const handleCancelLesson = async (lessonId: string, studentName: string) => {
-        if (confirm(`Are you sure you want to cancel the lesson for ${studentName} ? The student will be fully refunded.`)) {
+        if (confirm(`Are you sure you want to cancel the lesson for ${studentName}? The student will be fully refunded.`)) {
             setIsLoading(true)
             // Import dynamically or pass as prop if import fails, but since this is client component in app router we can use server actions directly
-            const { cancelLesson } = await import("@/app/actions/lessons")
-
-            const result = await cancelLesson(lessonId)
+            let result: { error?: string; message?: string }
+            try {
+                const { cancelLesson } = await import("@/app/actions/lessons")
+                result = await cancelLesson(lessonId)
+            } catch {
+                result = { error: "The request failed before an answer came back. Check the lesson before trying again." }
+            }
             setIsLoading(false)
 
             if (result.error) {

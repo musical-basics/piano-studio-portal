@@ -14,8 +14,8 @@ import { getMissedLessonPreview, markLessonMissed, type MissedLessonPreview } fr
  * The red "N unlogged" badge next to the studio name on the admin home (#760).
  * It opens the list of past lessons nobody logged, each with the same three
  * buttons as the unlogged-lessons emails. Every button asks first, showing what
- * the email's confirm page shows, then reports what happened in the dialog (the
- * admin page has no toaster outside Inquiries). The list comes from the page
+ * the email's confirm page shows, then reports what happened in the dialog,
+ * next to the lesson it is about. The list comes from the page
  * and is refreshed after each press; with none left the badge goes.
  */
 

@@ -13,7 +13,6 @@ import { Mail, Phone, Send, UserCheck, Loader2 } from "lucide-react"
 import type { Inquiry } from "@/types/admin"
 import { updateInquiryStatus, approveProspect, sendInquiryReply } from "@/app/actions/inquiries"
 import { useToast } from "@/hooks/use-toast"
-import { Toaster } from "@/components/ui/toaster"
 import { useRouter } from "next/navigation"
 
 interface InquiriesTabProps {
@@ -336,7 +335,6 @@ export function InquiriesTab({ inquiries, error }: InquiriesTabProps) {
                     )}
                 </DialogContent>
             </Dialog>
-            <Toaster />
         </Card>
     )
 }

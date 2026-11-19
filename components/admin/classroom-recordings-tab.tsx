@@ -46,7 +46,7 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
     const [loadError, setLoadError] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [attaching, setAttaching] = useState<string | null>(null)
-    // Shown above the table (the admin page has no toaster outside Inquiries).
+    // Shown above the table, next to the rows it is about.
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
     const load = useCallback(async () => {

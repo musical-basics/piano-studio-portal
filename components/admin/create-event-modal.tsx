@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Video, MapPin, Sparkles, Users } from "lucide-react"
 import { getActiveStudents, createEvent, updateEvent, type CreateEventInput, type AdminEvent } from "@/app/actions/events"
 import { isoToStudioWallClock } from "@/lib/studio-timezone"
+import { useToast } from "@/hooks/use-toast"
 
 // Helper to extract STUDIO wall-clock date and time from an ISO string.
 // The form's date/time fields are studio wall-clock (STUDIO_TZ), so prefill must
@@ -36,6 +37,7 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEd
   const [students, setStudents] = useState<Student[]>([])
   const [isLoadingStudents, setIsLoadingStudents] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
   // Form state
   const [title, setTitle] = useState("")
@@ -146,19 +148,28 @@ export function CreateEventModal({ open, onOpenChange, onEventCreated, eventToEd
       invited_student_ids: selectedStudents,
     }
 
-    let result
-    if (eventToEdit) {
-      result = await updateEvent(eventToEdit.id, input)
-    } else {
-      result = await createEvent(input)
+    let result: { success: boolean; error?: string }
+    try {
+      result = eventToEdit ? await updateEvent(eventToEdit.id, input) : await createEvent(input)
+    } catch {
+      result = { success: false, error: "The request failed before an answer came back." }
     }
 
     setIsSubmitting(false)
 
+    // Say what happened either way: a failed save used to leave the dialog
+    // open with no word about why (#787).
     if (result.success) {
+      toast({ title: eventToEdit ? "Event updated" : "Event created" })
       if (!eventToEdit) resetForm()
       onOpenChange(false)
       onEventCreated?.()
+    } else {
+      toast({
+        variant: "destructive",
+        title: eventToEdit ? "Could not update the event" : "Could not create the event",
+        description: result.error || "Unknown error",
+      })
     }
   }
 
