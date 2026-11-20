@@ -1,5 +1,6 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
+import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import {
     buildDayChanges,
     type AutoLogRow,
@@ -70,10 +71,18 @@ export async function loadDayChanges(client: DbClient, date: string): Promise<Da
     for (const r of [...events, ...credits, ...cancellations, ...created, ...moves]) ids.add(r.student_id)
     for (const l of lessons.values()) ids.add(l.student_id)
     const names = new Map<string, string>()
+    // The test account ("Test / Teacher", status 'other') and the teacher accounts are
+    // left out, as in the Monday email and the roster counts: test runs would fill the list.
+    const hidden = new Set<string>()
     if (ids.size) {
-        const rows = must<Array<{ id: string; name: string | null }>>('profiles', await client.from('profiles').select('id, name').in('id', Array.from(ids)) as any)
-        for (const p of rows) names.set(p.id, p.name || 'A student')
+        const rows = must<Array<{ id: string; name: string | null; status: string | null; credits: number | null }>>('profiles',
+            await client.from('profiles').select('id, name, status, credits').in('id', Array.from(ids)) as any)
+        for (const p of rows) {
+            names.set(p.id, p.name || 'A student')
+            if (p.status === 'other' || isUntrackedTeacherAccount(p)) hidden.add(p.id)
+        }
     }
 
     return buildDayChanges({ events, credits, cancellations, created, autoLogs, moves, lessons, names })
+        .filter(c => !c.studentId || !hidden.has(c.studentId))
 }
