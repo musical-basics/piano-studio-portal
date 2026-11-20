@@ -14,7 +14,7 @@ export const config = {
          * - favicon.ico (favicon file)
          * Feel free to modify this pattern to include more paths.
          */
-        // manifest.webmanifest (#1081) needs no sign-in session.
-        '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/webhooks|api/agent|api/board-send|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        // manifest.webmanifest (#1081) and api/calendar (#1082) need no sign-in session.
+        '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/webhooks|api/agent|api/board-send|api/calendar|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }

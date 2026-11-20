@@ -95,6 +95,7 @@ import { studioTzAbbr, studioToday } from "@/lib/studio-timezone"
 import { familyLocalTime, formatLessonTimeForFamily } from "@/lib/family-time"
 import { classroomLinkFor, lessonVenue } from "@/lib/lesson-venue"
 import { InstallAppHint } from "./install-app-hint"
+import { CalendarFeedCard } from "./calendar-feed-card"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -852,6 +853,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                         )}
                     </CardContent>
                 </Card>
+
+                {/* #1082: private calendar feed of this family's lessons */}
+                <CalendarFeedCard isPreview={isAdminPreview} />
 
                 {/* Upcoming Events (recitals etc.): visible to every invited student,
                     with a clear confirmed/unconfirmed attendance state */}
