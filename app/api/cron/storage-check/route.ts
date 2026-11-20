@@ -10,8 +10,8 @@ export const maxDuration = 60
 // Each morning: measure the database and Storage files against the Supabase
 // free plan (500 MB and 1 GB) and email the studio inbox when either passes
 // 80%, at most weekly while over and once more at 95% (Lionel's #778,
-// lib/storage-usage.ts). Since #1072 also Cloudflare R2 (classroom videos),
-// every bucket on the account against its free 10 GB, same 80% email.
+// lib/storage-usage.ts). Since #1072 also the studio's Cloudflare R2 buckets
+// (classroom and practice videos) against the free 10 GB, same 80% email.
 // Silent otherwise; nothing goes to families.
 // Manual runs: ?dry=1 measures and returns what it would email (with the HTML)
 // without sending or saving. With ?dry=1 only, ?db_limit_mb=N and

@@ -2,7 +2,7 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { formatStudioTime } from '@/lib/backup-watchdog'
 import { isoToStudioWallClock } from '@/lib/studio-timezone'
-import { measureR2, R2_FREE_BYTES, R2_PRICE_PER_GB_MONTH, r2Configured, RECORDINGS_BUCKET, type R2Usage } from '@/lib/classroom-r2'
+import { measureR2, PRACTICE_BUCKET, R2_FREE_BYTES, R2_PRICE_PER_GB_MONTH, r2Configured, RECORDINGS_BUCKET, type R2Usage } from '@/lib/classroom-r2'
 
 /**
  * Storage alert (Lionel's #778).
@@ -17,9 +17,10 @@ import { measureR2, R2_FREE_BYTES, R2_PRICE_PER_GB_MONTH, r2Configured, RECORDIN
  * when it crosses 95%. Silent otherwise.
  *
  * Since #1072 it also measures Cloudflare R2, where the classroom keeps its
- * lesson videos (and families' practice videos sit): Cloudflare's free 10 GB
- * counts every bucket on the account together, so that total is what is
- * checked, with the same 80% email (listing the biggest buckets). Past 10 GB
+ * lesson videos and families' practice videos sit: those two studio buckets
+ * together against the free 10 GB, with the same 80% email. Other projects
+ * share the Cloudflare account; their buckets are never alerted on, only the
+ * whole account's total is mentioned as one line of information. Past 10 GB
  * nothing stops, it just costs $0.015 per GB a month, so an R2 email is never
  * marked urgent. If R2 cannot be measured the run still checks Supabase.
  *
@@ -80,8 +81,8 @@ export type ResourceReport = {
 
 export type StorageEmail = { subject: string; html: string; urgent: boolean }
 
-const LABEL: Record<Resource, string> = { database: 'database', files: 'file storage', r2: 'Cloudflare R2 storage' }
-const TITLE: Record<Resource, string> = { database: 'Database', files: 'File storage', r2: 'Cloudflare R2 (classroom videos and every other bucket on the account)' }
+const LABEL: Record<Resource, string> = { database: 'database', files: 'file storage', r2: 'classroom and practice video storage (Cloudflare R2)' }
+const TITLE: Record<Resource, string> = { database: 'Database', files: 'File storage', r2: 'Cloudflare R2 (classroom and practice videos)' }
 
 /** Supabase sizes count 1 MB = 1024 * 1024 bytes; Cloudflare counts 1 GB = 10^9 bytes. */
 export function formatSize(bytes: number, unit: 'binary' | 'decimal' = 'binary'): string {
@@ -188,7 +189,7 @@ function biggestLine(r: ResourceReport, usage: Partial<Usage>): string {
     if (r.resource === 'r2') {
         const buckets = (usage.r2?.buckets ?? []).filter(b => b.bytes > 0).slice(0, 6)
         return buckets.length
-            ? `Biggest buckets: ${buckets.map(b => `${esc(b.name)}${b.name === RECORDINGS_BUCKET ? ' (classroom videos)' : ''} ${formatSize(b.bytes, 'decimal')} (${b.files} file${b.files === 1 ? '' : 's'})`).join(', ')}.`
+            ? `By bucket: ${buckets.map(b => `${esc(b.name)}${b.name === RECORDINGS_BUCKET ? ' (classroom videos)' : b.name === PRACTICE_BUCKET ? ' (practice videos)' : ''} ${formatSize(b.bytes, 'decimal')} (${b.files} file${b.files === 1 ? '' : 's'})`).join(', ')}.`
             : ''
     }
     if (r.resource === 'database') {
@@ -204,8 +205,7 @@ function biggestLine(r: ResourceReport, usage: Partial<Usage>): string {
 const AT_LIMIT: Record<Resource, string> = {
     database: 'At the limit Supabase makes the database read-only: lessons, logs, credits and messages stop saving until it is back under.',
     files: 'At the limit Supabase stops taking uploads: lesson materials, sheet music and chat attachments would fail to upload.',
-    r2: `Past ${formatSize(R2_FREE_BYTES, 'decimal')} nothing stops working: Cloudflare charges $${R2_PRICE_PER_GB_MONTH} per GB a month over it. `
-        + 'The free 10 GB is for the whole Cloudflare account, every bucket together, not only the classroom videos.',
+    r2: `Past ${formatSize(R2_FREE_BYTES, 'decimal')} nothing stops working: Cloudflare charges $${R2_PRICE_PER_GB_MONTH} per GB a month over it.`,
 }
 
 const TO_DO: Record<Resource, string> = {
@@ -214,8 +214,16 @@ const TO_DO: Record<Resource, string> = {
     files: 'What to do: delete files nobody uses any more from the biggest folders above (Supabase dashboard, Storage), '
         + 'or move the project to Supabase Pro ($25 a month, 100 GB files and 8 GB database).',
     r2: 'What to do: classroom videos older than 60 days already move to their Dropbox copy every day on their own. '
-        + 'To bring it down further, delete buckets or files nobody uses any more from the biggest buckets above (Cloudflare dashboard, R2), '
+        + 'To bring it down further, delete test and no-show recordings (admin, Classroom recordings) or old practice videos, '
         + 'or let it be and pay the cents above.',
+}
+
+/** One line of information: the whole Cloudflare account, other projects included (never alerted on). */
+function accountLine(usage: Partial<Usage>): string {
+    const a = usage.r2?.account
+    if (!a) return ''
+    return `For information: the whole Cloudflare account holds ${formatSize(a.bytes, 'decimal')} in ${a.buckets} bucket${a.buckets === 1 ? '' : 's'}, `
+        + 'other projects included. This check counts only the studio\'s classroom and practice video buckets.'
 }
 
 /** What R2 over its free 10 GB costs a month at this size. */
@@ -256,12 +264,13 @@ export function renderStorageEmail(due: ResourceReport[], all: ResourceReport[],
             ? `<p style="margin:16px 0 4px;color:#444">${others.map(r => `The ${LABEL[r.resource]} is ${sizeOf(r.resource, r.bytes)} of ${sizeOf(r.resource, r.limit)} (${r.percent}%)${r.level ? ', already emailed about' : ', fine'}.`).join(' ')}</p>`
             : '')
         + (usage.r2Error ? `<p style="margin:16px 0 4px;color:#444">Cloudflare R2 could not be measured today: ${esc(usage.r2Error)}</p>` : '')
+        + (accountLine(usage) ? `<p style="margin:16px 0 4px;color:#444">${accountLine(usage)}</p>` : '')
         + `<p style="margin:16px 0 0;color:#444">Measured ${esc(formatStudioTime(now))}.</p>`
     return { subject, html, urgent }
 }
 
 export const STORAGE_FOOTER = `Sent by the portal's daily storage check (/api/cron/storage-check). `
-    + `It emails when the database, files or Cloudflare R2 pass ${WARN_AT * 100}% of their free limit, again at most once a week while they stay over, `
+    + `It emails when the database, files or the studio's Cloudflare R2 video buckets pass ${WARN_AT * 100}% of their free limit, again at most once a week while they stay over, `
     + `and once more when one passes ${URGENT_AT * 100}%.`
 
 /** Reads the sizes through the service-role-only SQL function. */
@@ -354,6 +363,7 @@ export async function runStorageCheck(opts: StorageCheckOptions): Promise<Storag
 
     const sizes = reports.map(r => `${LABEL[r.resource]} ${sizeOf(r.resource, r.bytes)} of ${sizeOf(r.resource, r.limit)} (${r.percent}%)`).join(', ')
         + (usage.r2Error ? `, R2 not measured (${usage.r2Error})` : '')
+        + (usage.r2?.account ? ` (whole Cloudflare account ${formatSize(usage.r2.account.bytes, 'decimal')}, other projects included, not checked)` : '')
     const mail = email ? (dryRun ? `, would email "${email.subject}"` : emailed ? ', emailed the studio' : ', email failed to send') : ''
     return {
         message: `${sizes}${mail}${dryRun ? ' (dry run, nothing saved)' : ''}`,

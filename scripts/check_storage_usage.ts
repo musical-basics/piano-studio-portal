@@ -125,20 +125,22 @@ async function main() {
     assert.ok(readings.length <= 36, `kept ${readings.length} readings`)
     assert.equal(new Set(readings.map((x: any) => x.date)).size, readings.length)
 
-    // ---- Cloudflare R2 (#1072): the whole account against the free 10 GB, decimal GB, never "urgent".
+    // ---- Cloudflare R2 (#1072): the studio's two video buckets against the free 10 GB, decimal GB,
+    // never "urgent"; other projects' buckets only ever show as the account total.
     {
         const { client: db2, rows: rows2 } = fakeDb()
         const mails: StorageEmail[] = []
         const send = async (e: StorageEmail) => { mails.push(e); return true }
         const GB = 1e9
+        // `gb` is the studio's two buckets; the account also holds 13 GB of other projects.
         const r2At = (gb: number) => async () => ({
             bytes: gb * GB,
-            files: 300,
+            files: 100,
             buckets: [
-                { name: 'other-site', bytes: (gb - 2.5) * GB, files: 200 },
-                { name: 'musicalbasics-recordings', bytes: 2.5 * GB, files: 99 },
-                { name: 'empty', bytes: 0, files: 0 },
+                { name: 'musicalbasics-recordings', bytes: (gb - 0.5) * GB, files: 90 },
+                { name: 'studio-practice-videos', bytes: 0.5 * GB, files: 10 },
             ],
+            account: { bytes: (gb + 13) * GB, buckets: 16 },
         })
         let at = Date.parse('2026-11-21T14:15:00Z')
         const run = async (gb: number | 'fail') => {
@@ -149,22 +151,26 @@ async function main() {
             at += 86_400_000
             return r
         }
-        let r2 = await run(7.9)
+        // Today's real sizes: the studio's 2.55 GB is fine even though the whole account is 15.5 GB.
+        let r2 = await run(2.55)
         assert.equal(mails.length, 0)
-        assert.match(r2.message, /Cloudflare R2 storage 7\.9 GB of 10 GB \(79%\)/)
+        assert.match(r2.message, /classroom and practice video storage \(Cloudflare R2\) 2\.55 GB of 10 GB \(25%\)/)
+        assert.match(r2.message, /whole Cloudflare account 15\.55 GB, other projects included, not checked/)
+        r2 = await run(7.9)
+        assert.equal(mails.length, 0)
         r2 = await run(8.2)
         assert.equal(mails.length, 1)
-        assert.equal(mails[0].subject, 'Studio Cloudflare R2 storage is at 82% of the free 10 GB (8.2 GB of 10 GB)')
+        assert.equal(mails[0].subject, 'Studio classroom and practice video storage (Cloudflare R2) is at 82% of the free 10 GB (8.2 GB of 10 GB)')
         assert.equal(mails[0].urgent, false)
-        assert.match(mails[0].html, /musicalbasics-recordings \(classroom videos\) 2\.5 GB \(99 files\)/)
-        assert.doesNotMatch(mails[0].html, /empty 0/)
-        assert.match(mails[0].html, /whole Cloudflare account/)
+        assert.match(mails[0].html, /musicalbasics-recordings \(classroom videos\) 7\.7 GB \(90 files\)/)
+        assert.match(mails[0].html, /studio-practice-videos \(practice videos\) 500 MB \(10 files\)/)
+        assert.match(mails[0].html, /whole Cloudflare account holds 21\.2 GB in 16 buckets/)
         assert.match(mails[0].html, /database is 21 MB of 500 MB \(4%\), fine/)
         // Over the free 10 GB: the 95% email, with the monthly cost, still not urgent.
         await run(15.5)
         assert.equal(mails.length, 2)
         assert.equal(mails[1].urgent, false)
-        assert.match(mails[1].subject, /^Studio Cloudflare R2 storage is at 155%/)
+        assert.match(mails[1].subject, /^Studio classroom and practice video storage \(Cloudflare R2\) is at 155%/)
         assert.match(mails[1].html, /costs about \$0\.09 a month \(6 GB over the free 10 GB\)/)
         // R2 cannot be measured: Supabase is still checked, the R2 alert state is kept, no email.
         r2 = await run('fail')

@@ -15,6 +15,10 @@ import { AwsClient } from 'aws4fetch'
  */
 
 export const RECORDINGS_BUCKET = process.env.CLASSROOM_R2_BUCKET || 'musicalbasics-recordings'
+/** Families' practice videos (#875, lib/practice-videos.ts). */
+export const PRACTICE_BUCKET = process.env.PRACTICE_VIDEOS_BUCKET || 'studio-practice-videos'
+/** The studio's own buckets: the only ones the storage alert counts (other projects share the account). */
+export const STUDIO_BUCKETS = [RECORDINGS_BUCKET, PRACTICE_BUCKET]
 /** The account's free storage, in bytes (Cloudflare counts 1 GB = 10^9 bytes here). */
 export const R2_FREE_BYTES = 10 * 1e9
 export const R2_PRICE_PER_GB_MONTH = 0.015
@@ -115,25 +119,28 @@ export function r2KeyFromUrl(url: string | null | undefined): string | null {
 }
 
 export type R2Usage = {
-    /** Every bucket on the account together: what the free 10 GB is measured against. */
+    /** The studio's own buckets together (classroom and practice videos): what the alert counts. */
     bytes: number
     files: number
-    /** Biggest first. */
+    /** The studio's buckets, biggest first. */
     buckets: { name: string; bytes: number; files: number }[]
+    /** Every bucket on the account, other projects' too: information only, never alerted on. */
+    account: { bytes: number; buckets: number }
 }
 
-/** Sizes every bucket on the account (a few list calls per bucket). */
+/** Sizes the studio's buckets, and every bucket on the account for the info line (a few list calls each). */
 export async function measureR2(): Promise<R2Usage> {
     const names = await listR2Buckets()
-    const buckets: R2Usage['buckets'] = []
+    const all: R2Usage['buckets'] = []
     for (const name of names) {
         const objects = await listR2Objects(name)
-        buckets.push({ name, bytes: objects.reduce((sum, o) => sum + o.size, 0), files: objects.length })
+        all.push({ name, bytes: objects.reduce((sum, o) => sum + o.size, 0), files: objects.length })
     }
-    buckets.sort((a, b) => b.bytes - a.bytes)
+    const buckets = all.filter(b => STUDIO_BUCKETS.includes(b.name)).sort((a, b) => b.bytes - a.bytes)
     return {
         bytes: buckets.reduce((sum, b) => sum + b.bytes, 0),
         files: buckets.reduce((sum, b) => sum + b.files, 0),
         buckets,
+        account: { bytes: all.reduce((sum, b) => sum + b.bytes, 0), buckets: all.length },
     }
 }
