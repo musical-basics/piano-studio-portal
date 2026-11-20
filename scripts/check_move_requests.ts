@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict'
 import { MOVE_NOTE_MAX, cleanMoveNote, familySlotLabel, lessonWeek, outcomeForAdmin, staleReason, studioSlotLabel, weekLabel } from '../lib/move-requests'
-import { describeMoveRequest } from '../lib/move-requests-email'
+import { describeMoveRequest, moveRequestAlertEmail } from '../lib/move-requests-email'
 import { signLessonAction, verifyLessonAction } from '../lib/lesson-action-links'
 import { buildMorningEmail } from '../lib/unlogged-lessons'
 import type { PendingMoveRequest } from '../lib/core/move-requests'
@@ -98,8 +98,25 @@ assert.match(noted, /Their note: &ldquo;travelling &lt;b&gt;&amp; back&lt;\/b&gt
 const notedEmail = buildMorningEmail('2026-11-18', [], [], { now, baseUrl: 'https://example.test', moveRequests: [{ ...pending, note: 'soccer game' }] })
 assert.match(notedEmail.html, /Their note: &ldquo;soccer game&rdquo;/)
 
+// The email the moment a family asks (#1323): one request, its buttons, the admin link, the note.
+const alert = moveRequestAlertEmail({ ...pending, note: 'soccer game' }, { now, baseUrl: 'https://example.test' })
+assert.equal(alert.subject, 'Piano Student asks to move Fri, Nov 20 at 4:30pm EST')
+assert.equal((alert.html.match(/https:\/\/example\.test\/api\/lesson-action\?t=/g) || []).length, 2)
+assert.match(alert.html, />Approve</)
+assert.match(alert.html, />Decline</)
+assert.match(alert.html, /href="https:\/\/example\.test\/admin"/)
+assert.match(alert.html, /Their note: &ldquo;soccer game&rdquo;/)
+assert.doesNotMatch(alert.html, /<h3/)
+assert.equal(alert.lines.length, 1)
+// Asked the day before (Thu 8:30am EST, lesson Fri 4:30pm EST, 32h away): flagged as soon.
+assert.match(alert.html, /Soon:<\/b> the lesson is in about 32 hours/)
+// Same day: 2 hours before.
+assert.match(moveRequestAlertEmail(pending, { now: new Date('2026-11-20T19:30:00Z'), baseUrl: 'https://example.test' }).html, /in about 2 hours/)
+// A week ahead: no nudge.
+assert.doesNotMatch(moveRequestAlertEmail(pending, { now: new Date('2026-11-13T19:30:00Z'), baseUrl: 'https://example.test' }).html, /Soon:/)
+
 // No em dashes anywhere a person reads.
-for (const s of [only.subject, only.html, only.footer, two.subject, weekLabel('2026-11-20'), outcomeForAdmin('lesson_changed')]) {
+for (const s of [alert.subject, alert.html, alert.footer, only.subject, only.html, only.footer, two.subject, weekLabel('2026-11-20'), outcomeForAdmin('lesson_changed')]) {
     assert.ok(!s.includes(String.fromCharCode(0x2014)), `em dash in: ${s}`)
 }
 

@@ -1,10 +1,13 @@
 import { LINK_TTL_DAYS, appBaseUrl, lessonActionUrl, signLessonAction } from '@/lib/lesson-action-links'
 import type { PendingMoveRequest } from '@/lib/core/move-requests'
+import { studioStartMs } from '@/lib/move-requests'
 
 /**
  * The morning email's "asking to move a lesson" part (#878): each family's
  * request with one-time Approve and Decline buttons (app/api/lesson-action),
- * signed like the other lesson buttons and carrying the request id.
+ * signed like the other lesson buttons and carrying the request id. Since
+ * #1323 the same block also goes out on its own the moment a family asks
+ * (moveRequestAlertEmail).
  */
 
 function escapeHtml(s: string): string {
@@ -60,4 +63,33 @@ export function moveRequestsSection(
         : `<ul>${blocks.join('')}</ul><p style="font-size:14px;color:#57534e">Approve or decline in the <a href="${baseUrl}/admin">admin dashboard</a> (Today tab).</p>`
     const note = buttons ? `<p style="font-size:14px;color:#57534e;margin:0 0 16px">${moveRequestsNote(n)}</p>` : ''
     return { lines, html: `${title}${body}\n${note}` }
+}
+
+/** "Soon: the lesson is in about 3 hours." when the lesson is close; '' otherwise. */
+function soonNote(r: PendingMoveRequest, now: Date): string {
+    const hours = (studioStartMs(r.fromDate, r.fromTime) - now.getTime()) / 3_600_000
+    if (hours > 36 || hours <= 0) return ''
+    const h = Math.round(hours)
+    const when = hours < 1 ? 'in less than an hour' : `in about ${h} hour${h === 1 ? '' : 's'}`
+    return `<p style="font-size:15px;margin:0 0 12px"><b>Soon:</b> the lesson is ${when}.</p>`
+}
+
+/**
+ * The email to the studio inbox the moment a family asks to move a lesson
+ * (#1323), so a same-day request isn't left for the 8:30am email. One per
+ * request; nothing goes to the family. The same one-time Approve and Decline
+ * buttons as the morning email, plus the admin link.
+ */
+export function moveRequestAlertEmail(
+    r: PendingMoveRequest,
+    { now = new Date(), baseUrl = appBaseUrl() }: { now?: Date; baseUrl?: string } = {},
+): { subject: string; lines: string[]; html: string; footer: string } {
+    const section = moveRequestsSection([r], { now, baseUrl, heading: false })
+    return {
+        subject: `${r.studentName} asks to move ${r.fromLabel}`,
+        lines: section.lines,
+        html: `${soonNote(r, now)}${section.html}
+<p style="font-size:14px;color:#57534e;margin:0 0 8px">Or answer it in the <a href="${escapeHtml(baseUrl)}/admin">admin dashboard</a> (Today tab).</p>`,
+        footer: 'Sent once, the moment the family asked. Until you answer, it is also in the 8:30am email.',
+    }
 }

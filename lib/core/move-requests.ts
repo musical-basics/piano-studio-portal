@@ -2,6 +2,8 @@
  * "Request a different time" (#878). A family asks to move one upcoming lesson
  * to one of Lionel's free slots in that lesson's week; nothing moves until he
  * approves, from the admin Today tab or the Approve button in the 8:30am email.
+ * Since #1323 the studio inbox is also emailed the moment a request is filed
+ * (same buttons), and since #1346 the family can add a short note.
  *
  *   - Approve runs rescheduleLessonCore, the usual reschedule (Zoom, Google
  *     Calendar, the usual "Lesson Rescheduled" email to the family). Nothing
@@ -22,6 +24,8 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { rescheduleLessonCore } from '@/lib/core/lessons'
 import { findFreeSlotsCore } from '@/lib/core/free-slots'
 import { LATE_CANCEL_WINDOW_HOURS } from '@/lib/billing-policy'
+import { sendCronAlert } from '@/lib/cron-alerts'
+import { moveRequestAlertEmail } from '@/lib/move-requests-email'
 import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import {
     cleanMoveNote,
@@ -346,7 +350,7 @@ export async function fileMoveRequestCore(
     const lesson = await loadLesson(client, lessonId)
     if (!lesson || 'error' in lesson) return { error: 'This lesson could not be read just now. Please try again.' }
 
-    const { error } = await client.from('lesson_move_requests').insert({
+    const { data: row, error } = await client.from('lesson_move_requests').insert({
         lesson_id: lessonId,
         student_id: studentId,
         from_date: lesson.date,
@@ -356,14 +360,32 @@ export async function fileMoveRequestCore(
         duration: options.duration,
         status: 'pending',
         note: cleanMoveNote(note),
-    })
-    if (error) {
-        if (error.code === '23505') return { error: 'You already asked to move this lesson. Refresh the page to see that request.' }
-        console.error('[move-requests] insert failed:', error.message)
+    }).select(COLUMNS).single()
+    if (error || !row) {
+        if (error?.code === '23505') return { error: 'You already asked to move this lesson. Refresh the page to see that request.' }
+        console.error('[move-requests] insert failed:', error?.message)
         return { error: 'Your request could not be saved just now. Please try again in a minute.' }
     }
     console.log(`[move-requests] student ${studentId} asked to move lesson ${lessonId} (${lesson.date} ${hhmm(lesson.time)}) to ${date} ${time}`)
+    await emailStudioAboutRequest(client, row as MoveRequestRow)
     return { success: true, toLabel: picked.label }
+}
+
+/**
+ * #1323: the studio inbox hears about a request the moment it is filed, with
+ * the Approve and Decline buttons, instead of at the next 8:30am email. One
+ * email per request; nothing to the family. Never fails the request itself.
+ */
+async function emailStudioAboutRequest(client: DbClient, row: MoveRequestRow): Promise<void> {
+    try {
+        const { data: student } = await client.from('profiles').select('name').eq('id', row.student_id).maybeSingle()
+        const email = moveRequestAlertEmail(toPending(row, (student?.name as string) || 'Student'))
+        const sent = await sendCronAlert(client, { subject: email.subject, lines: email.lines, html: email.html, footer: email.footer })
+        if (sent) console.log(`[move-requests] studio emailed about request ${row.id}`)
+        else console.error(`[move-requests] studio email about request ${row.id} did not go out (it is still on the Today tab and in the 8:30am email)`)
+    } catch (err: any) {
+        console.error(`[move-requests] studio email about request ${row.id} failed (non-blocking):`, err?.message ?? err)
+    }
 }
 
 /** The family takes back its own pending request. */
