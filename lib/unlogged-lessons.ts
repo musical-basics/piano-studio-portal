@@ -519,7 +519,7 @@ export function buildMorningEmail(
     const m = autoLogged.length
     const k = moveRequests.length
     const schedule = today ? todayScheduleSection(today) : { lines: [], html: '' }
-    const auto = autoLoggedSection(autoLogged, date, { baseUrl })
+    const auto = autoLoggedSection(autoLogged, date, { baseUrl, now })
     const moves = moveRequestsSection(moveRequests, { now, baseUrl, heading: n > 0 || m > 0 || !!today })
     const movesSubject = k ? `${k === 1 ? '1 family asks' : `${k} families ask`} to move a lesson` : ''
     const ranShort = shortLessonsSection(short, { baseUrl })

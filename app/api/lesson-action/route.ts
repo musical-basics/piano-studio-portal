@@ -8,6 +8,7 @@ import { QUIET_LOG_AFTER_DAYS, isTooOldForUsualLog, logOldLessonQuietly } from '
 import { lessonEndMs } from '@/lib/unlogged-lessons'
 import { MISSED_LESSON_CREDIT_CENTS, getMissedLessonPreviewCore, missedLessonCore } from '@/lib/core/missed-lesson'
 import { markNoShowCore } from '@/lib/core/no-show'
+import { getUndoLogPreviewCore, undoLessonLogCore, type UndoLogMode } from '@/lib/core/undo-log'
 import { attendanceNote, zoomAttendance } from '@/lib/zoom-attendance'
 import { classroomNoteForLesson } from '@/lib/core/classroom-lesson-attendance'
 import { findLastHomework } from '@/lib/last-homework'
@@ -59,6 +60,14 @@ export const dynamic = 'force-dynamic'
  *             email); Decline sends nothing. Both re-check the request itself
  *             (still pending, lesson still where it was, times still ahead,
  *             and for Approve the picked time still free).
+ *
+ *   - undo_log (#1063): "Undo log" next to each lesson the portal logged by
+ *             itself (morning email). The page asks for a reason (required)
+ *             and offers the admin dialog's choice, kept as a free lesson or
+ *             back to unlogged, and the family message only if ticked (the
+ *             exact text is on the page). Runs undoLessonLogCore, the admin
+ *             "Undo log" path (#794). That core claims the lesson in its exact
+ *             logged state, so a repeat never gives two credits back.
  */
 
 type LessonRow = {
@@ -117,6 +126,11 @@ function page(title: string, bodyHtml: string, status = 200, script?: string): R
   .remove { background: #b91c1c; }
   .missed { background: #b45309; }
   .noshow { background: #92400e; }
+  .undo { background: #b91c1c; }
+  input[type=text] { display: block; box-sizing: border-box; width: 100%; padding: 10px 12px; font: 16px/1.4 inherit; font-family: inherit; border: 1px solid #d6d3d1; border-radius: 8px; }
+  label.choice { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; margin: 10px 0 0; }
+  label.choice input { margin-top: 4px; flex-shrink: 0; }
+  label.choice.off { color: #a8a29e; }
   .quote { white-space: pre-wrap; background: #f5f5f4; border-left: 3px solid #d6d3d1; border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; font-size: 16px; }
   ul.effects { margin: 0 0 12px; padding-left: 20px; }
   ul.effects li { margin: 0 0 4px; }
@@ -255,6 +269,7 @@ function alreadyUsed(outcome: string | null): Response {
         : outcome?.startsWith('no-show') ? ' It marked the lesson a no-show and took 1 credit.'
         : outcome?.startsWith('moved') ? " It approved the family's request and moved the lesson."
         : outcome?.startsWith('declined') ? " It declined the family's request (nothing was sent)."
+        : outcome?.startsWith('undone') ? ' It undid the log.'
         : ''
     return message('This link was already used', `Each button works once.${did} Nothing changed this time.`)
 }
@@ -354,6 +369,105 @@ async function movePost(
     return message('Moved', result.summary)
 }
 
+// ---------------------------------------------------------------------------
+// "Undo log" (#1063). A logged lesson, so these skip checkLesson (which only
+// accepts unlogged ones); undoLessonLogCore checks the lesson itself.
+// ---------------------------------------------------------------------------
+
+const UNDO_REASON_MAX = 200
+
+const UNDO_SOURCE: Record<string, string> = {
+    zoom_webhook: 'logged automatically by Zoom',
+    system: 'logged automatically (classroom video)',
+    classroom_attendance: 'logged automatically (classroom attendance)',
+    agent_log: 'logged by the assistant',
+    admin_ui: 'logged from admin',
+}
+
+async function undoLogGet(claims: LessonActionClaims, token: string): Promise<Response> {
+    const preview = await getUndoLogPreviewCore(claims.l)
+    if ('error' in preview) return message('Nothing to undo', preview.error)
+    const source = preview.completedSource ? UNDO_SOURCE[preview.completedSource] : null
+    const after = preview.currentCredits + preview.creditBack
+    const credit = preview.creditBack > 0
+        ? `Gives back ${preview.creditBack} credit (${preview.currentCredits} → ${after} lessons left), labelled "log undone" with your reason`
+        : 'No credit comes back: this lesson was logged free'
+    const free = preview.isFree
+        ? `<label class="choice off"><input type="radio" name="mode" value="free" disabled><span><b>It happened, just don't charge it.</b> Already free, so this doesn't apply.</span></label>`
+        : `<label class="choice"><input type="radio" name="mode" value="free" checked><span><b>It happened, just don't charge it.</b> Stays logged as a free lesson. Nothing shows as unlogged.</span></label>`
+    const unlog = `<label class="choice"><input type="radio" name="mode" value="unlog"${preview.isFree ? ' checked' : ''}><span><b>Undo the log completely.</b> Back to unlogged, as before it was logged. It shows in the unlogged lessons until you log or remove it.</span></label>`
+    const family = preview.creditBack > 0
+        ? `<label class="choice"><input type="checkbox" name="s" value="yes"><span>Also tell the family (1 family: ${esc(preview.studentName)}'s portal chat, with the usual email notice${preview.alsoTexts ? ', and a text' : ''}). Exactly:</span></label>
+<div class="quote" style="margin-top:8px">${esc(preview.familyMessage)}</div>
+<input type="hidden" name="m" value="${esc(preview.familyMessage)}">`
+        : ''
+    return page('Undo this log?', `
+<h1>Undo the log of ${esc(preview.studentName)}'s lesson?</h1>
+<p class="muted">${esc(preview.lessonLabel)}${source ? `, ${esc(source)}` : ''}${preview.freeReason ? ` (free: ${esc(preview.freeReason)})` : ''}</p>
+<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token)}">
+<label for="r">Reason <span>(kept in the credit history)</span></label>
+<input type="text" id="r" name="r" required maxlength="${UNDO_REASON_MAX}" placeholder="e.g. free trial, Zoom charged it" autocomplete="off">
+${free}
+${unlog}
+<ul class="effects" style="margin-top:14px">
+<li>${esc(credit)}</li>
+<li>Notes, homework and recording stay. The next lesson already booked is not touched.</li>
+<li>${preview.creditBack > 0 ? 'Sends nothing to the family unless you tick the box below' : 'Sends nothing to the family'}</li>
+</ul>
+${family}
+<button class="undo" type="submit">Undo log</button></form>`)
+}
+
+async function undoLogPost(
+    client: DbClient,
+    claims: LessonActionClaims,
+    typed: { reason: string; mode: string; send: boolean; shownMessage: string | null },
+    record: (outcome: string, studentId?: string) => PromiseLike<unknown>,
+    giveBack: () => PromiseLike<unknown>,
+): Promise<Response> {
+    if (!typed.reason) {
+        await giveBack()
+        return message('Type a reason', 'Nothing changed. Go back, type a reason and press Undo log again.', 400)
+    }
+    if (typed.mode !== 'free' && typed.mode !== 'unlog') {
+        await giveBack()
+        return message('Pick what happens to the lesson', 'Nothing changed. Go back and pick one of the two choices.', 400)
+    }
+    if (typed.send && !typed.shownMessage) {
+        await giveBack()
+        return message('Nothing changed', 'The message to send was missing. Open the button in the email again.', 400)
+    }
+    const { data: admin } = await client.from('profiles').select('id').eq('role', 'admin').limit(1).maybeSingle()
+    if (!admin?.id) {
+        await giveBack()
+        return message('Something went wrong', 'The studio account could not be found. Nothing changed.', 503)
+    }
+    const { data: lesson } = await client.from('lessons').select('student_id').eq('id', claims.l).maybeSingle()
+    const studentId = (lesson?.student_id as string) || undefined
+
+    const result = await undoLessonLogCore({
+        adminId: admin.id as string,
+        lessonId: claims.l,
+        reason: typed.reason,
+        mode: typed.mode as UndoLogMode,
+        sendFamilyMessage: typed.send,
+        expectedMessage: typed.send ? typed.shownMessage ?? undefined : undefined,
+    })
+    if ('error' in result) {
+        // Only the family message can fail after the credit came back; any
+        // other refusal changed nothing, so the link may be used again.
+        if (/did not send/.test(result.error)) {
+            await record(`undone: ${result.error}`, studentId)
+            return message('Undone, but the message did not send', result.error, 500)
+        }
+        await giveBack()
+        return message('Nothing changed', result.error)
+    }
+    await record(`undone: ${result.summary}`, studentId)
+    console.log(`[lesson-action] undid the log of ${claims.l} from email: ${result.summary}`)
+    return message('Log undone', `${result.summary.charAt(0).toUpperCase()}${result.summary.slice(1)}`)
+}
+
 export async function GET(request: Request) {
     const token = new URL(request.url).searchParams.get('t')
     const verified = verifyLessonAction(token)
@@ -365,6 +479,7 @@ export async function GET(request: Request) {
     if (used.used) return alreadyUsed(used.outcome)
 
     if (MOVE_ACTIONS.includes(claims.a)) return moveGet(client, claims, token!)
+    if (claims.a === 'undo_log') return undoLogGet(claims, token!)
 
     const checked = await checkLesson(client, claims)
     if (!checked.ok) return checked.response
@@ -479,6 +594,9 @@ export async function POST(request: Request) {
     let shownMessage: string | null = null
     let typedNotes = ''
     let typedHomework = ''
+    let typedReason = ''
+    let typedMode = ''
+    let typedSend = false
     try {
         const form = await request.formData()
         const t = form.get('t')
@@ -489,6 +607,12 @@ export async function POST(request: Request) {
         const h = form.get('h')
         typedNotes = typeof n === 'string' ? n.trim().slice(0, NOTES_MAX) : ''
         typedHomework = typeof h === 'string' ? h.trim().slice(0, HOMEWORK_MAX) : ''
+        // "Undo log" (#1063): reason, choice, and the family-message box.
+        const r = form.get('r')
+        const mode = form.get('mode')
+        typedReason = typeof r === 'string' ? r.trim().replace(/\s+/g, ' ').slice(0, UNDO_REASON_MAX) : ''
+        typedMode = typeof mode === 'string' ? mode : ''
+        typedSend = form.get('s') === 'yes'
     } catch {
         token = null
     }
@@ -525,6 +649,15 @@ export async function POST(request: Request) {
 
     if (MOVE_ACTIONS.includes(claims.a)) {
         return movePost(client, claims, record, () => client.from('lesson_action_link_uses').delete().eq('token_id', claims.j))
+    }
+    if (claims.a === 'undo_log') {
+        return undoLogPost(
+            client,
+            claims,
+            { reason: typedReason, mode: typedMode, send: typedSend, shownMessage },
+            record,
+            () => client.from('lesson_action_link_uses').delete().eq('token_id', claims.j),
+        )
     }
 
     const checked = await checkLesson(client, claims)

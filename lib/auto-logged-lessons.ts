@@ -1,7 +1,7 @@
 import type { DbClient } from '@/lib/supabase/admin'
 import { isoToStudioWallClock, shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
-import { appBaseUrl } from '@/lib/lesson-action-links'
+import { appBaseUrl, lessonActionUrl, signLessonAction } from '@/lib/lesson-action-links'
 import { isClassroomVideoUrl } from '@/lib/classroom-video-url'
 
 /**
@@ -30,6 +30,11 @@ import { isClassroomVideoUrl } from '@/lib/classroom-video-url'
  * lesson from three days earlier still shows up. A log with no such ledger row
  * (free, or no credit recorded) has no time, so it is listed under its lesson's
  * own date.
+ *
+ * Each line carries "Undo log" (#1063): a one-time signed link to a page with
+ * the reason box and the admin dialog's choice (keep it as a free lesson, or
+ * back to unlogged), which runs undoLessonLogCore (lib/core/undo-log.ts).
+ * Nothing goes to the family unless Lionel ticks the box on that page.
  */
 
 export type AutoLogSource = 'zoom' | 'classroom' | 'attendance' | 'assistant' | 'portal'
@@ -196,24 +201,36 @@ export function describeAutoLogged(l: AutoLoggedLesson, date: string): string {
         `Logged by ${AUTO_LOG_LABEL[l.by]}${at}, ${creditText(l)}.`
 }
 
-const LINK_STYLE = 'display:inline-block;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;background:#ffffff;color:#1d4ed8;border:1px solid #1d4ed8'
+const BUTTON = 'display:inline-block;margin:0 8px 6px 0;padding:8px 14px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;background:#ffffff'
+const LINK_STYLE = `${BUTTON};color:#1d4ed8;border:1px solid #1d4ed8`
+const UNDO_STYLE = `${BUTTON};color:#b91c1c;border:1px solid #b91c1c`
 
 /** The email section (#793). Empty string when nothing was logged automatically. */
 export function autoLoggedSection(
     lessons: AutoLoggedLesson[],
     date: string,
-    { baseUrl = appBaseUrl() }: { baseUrl?: string } = {},
+    { baseUrl = appBaseUrl(), now = new Date() }: { baseUrl?: string; now?: Date } = {},
 ): { lines: string[]; html: string } {
     if (lessons.length === 0) return { lines: [], html: '' }
     const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
     const lines = lessons.map(l => describeAutoLogged(l, date))
-    const blocks = lessons.map((l, i) => `<div style="margin:0 0 12px;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px">
+    let undoButtons = false
+    const blocks = lessons.map((l, i) => {
+        // #1063: null when links can't be signed (no CRON_SECRET); admin still has it.
+        const undo = signLessonAction({ lessonId: l.id, action: 'undo_log', date: l.date, time: l.time }, now)
+        if (undo) undoButtons = true
+        const undoButton = undo ? `<a href="${escapeHtml(lessonActionUrl(undo, baseUrl))}" style="${UNDO_STYLE}">Undo log</a>` : ''
+        return `<div style="margin:0 0 12px;padding:10px 14px 4px;border:1px solid #e5e7eb;border-radius:8px">
 <div style="font-size:15px;margin:0 0 8px">${lines[i]}</div>
-<a href="${escapeHtml(adminDayUrl(l.date, baseUrl))}" style="${LINK_STYLE}">Open in admin</a>
-</div>`)
+${undoButton}<a href="${escapeHtml(adminDayUrl(l.date, baseUrl))}" style="${LINK_STYLE}">Open in admin</a>
+</div>`
+    })
     const n = lessons.length
+    const fix = undoButtons
+        ? 'press Undo log: it asks for a reason first, gives the credit back (or keeps it as a free lesson), and tells the family nothing unless you tick that box'
+        : 'open it in admin'
     const html = `<h3 style="font-size:16px;margin:20px 0 6px">Logged automatically ${escapeHtml(day)} (${n})</h3>
-<p style="color:#57534e;font-size:14px;margin:0 0 10px">Nobody pressed a button for these. Logging takes the credit and emails the family the usual lesson notes, so if one looks wrong, open it in admin.</p>
+<p style="color:#57534e;font-size:14px;margin:0 0 10px">Nobody pressed a button for these. Logging takes the credit and emails the family the usual lesson notes, so if one looks wrong, ${fix}.</p>
 ${blocks.join('\n')}`
     return { lines, html }
 }

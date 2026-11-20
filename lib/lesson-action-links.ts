@@ -7,6 +7,8 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
  * and since #797 "No-Show", offered when Zoom shows the student never joined.
  * Since #878 also "Approve" and "Decline" for a family's request to move a
  * lesson (lib/core/move-requests.ts); those links also carry the request id.
+ * Since #1063 also "Undo log", next to each lesson the portal logged by itself
+ * (lib/auto-logged-lessons.ts), which runs the admin "Undo log" (#794).
  *
  * A link carries the lesson, the action, the date and time the email showed,
  * an expiry and a random token id, signed with an HMAC. The key is derived from
@@ -19,9 +21,9 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
  * their own. It shows a confirm page whose button POSTs.
  */
 
-export type LessonAction = 'log' | 'remove' | 'missed' | 'noshow' | 'approve_move' | 'decline_move'
+export type LessonAction = 'log' | 'remove' | 'missed' | 'noshow' | 'approve_move' | 'decline_move' | 'undo_log'
 
-const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed', 'noshow', 'approve_move', 'decline_move']
+const ACTIONS: readonly LessonAction[] = ['log', 'remove', 'missed', 'noshow', 'approve_move', 'decline_move', 'undo_log']
 
 /** The actions about a family's move request (#878); their links carry `r`. */
 export const MOVE_ACTIONS: readonly LessonAction[] = ['approve_move', 'decline_move']
