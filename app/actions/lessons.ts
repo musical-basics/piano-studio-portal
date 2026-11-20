@@ -8,6 +8,7 @@ import { addDays, format } from 'date-fns'
 import {
     autoBookingBlockReason,
     checkAvailabilityCore,
+    createOwnLessonMeeting,
     listLessonsCore,
     logLessonCore,
     scheduleLessonCore,
@@ -253,6 +254,8 @@ export async function logPastLesson(
             }
 
             if (!existingLesson && !blockReason) {
+                // Its own Zoom meeting (#1071); none when the date is already past.
+                const meeting = await createOwnLessonMeeting({ studentId, date: nextWeekDateStr, time, duration: duration || 60 })
                 const { data: nextLesson } = await supabase
                     .from('lessons')
                     .insert({
@@ -261,9 +264,14 @@ export async function logPastLesson(
                         time: time,
                         duration: duration || 60,
                         status: 'scheduled',
+                        ...(meeting ? { zoom_link: meeting.zoom_link, zoom_meeting_id: meeting.zoom_meeting_id } : {}),
                     })
                     .select('id')
                     .maybeSingle()
+                if (!nextLesson && meeting) {
+                    const { deleteZoomMeeting } = await import('@/lib/zoom')
+                    await deleteZoomMeeting(meeting.zoom_meeting_id)
+                }
                 if (nextLesson) {
                     await recordLessonEvent({ kind: 'booked', actor: 'auto', studentId, lessonId: nextLesson.id, date: nextWeekDateStr, time, detail: { reason: 'next week, after the log' } })
                 }

@@ -535,6 +535,15 @@ export async function logLessonCore({
             }
 
             if (!existingLesson && !blockReason) {
+                // Its own Zoom meeting (#1071), not this lesson's link again. Only
+                // if Zoom can't make one does it keep this lesson's link.
+                const meeting = await createOwnLessonMeeting({
+                    studentId: lesson.student_id,
+                    date: nextWeekDateStr,
+                    time: lesson.time,
+                    duration: lesson.duration || 60,
+                })
+                const nextZoomLink = meeting?.zoom_link || lesson.zoom_link || null
                 const { data: createdLesson, error: createError } = await client
                     .from('lessons')
                     .insert({
@@ -543,13 +552,15 @@ export async function logLessonCore({
                         time: lesson.time,
                         duration: lesson.duration || 60,
                         status: 'scheduled',
-                        zoom_link: lesson.zoom_link || null,
+                        zoom_link: nextZoomLink,
+                        zoom_meeting_id: meeting?.zoom_meeting_id ?? null,
                     })
                     .select()
                     .single()
 
                 if (createError) {
                     console.error('logLessonCore: Auto-create next lesson failed:', createError)
+                    if (meeting) await deleteOwnLessonMeeting(meeting.zoom_meeting_id)
                 } else {
                     nextLesson = createdLesson
                     await recordLessonEvent({
@@ -568,7 +579,7 @@ export async function logLessonCore({
                         date: nextWeekDateStr,
                         time: lesson.time,
                         duration: lesson.duration || 60,
-                        zoomLink: lesson.zoom_link || null,
+                        zoomLink: nextZoomLink,
                     }))
                 }
             }
@@ -616,6 +627,48 @@ export async function logLessonCore({
             : creditDeducted
             ? `Lesson logged. Credit deducted (${previousCredits} -> ${newCredits}).`
             : 'Lesson logged. No credit deducted (already completed and charged).',
+    }
+}
+
+/**
+ * A lesson's own Zoom meeting (#1071), so Zoom's recording and attendance always
+ * belong to that one lesson. Weekly lessons booked after a log used to copy the
+ * last lesson's link, and Zoom then filed every week under the first lesson's
+ * meeting. Nobody is invited, so Zoom emails no one: the family gets the link
+ * through the portal, reminders and the usual booking emails. Null for a lesson
+ * already past, or when Zoom can't make one. scheduleLessonCore makes its own
+ * (it also invites the family).
+ */
+export async function createOwnLessonMeeting({ studentId, date, time, duration }: {
+    studentId: string
+    date: string
+    /** Studio wall clock, HH:MM or HH:MM:SS. */
+    time: string
+    duration: number
+}): Promise<{ zoom_link: string; zoom_meeting_id: string } | null> {
+    if (!(Date.parse(studioWallClockToISO(date, String(time).slice(0, 5))) > Date.now())) return null
+    try {
+        const { data: student } = await createAdminClient().from('profiles').select('name').eq('id', studentId).single()
+        const { createZoomMeeting } = await import('@/lib/zoom')
+        const made = await createZoomMeeting(
+            `${(student as any)?.name || 'Student'} - Piano Lesson`,
+            `${date}T${String(time).slice(0, 5)}:00`,
+            duration,
+        )
+        return made?.join_url ? { zoom_link: made.join_url, zoom_meeting_id: String(made.id) } : null
+    } catch (e) {
+        console.error('createOwnLessonMeeting: Zoom failed (non-blocking):', e)
+        return null
+    }
+}
+
+/** Removes a meeting createOwnLessonMeeting made when its lesson could not be saved. */
+async function deleteOwnLessonMeeting(meetingId: string) {
+    try {
+        const { deleteZoomMeeting } = await import('@/lib/zoom')
+        await deleteZoomMeeting(meetingId)
+    } catch (e) {
+        console.error(`deleteOwnLessonMeeting: ${meetingId} not removed:`, e)
     }
 }
 
@@ -939,7 +992,7 @@ export async function rescheduleLessonCore({
 }: RescheduleLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, date, time, duration, zoom_meeting_id, google_event_id')
+        .select('student_id, date, time, duration, status, zoom_meeting_id, google_event_id')
         .eq('id', lessonId)
         .single()
 
@@ -1036,6 +1089,21 @@ export async function rescheduleLessonCore({
             }
         } catch (e) {
             console.error('rescheduleLessonCore: Zoom update failed (non-blocking):', e)
+        }
+    } else if ((lesson as any).status === 'scheduled') {
+        // A lesson still on a reused link (or none) gets its own meeting at the
+        // new time (#1071). Another lesson's meeting is never moved.
+        const meeting = await createOwnLessonMeeting({ studentId: lesson.student_id, date: newDate, time: newTime, duration: newDuration })
+        if (meeting) {
+            const { error: zoomSaveError } = await client
+                .from('lessons')
+                .update({ zoom_link: meeting.zoom_link, zoom_meeting_id: meeting.zoom_meeting_id })
+                .eq('id', lessonId)
+                .is('zoom_meeting_id', null)
+            if (zoomSaveError) {
+                console.error('rescheduleLessonCore: saving the new Zoom meeting failed:', zoomSaveError)
+                await deleteOwnLessonMeeting(meeting.zoom_meeting_id)
+            }
         }
     }
 
