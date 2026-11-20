@@ -16,8 +16,15 @@ import vercelConfig from '@/vercel.json'
  * worked, red failed at least once, grey no run), from cron_runs through the
  * SQL function cron_run_days (migration 20261120140000).
  *
- * Adding a cron to vercel.json? Add it to PORTAL_JOBS below and wrap its route
- * in withCronRun; scripts/check_scheduled_jobs.ts fails until both are done.
+ * Since #1076 each portal job has a "Run now" button (lib/run-job-now.ts, the
+ * action in app/actions/scheduled-jobs.ts). A job that can email families
+ * says so in `runNow.confirm` and the page asks first; the Mac's jobs show
+ * "Runs on the Mac" instead.
+ *
+ * Adding a cron to vercel.json? Add it to PORTAL_JOBS below (with `runNow` if
+ * it can email families), wrap its route in withCronRun and add it to
+ * JOB_ROUTES in lib/run-job-now.ts; scripts/check_scheduled_jobs.ts fails
+ * until all three are done.
  */
 
 type Body = any
@@ -45,10 +52,20 @@ export type JobInfo = {
     lateAfterMinutes?: number
     /** One line from a successful run's JSON answer, e.g. "3 reminders sent". */
     summarize?: (body: Body) => string | undefined
+    /**
+     * "Run now" (#1076). Left out: it runs straight away (it only reads, fixes
+     * or emails you). `confirm`: it can email families, so the page asks first
+     * with this text, which says plainly who would get an email. `preview`: a
+     * dry run first, its answer in words, so the question has the numbers.
+     */
+    runNow?: { confirm: string; preview?: (body: Body) => string }
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const len = (v: unknown) => (Array.isArray(v) ? v.length : Number(v) || 0)
+const monthName = (ym: unknown) => (typeof ym === 'string' && /^\d{4}-\d{2}$/.test(ym)
+    ? new Date(`${ym}-15T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long' })
+    : 'last month')
 
 export const PORTAL_JOBS: JobInfo[] = [
     {
@@ -63,6 +80,9 @@ export const PORTAL_JOBS: JobInfo[] = [
             if (b?.unnotified) parts.push(`${plural(b.unnotified, 'lesson')} started with no reminder`)
             return parts.join(', ')
         },
+        runNow: {
+            confirm: "This sends any lesson reminder that is due right now and not sent yet, to that lesson's family: the same reminders its next run (within 10 minutes) would send. A reminder is never sent twice.",
+        },
     },
     {
         job: 'auto-schedule-lessons',
@@ -73,6 +93,9 @@ export const PORTAL_JOBS: JobInfo[] = [
             b?.scheduled ? `${plural(b.scheduled, 'lesson')} booked` : 'Nothing new to book',
             b?.errors ? `${plural(b.errors, 'problem')}` : '',
         ].filter(Boolean).join(', '),
+        runNow: {
+            confirm: 'This books any standing weekly lesson in the next 7 days that is not booked yet, and each new booking emails that family its confirmation, as the daily run does. Lessons already booked, skipped or cancelled are left alone, so usually it books nothing.',
+        },
     },
     {
         job: 'evening-preview',
@@ -155,6 +178,16 @@ export const PORTAL_JOBS: JobInfo[] = [
             if (b?.failed) parts.push(`${b.failed} failed`)
             return parts.join(', ')
         },
+        runNow: {
+            confirm: "This emails last month's statement to each active family that does not have theirs yet. A family never gets two for the same month.",
+            preview: b => {
+                if (b?.off) return 'Statements are switched off (MONTHLY_STATEMENTS=off), so it would send nothing.'
+                const n = Number(b?.wouldSend) || 0
+                return n
+                    ? `A check just now: ${plural(n, 'family', 'families')} would get the ${monthName(b?.month)} statement (${Number(b?.alreadySent) || 0} already have it).`
+                    : `A check just now: no family is waiting for the ${monthName(b?.month)} statement, so it would send nothing.`
+            },
+        },
     },
     {
         job: 'new-recordings',
@@ -165,6 +198,9 @@ export const PORTAL_JOBS: JobInfo[] = [
             const n = len(b?.stats?.notified ?? b?.notified)
             const errors = len(b?.stats?.errors)
             return `${n ? `${plural(n, 'family', 'families')} told` : 'No new recordings'}${errors ? `, ${plural(errors, 'problem')}` : ''}`
+        },
+        runNow: {
+            confirm: 'This emails each family that has a new lesson recording in their Dropbox folder since their last recording email: the same emails its next run (within 30 minutes) would send. Nobody is told about the same recording twice.',
         },
     },
     {
@@ -205,6 +241,17 @@ export const PORTAL_JOBS: JobInfo[] = [
             len(b?.result?.logged) ? `${plural(len(b.result.logged), 'lesson')} logged` : '',
             b?.dropbox?.error ? `Dropbox copies failed: ${b.dropbox.error}` : '',
         ].filter(Boolean).join(', '),
+        runNow: {
+            confirm: 'This attaches new classroom recordings to their lessons (the family gets a "recording ready" email when the lesson was in the last 2 days) and logs a lesson with a 20+ minute video or 20+ minutes in the classroom together (one credit, and the family gets the usual lesson email), the same as its next run (within 30 minutes). Nothing is attached, logged or emailed twice.',
+            preview: b => {
+                const attach = len(b?.result?.attached)
+                const attendance = Array.isArray(b?.attendance?.lessons) ? b.attendance.lessons.filter((l: Body) => l?.action === 'would log').length : 0
+                const log = len(b?.result?.logged) + attendance
+                return attach || log
+                    ? `A check just now: ${plural(attach, 'recording')} to attach and ${plural(log, 'lesson')} to log.`
+                    : 'A check just now: nothing to attach or log, so it would email no one.'
+            },
+        },
     },
     {
         job: 'classroom-r2-move',
@@ -246,6 +293,9 @@ export const PORTAL_JOBS: JobInfo[] = [
             b?.captured ? `${plural(b.captured, 'payment')} collected` : (b?.held ? `${plural(b.held, 'payment')} on hold, not due yet` : 'Nothing on hold'),
             b?.failed ? `${b.failed} failed` : '',
         ].filter(Boolean).join(', '),
+        runNow: {
+            confirm: 'This collects any held card payment that is 3 or more days old (the same ones its hourly run would collect) and emails you what it collected. A payment you cancelled in Stripe is skipped.',
+        },
     },
     {
         job: 'plan-payment-check',
@@ -415,6 +465,40 @@ export function describeCron(expr: string, now: Date = new Date()): { words: str
     return { words: expr, intervalMinutes: 24 * 60 }
 }
 
+/** One cron field ("*", "*\/10", "5,35", "1-5", "13") against a value. */
+function fieldMatches(field: string, value: number): boolean {
+    return field.split(',').some(part => {
+        if (part === '*') return true
+        const step = /^\*\/(\d+)$/.exec(part)
+        if (step) return value % Number(step[1]) === 0
+        const range = /^(\d+)-(\d+)$/.exec(part)
+        if (range) return value >= Number(range[1]) && value <= Number(range[2])
+        return isNum(part) && Number(part) === value
+    })
+}
+
+/** Does a vercel.json schedule (UTC) fire in the minute of `at`? */
+export function cronMatches(expr: string, at: Date): boolean {
+    const [min, hour, dom, mon, dow] = expr.trim().split(/\s+/)
+    return fieldMatches(min, at.getUTCMinutes()) && fieldMatches(hour, at.getUTCHours())
+        && fieldMatches(dom, at.getUTCDate()) && fieldMatches(mon, at.getUTCMonth() + 1)
+        && fieldMatches(dow, at.getUTCDay())
+}
+
+/**
+ * A scheduled run that started in the last 2 minutes or starts within the
+ * next minute, if any: "Run now" on a job that emails families waits it out,
+ * so the two runs can't both send the same email.
+ */
+export function scheduledRunNear(expr: string, now: Date): Date | null {
+    const minute = Math.floor(now.getTime() / 60_000) * 60_000
+    for (let m = -2; m <= 1; m++) {
+        const at = new Date(minute + m * 60_000)
+        if (cronMatches(expr, at)) return at
+    }
+    return null
+}
+
 // -------------------------------------------------------------- status ---
 
 export type JobStatus = 'ok' | 'failed' | 'late' | 'never'
@@ -443,6 +527,18 @@ export type JobView = {
     detail: string | null
     /** The last HISTORY_DAYS studio days, oldest first; null when the history could not be read. */
     days: DayMark[] | null
+    /** The "Run now" button (#1076): straight away, ask first, or not here (a Mac job). */
+    runNow: RunNowView
+}
+
+export type RunNowView =
+    | { mode: 'run' }
+    | { mode: 'confirm'; confirm: string; preview: boolean }
+    | { mode: 'mac' }
+
+export function runNowView(job: Pick<JobInfo, 'runNow'> & { runsOn: 'portal' | 'mac' }): RunNowView {
+    if (job.runsOn === 'mac') return { mode: 'mac' }
+    return job.runNow ? { mode: 'confirm', confirm: job.runNow.confirm, preview: !!job.runNow.preview } : { mode: 'run' }
 }
 
 export function lateAfterMinutes(job: Pick<JobInfo, 'lateAfterMinutes'>, intervalMinutes: number): number {
@@ -466,13 +562,13 @@ export function jobStatus(row: HeartbeatRow | undefined, lateAfterMin: number, n
 }
 
 /** Every job: vercel.json's crons (described by PORTAL_JOBS) and the Mac's. */
-export function allJobs(now: Date = new Date()): (JobInfo & { runsOn: 'portal' | 'mac'; schedule: string; intervalMinutes: number })[] {
+export function allJobs(now: Date = new Date()): (JobInfo & { runsOn: 'portal' | 'mac'; schedule: string; intervalMinutes: number; cron?: string })[] {
     const crons = (vercelConfig as { crons?: { path: string; schedule: string }[] }).crons ?? []
     const portal = crons.map(c => {
         const job = jobForPath(c.path)
         const info: JobInfo = BY_JOB.get(job) ?? { job, name: job, what: `Runs ${c.path}.`, group: 'watch' }
         const { words, intervalMinutes } = describeCron(c.schedule, now)
-        return { ...info, runsOn: 'portal' as const, schedule: words, intervalMinutes }
+        return { ...info, runsOn: 'portal' as const, schedule: words, intervalMinutes, cron: c.schedule }
     })
     // Registry order (grouped), then anything vercel.json has that the registry doesn't.
     const order = new Map(PORTAL_JOBS.map((j, i) => [j.job, i]))
@@ -593,5 +689,6 @@ export async function loadScheduledJobs(client: DbClient, now: Date = new Date()
         intervalMinutes: j.intervalMinutes,
         ...jobStatus(rows.get(j.job), lateAfterMinutes(j, j.intervalMinutes), now),
         days: history ? dayMarks(history.get(j.job) ?? [], today) : null,
+        runNow: runNowView(j),
     }))
 }

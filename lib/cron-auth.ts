@@ -20,3 +20,16 @@ export function isAuthorizedCron(request: Request): boolean {
     if (searchParams.get('key') === secret) return true
     return request.headers.get('authorization') === `Bearer ${secret}`
 }
+
+/**
+ * "Run now" on the admin jobs page (#1076) calls a cron route's handler on the
+ * server with the same Bearer secret, plus this header, so the run counts as
+ * manual: it is marked "(run by hand)" on the jobs page and never stamps a
+ * trigger's own heartbeat (a manual run must not make a silent Vercel or
+ * GitHub trigger look alive). Only trusted together with the secret.
+ */
+export const MANUAL_RUN_HEADER = 'x-studio-manual-run'
+
+export function isManualRun(request: Request): boolean {
+    return request.headers.get(MANUAL_RUN_HEADER) === '1' && isAuthorizedCron(request)
+}

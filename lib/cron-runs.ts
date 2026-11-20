@@ -1,5 +1,6 @@
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { summarizeJobRun } from '@/lib/scheduled-jobs'
+import { isManualRun } from '@/lib/cron-auth'
 
 /**
  * Every scheduled run, recorded (Lionel's #777).
@@ -49,7 +50,8 @@ type Handler = (request: Request) => Promise<Response>
  * detail is the job's one-line summary of its JSON, see scheduled-jobs.ts),
  * anything else failed (the detail is the route's `error`), and a thrown error
  * failed and is re-thrown unchanged. Not recorded: unauthorized requests (a
- * stranger hitting the URL is not a run) and ?dry=1 test runs.
+ * stranger hitting the URL is not a run) and ?dry=1 test runs. A "Run now"
+ * from the jobs page is recorded like any run, its detail ending "(run by hand)".
  *
  *   export const GET = withCronRun('reminders', handle)
  *
@@ -58,7 +60,13 @@ type Handler = (request: Request) => Promise<Response>
 export function withCronRun(job: string, handler: Handler, opts: { client?: () => DbClient } = {}): Handler {
     return async function GET(request: Request): Promise<Response> {
         const started = Date.now()
-        const record = (run: CronRun) => recordWith(opts.client ?? createAdminClient, job, { ...run, durationMs: Date.now() - started })
+        // "Run now" on the jobs page (#1076) says so in the detail.
+        const byHand = isManualRun(request)
+        const record = (run: CronRun) => recordWith(opts.client ?? createAdminClient, job, {
+            ...run,
+            detail: byHand ? `${run.detail || 'Done'} (run by hand)` : run.detail,
+            durationMs: Date.now() - started,
+        })
         let res: Response
         try {
             res = await handler(request)

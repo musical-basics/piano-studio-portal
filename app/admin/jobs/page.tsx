@@ -8,8 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatStudioTime } from "@/lib/backup-watchdog"
 import { GROUP_TITLES, loadScheduledJobs, type JobGroup, type JobStatus, type JobView } from "@/lib/scheduled-jobs"
 import { RunMarks } from "./run-marks"
+import { RunNow } from "./run-now"
 
 export const dynamic = "force-dynamic"
+// "Run now" (#1076) runs a job inside this page's server action: give it the
+// longest any cron route has.
+export const maxDuration = 300
 
 // Every scheduled job (Lionel's #777): the portal's crons (vercel.json) and the
 // Mac's backup, restore test and family watcher, with when each last ran and
@@ -69,6 +73,7 @@ function JobRow({ job, now }: { job: JobView; now: Date }) {
                     </div>
                 )}
                 {job.days && <RunMarks marks={job.days} />}
+                <RunNow job={job.job} name={job.name} view={job.runNow} />
             </div>
         </li>
     )
@@ -139,7 +144,8 @@ export default async function ScheduledJobsPage() {
             <p className="text-sm text-muted-foreground">
                 Everything the portal and the Mac do on their own: when each last ran and whether it worked.
                 Times are Eastern. Late means no run in about twice its usual gap. The marks under each job are its last
-                30 days: green worked, red at least one run failed, grey no run that day.
+                30 days: green worked, red at least one run failed, grey no run that day. Run now starts a job straight
+                away; one that can email families asks first.
             </p>
 
             {loadError ? (

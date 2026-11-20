@@ -28,6 +28,7 @@
  * that fails once is not a reminders outage.
  */
 import type { DbClient } from '@/lib/supabase/admin'
+import { isManualRun } from '@/lib/cron-auth'
 
 const FROM = 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>'
 const FALLBACK_TO = 'support@musicalbasics.com'
@@ -91,6 +92,8 @@ export async function withRetry<T>(
 export type CronSource = 'vercel' | 'github' | 'manual'
 
 export function cronSource(request: Request): CronSource {
+    // "Run now" on the jobs page (#1076): never counts for a trigger.
+    if (isManualRun(request)) return 'manual'
     const secret = process.env.CRON_SECRET
     if (secret && new URL(request.url).searchParams.get('key') === secret) return 'github'
     if (secret && request.headers.get('authorization') === `Bearer ${secret}`) return 'vercel'

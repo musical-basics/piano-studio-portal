@@ -11,8 +11,11 @@ import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import vercel from '../vercel.json'
-import { allJobs, dayMarks, describeCron, HISTORY_DAYS, jobForPath, jobStatus, MAC_JOBS, PORTAL_JOBS, summarizeJobRun, type RunDayRow } from '../lib/scheduled-jobs'
+import { allJobs, cronMatches, dayMarks, describeCron, HISTORY_DAYS, jobForPath, jobStatus, MAC_JOBS, PORTAL_JOBS, runNowView, scheduledRunNear, summarizeJobRun, type RunDayRow } from '../lib/scheduled-jobs'
 import { withCronRun } from '../lib/cron-runs'
+import { isManualRun, MANUAL_RUN_HEADER } from '../lib/cron-auth'
+import { cronSource } from '../lib/cron-alerts'
+import { JOB_ROUTES, previewJobRunCore, runJobNowCore } from '../lib/run-job-now'
 import type { DbClient } from '../lib/supabase/admin'
 
 const ROOT = path.join(__dirname, '..')
@@ -140,6 +143,67 @@ async function main() {
     assert.equal(marks[26].state, 'none')
     assert.equal(marks[26].text, 'Tue, Nov 17: no run.')
     assert.ok(!marks.some(m => m.date === '2026-10-01'), 'older days fall off')
+
+    // 7. Run now (#1076).
+    assert.deepEqual(Object.keys(JOB_ROUTES).sort(), [...crons].sort(), 'every vercel.json cron has a Run now route (lib/run-job-now.ts)')
+    for (const job of crons) {
+        assert.ok(readFileSync(path.join(ROOT, 'lib/run-job-now.ts'), 'utf8').includes(`import('@/app/api/cron/${job}/route')`), `${job}: JOB_ROUTES loads the wrong route`)
+    }
+    // Every job that sends families email asks first.
+    for (const job of ['reminders', 'auto-schedule-lessons', 'monthly-statements', 'new-recordings', 'classroom-recordings']) {
+        assert.equal(runNowView(allJobs().find(j => j.job === job)!).mode, 'confirm', `${job} must ask before a manual run`)
+    }
+    assert.equal(runNowView(allJobs().find(j => j.job === 'storage-check')!).mode, 'run')
+    assert.equal(runNowView(allJobs().find(j => j.job === 'studio-backup')!).mode, 'mac')
+
+    assert.ok(cronMatches('*/10 * * * *', new Date('2026-11-20T23:00:00Z')))
+    assert.ok(!cronMatches('*/10 * * * *', new Date('2026-11-20T23:05:00Z')))
+    assert.ok(cronMatches('0 15 1 * *', new Date('2026-12-01T15:00:00Z')))
+    assert.ok(!cronMatches('0 15 1 * *', new Date('2026-12-02T15:00:00Z')))
+    assert.ok(cronMatches('30 13 * * 1', new Date('2026-11-23T13:30:00Z')), 'Monday')
+    assert.ok(cronMatches('5,35 * * * *', new Date('2026-11-23T13:35:00Z')))
+    assert.ok(scheduledRunNear('*/10 * * * *', new Date('2026-11-20T23:01:40Z')), 'a tick that just started')
+    assert.ok(scheduledRunNear('*/10 * * * *', new Date('2026-11-20T22:59:20Z')), 'a tick about to start')
+    assert.equal(scheduledRunNear('*/10 * * * *', new Date('2026-11-20T23:05:00Z')), null)
+
+    process.env.CRON_SECRET = 'test-secret'
+    const seen: Request[] = []
+    const fake = (body: unknown, status = 200) => async (r: Request) => { seen.push(r); return Response.json(body, { status }) }
+    const quiet = new Date('2026-11-20T23:05:00Z')
+    let run = await runJobNowCore('storage-check', { now: quiet, handler: fake({ success: true, message: 'database 25 MB of 500 MB (4%)' }) })
+    assert.deepEqual([run.ok, run.text], [true, 'Database 25 MB of 500 MB (4%)'])
+    assert.equal(seen.at(-1)!.headers.get('authorization'), 'Bearer test-secret')
+    assert.ok(isManualRun(seen.at(-1)!), 'a Run now request is marked manual')
+    assert.equal(cronSource(seen.at(-1)!), 'manual', 'and never counts for a trigger')
+    assert.equal(cronSource(new Request(url + 'reminders', { headers: { authorization: 'Bearer test-secret' } })), 'vercel')
+    assert.equal(isManualRun(new Request(url + 'reminders', { headers: { [MANUAL_RUN_HEADER]: '1' } })), false, 'the header alone is nothing')
+
+    const calls = seen.length
+    run = await runJobNowCore('reminders', { now: quiet, handler: fake({ success: true }) })
+    assert.equal(run.ok, false, 'a family-emailing job needs the yes')
+    run = await runJobNowCore('reminders', { now: new Date('2026-11-20T23:00:30Z'), confirmed: true, handler: fake({ success: true }) })
+    assert.equal(run.ok, false, 'not while its scheduled run is starting')
+    assert.match(run.text, /scheduled run is at 6:00pm EST/)
+    assert.equal(seen.length, calls, 'neither reached the route')
+    run = await runJobNowCore('reminders', { now: quiet, confirmed: true, handler: fake({ success: true, stats: { '24h': 1 } }) })
+    assert.deepEqual([run.ok, run.text], [true, '1 reminder sent'])
+    run = await runJobNowCore('studio-backup', { now: quiet, handler: fake({}) })
+    assert.match(run.text, /runs on the Mac/)
+    run = await runJobNowCore('calendar-sync', { now: quiet, handler: fake({ error: 'Google said no' }, 500) })
+    assert.deepEqual([run.ok, run.text], [false, 'Google said no'])
+    run = await runJobNowCore('calendar-sync', { now: quiet, handler: async () => { throw new Error('boom') } })
+    assert.deepEqual([run.ok, run.text], [false, 'boom'])
+
+    let preview = await previewJobRunCore('monthly-statements', { now: quiet, handler: fake({ month: '2026-10', wouldSend: 2, alreadySent: 30 }) })
+    assert.equal(preview.text, 'A check just now: 2 families would get the October statement (30 already have it).')
+    assert.equal(new URL(seen.at(-1)!.url).searchParams.get('dry'), '1', 'the check is a dry run')
+    preview = await previewJobRunCore('classroom-recordings', { now: quiet, handler: fake({ result: { attached: [{}], logged: [] }, attendance: { lessons: [{ action: 'would log' }, { action: 'not logged' }] } }) })
+    assert.equal(preview.text, 'A check just now: 1 recording to attach and 1 lesson to log.')
+
+    // A manual run is recorded like any other, marked as such.
+    const manual = new Request(url + 'calendar-sync', { headers: { authorization: 'Bearer test-secret', [MANUAL_RUN_HEADER]: '1' } })
+    await wrapped('calendar-sync', async () => Response.json({ checked: 3, counts: {} }))(manual)
+    assert.equal(rows.get('calendar-sync')!.last_detail, 'All 3 lessons matched (run by hand)')
 
     console.log(`scheduled jobs: all checks passed (${crons.length} portal jobs, ${MAC_JOBS.length} Mac jobs)`)
 }
