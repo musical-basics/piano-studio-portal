@@ -12,6 +12,7 @@ import type { LessonRow as ClassroomLessonRow } from '@/lib/classroom-recordings
 import { findDayLessons } from '@/lib/evening-preview'
 import { todayScheduleSection, todaySubject, type TodaySchedule } from '@/lib/today-schedule-email'
 import { findShortLessons, shortLessonsSection, type ShortLesson } from '@/lib/short-lessons'
+import { classroomAttendanceNote, type ClassroomAttendanceNote } from '@/lib/classroom-lesson-attendance'
 
 /**
  * Lessons from a given studio day that nobody logged. A lesson takes its credit
@@ -42,6 +43,10 @@ import { findShortLessons, shortLessonsSection, type ShortLesson } from '@/lib/s
  * classroom video made in its slot) carries a "Watch" button, and since #942
  * the email opens with today's lessons (lib/today-schedule-email.ts) and goes
  * out on any morning with a lesson today, even with nothing unlogged.
+ *
+ * Since #1066 it also reads who was in the classroom room (the classroom's
+ * attendance record, lib/classroom-lesson-attendance.ts): a lesson only Lionel
+ * was in the room for gets the same "No-show?" and No-Show button.
  */
 
 export type UnloggedLesson = {
@@ -68,11 +73,29 @@ export type UnloggedLesson = {
     recordingUrl?: string | null
     /** That recording's length, when known (classroom videos with a start stamp). */
     recordingMinutes?: number | null
+    /**
+     * Who was in the classroom room (morning email only, #1066); undefined when
+     * not asked, or when nobody used the room and it is not a classroom lesson.
+     */
+    classroomAttendance?: ClassroomAttendanceNote
+    /** The student's lessons are set to the classroom (#980; morning email only). */
+    classroomVenue?: boolean
 }
 
-/** Offer the No-Show button (#797): Zoom shows only Lionel, and no recording says otherwise. */
+/**
+ * Offer the No-Show button: Zoom (#797) or the classroom (#1066) shows only
+ * Lionel, the other one does not show the student, and no recording says
+ * otherwise. An unknown classroom record keeps Zoom's button off; an unknown
+ * Zoom keeps the classroom's off unless it is a classroom lesson.
+ */
 export function suggestsNoShow(lesson: UnloggedLesson): boolean {
-    return looksLikeNoShow(lesson.attendance) && !lesson.hasVideo && !lesson.classroomRecording
+    if (lesson.hasVideo || lesson.classroomRecording) return false
+    const z = lesson.attendance
+    const c = lesson.classroomAttendance
+    if (z?.kind === 'student_joined' || z?.kind === 'host_absent') return false
+    if (c?.kind === 'student_joined' || c?.kind === 'host_absent') return false
+    if (looksLikeNoShow(z) && c?.kind !== 'unknown') return true
+    return c?.kind === 'only_you' && (lesson.classroomVenue === true || z?.kind !== 'unknown')
 }
 
 // Statuses a lesson has before it is logged. 'logging' is a log that started and
@@ -176,20 +199,25 @@ export function describeUnlogged(lesson: UnloggedLesson, { withDate = false }: {
     const account = lesson.accountStatus && lesson.accountStatus !== 'active' ? ` (account: ${lesson.accountStatus})` : ''
     const half = lesson.status === 'logging' ? ', logging started but never finished' : ''
     const day = withDate ? `${shortDay(lesson.date)}, ` : ''
-    return `${escapeHtml(lesson.studentName)}${account}: ${day}${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}${zoomSuffix(lesson)}`
+    return `${escapeHtml(lesson.studentName)}${account}: ${day}${formatClock(lesson.time)} ${zone}, ${lesson.duration} min${half}${attendanceSuffix(lesson)}`
 }
 
-/** What Zoom says about the lesson (#797), as the end of its email line. */
-function zoomSuffix(lesson: UnloggedLesson): string {
-    const a = lesson.attendance
-    if (!a) return ''
-    let note = attendanceNote(a)
-    if (looksLikeNoShow(a) && !suggestsNoShow(lesson)) {
-        // Zoom alone, but a recording says the lesson may have happened elsewhere.
-        note = note.replace(/^No-show\? /, '')
+/** What Zoom (#797) and the classroom (#1066) say about the lesson, as the end of its email line. */
+function attendanceSuffix(lesson: UnloggedLesson): string {
+    const z = lesson.attendance
+    const notes: string[] = []
+    // A classroom lesson's Zoom meeting normally goes unused: only say so when someone joined it.
+    if (z && !(lesson.classroomVenue && (z.kind === 'never_started' || z.kind === 'other_time'))) notes.push(attendanceNote(z))
+    if (lesson.classroomAttendance) notes.push(classroomAttendanceNote(lesson.classroomAttendance))
+    if (notes.length === 0) return ''
+    const strong = suggestsNoShow(lesson)
+    const flagged = notes.some(n => n.startsWith('No-show? '))
+    // One "No-show?" at most, and none when the button is not offered.
+    let note = notes.map((n, i) => (strong && i === notes.findIndex(m => m.startsWith('No-show? ')) ? n : n.replace(/^No-show\? /, ''))).join('; ')
+    if (flagged && !strong && (lesson.hasVideo || lesson.classroomRecording)) {
+        // Only Lionel joined, but a recording says the lesson may have happened elsewhere.
         note += lesson.classroomRecording ? ', but a classroom recording was made then' : ', but a recording is attached'
     }
-    const strong = suggestsNoShow(lesson)
     return `<br><span style="color:${strong ? '#92400e' : '#57534e'};font-size:14px">${strong ? '<b>' : ''}${escapeHtml(note)}${strong ? '</b>' : ''}</span>`
 }
 
@@ -231,7 +259,7 @@ export function unloggedLessonBlocks(
         const missed = lessonEndMs(lesson) <= now.getTime()
             ? signLessonAction({ lessonId: lesson.id, action: 'missed', date: lesson.date, time: lesson.time }, now)
             : null
-        // "No-Show" (#797) only where Zoom shows nobody but Lionel joined.
+        // "No-Show" (#797, #1066) only where Zoom or the classroom shows nobody but Lionel joined.
         const noShow = suggestsNoShow(lesson)
             ? signLessonAction({ lessonId: lesson.id, action: 'noshow', date: lesson.date, time: lesson.time }, now)
             : null
@@ -257,7 +285,7 @@ export const MISSED_IT_NOTE = `<b>I missed it</b> is for a lesson you missed: it
     `(with the usual email notice, and a text if they opted in). Its page shows the exact message first.`
 
 /** The "No-Show" button (#797), for the footer when a lesson carries it. */
-export const NO_SHOW_NOTE = `<b>No-Show</b> (only where Zoom shows nobody but you joined) keeps the lesson as a no-show and ` +
+export const NO_SHOW_NOTE = `<b>No-Show</b> (only where Zoom or the classroom shows nobody but you joined) keeps the lesson as a no-show and ` +
     `takes 1 credit, no refund. Nobody is emailed, messaged or texted.`
 
 /** The "Watch" button (#940), for the footer when a lesson carries it. */
@@ -373,6 +401,30 @@ export async function addZoomAttendance(client: DbClient, lessons: UnloggedLesso
         // Unknown: keep the No-Show button off rather than guess.
         console.error('[unlogged-lessons] classroom recordings lookup failed:', e instanceof Error ? e.message : e)
         for (const lesson of zoomLessons) lesson.classroomRecording = true
+    }
+}
+
+/**
+ * Reads who was in the classroom room for each unlogged lesson that is over
+ * (#1066, lib/core/classroom-lesson-attendance.ts): fills classroomVenue, and
+ * classroomAttendance where someone used the room or it is a classroom lesson
+ * from after attendance recording began. Never throws: when the record cannot
+ * be read, the lessons are marked unknown so no No-Show button is guessed.
+ */
+export async function addClassroomAttendance(client: DbClient, lessons: UnloggedLesson[], now: Date = new Date()): Promise<void> {
+    const over = lessons.filter(l => lessonEndMs(l) <= now.getTime())
+    if (over.length === 0) return
+    try {
+        const { classroomAttendanceByLesson } = await import('@/lib/core/classroom-lesson-attendance')
+        const found = await classroomAttendanceByLesson(client, over, now)
+        for (const lesson of over) {
+            const got = found.get(lesson.id)
+            lesson.classroomVenue = got?.classroomVenue ?? false
+            if (got?.attendance) lesson.classroomAttendance = got.attendance
+        }
+    } catch (e) {
+        console.error('[unlogged-lessons] classroom attendance lookup failed:', e instanceof Error ? e.message : e)
+        for (const lesson of over) lesson.classroomAttendance = { kind: 'unknown', reason: 'the record could not be read' }
     }
 }
 
@@ -532,6 +584,7 @@ export async function runMorningEmail(
 ): Promise<MorningRun> {
     const unlogged = await findUnloggedLessons(client, date)
     await addZoomAttendance(client, unlogged, now)
+    await addClassroomAttendance(client, unlogged, now)
     await addRecordingLinks(client, unlogged)
     const today: TodaySchedule = { date: shiftDateStr(date, 1), lessons: null }
     try {

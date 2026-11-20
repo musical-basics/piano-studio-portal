@@ -9,6 +9,7 @@ import { lessonEndMs } from '@/lib/unlogged-lessons'
 import { MISSED_LESSON_CREDIT_CENTS, getMissedLessonPreviewCore, missedLessonCore } from '@/lib/core/missed-lesson'
 import { markNoShowCore } from '@/lib/core/no-show'
 import { attendanceNote, zoomAttendance } from '@/lib/zoom-attendance'
+import { classroomNoteForLesson } from '@/lib/core/classroom-lesson-attendance'
 import { findLastHomework } from '@/lib/last-homework'
 import { LESSON_NOTE_PHRASES } from '@/lib/lesson-note-phrases'
 import { checkFreeTrial } from '@/lib/free-trial'
@@ -43,10 +44,11 @@ export const dynamic = 'force-dynamic'
  *             email. The page shows the exact message; the POST carries it
  *             back and the core refuses if it would now read differently. That
  *             core is safe to repeat, so a failed press gives the link back.
- *   - noshow: "No-Show" (#797), offered only where Zoom shows nobody but
- *             Lionel joined. Runs markNoShowCore, the admin No-Show button's
- *             path: the lesson is kept as a no-show and 1 credit is taken (no
- *             refund). Nothing is sent to the family. The page re-asks Zoom
+ *   - noshow: "No-Show" (#797), offered only where Zoom (or, #1066, the
+ *             classroom's attendance record) shows nobody but Lionel joined.
+ *             Runs markNoShowCore, the admin No-Show button's path: the lesson
+ *             is kept as a no-show and 1 credit is taken (no refund). Nothing
+ *             is sent to the family. The page re-asks Zoom and the classroom
  *             who joined, as a last look before confirming.
  * Both re-check at POST time that the lesson is still unlogged and still at the
  * date and time the email showed; otherwise they say so and change nothing.
@@ -400,6 +402,7 @@ ${form('Send apology and remove lesson', 'missed', `<input type="hidden" name="m
         const { data: student } = await client.from('profiles').select('credits').eq('id', lesson.student_id).maybeSingle()
         const credits = typeof student?.credits === 'number' ? student.credits : null
         const zoom = await zoomNoteForPage(lesson, end)
+        const classroom = await classroomNoteForLesson(client, { id: lesson.id, studentId: lesson.student_id, date: lesson.date, time: String(lesson.time).slice(0, 5), duration: lesson.duration || 60 })
         const recording = lesson.video_url
             ? `<p class="warn">A recording is attached to this lesson, so it may have happened. Check it before marking a no-show.</p>`
             : ''
@@ -407,6 +410,7 @@ ${form('Send apology and remove lesson', 'missed', `<input type="hidden" name="m
 <h1>Mark ${esc(weekday(lesson.date))}'s ${esc(clock)} lesson for ${esc(studentName)} a no-show?</h1>
 <p class="muted">${esc(when)}</p>
 ${zoom ? `<p>${esc(zoom)}</p>` : ''}
+${classroom ? `<p>${esc(classroom)}</p>` : ''}
 ${recording}
 <ul class="effects">
 <li>${esc(credits !== null ? `Takes 1 credit, no refund (${credits} → ${credits - 1})` : 'Takes 1 credit, no refund')}</li>
