@@ -50,10 +50,20 @@ const JOB_STALE_MS = 3 * 60 * MINUTE
 
 export const CLASSROOM_COPY_LABEL = 'Classroom Lesson'
 const COPY_NAME_RE = / - Classroom Lesson(?: \(\d+\))?\.[a-z0-9]+$/i
+/** Clips cut in admin (#1094, lib/classroom-clips.ts): "2026-07-09 - Clip 12m30s.mp4", " (1)" when taken. */
+const CLIP_NAME_RE = / - Clip \d+m\d{2}s(?: \(\d+\))?\.mp4$/i
 
-/** True for the files this module puts in a student's Dropbox folder. */
+export function isClipName(name: string): boolean {
+    return CLIP_NAME_RE.test(name)
+}
+
+/**
+ * True for the files the portal itself puts in a student's Dropbox folder: the
+ * classroom copies (this module) and clips (#1094). The new-recordings cron and
+ * the organizer leave them alone: they are not new Zoom lessons.
+ */
 export function isClassroomCopyName(name: string): boolean {
-    return COPY_NAME_RE.test(name)
+    return COPY_NAME_RE.test(name) || CLIP_NAME_RE.test(name)
 }
 
 /** The day the recording started (egress stamp), else the day it was saved, in the studio's zone. */

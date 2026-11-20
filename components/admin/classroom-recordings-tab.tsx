@@ -1,15 +1,15 @@
 "use client"
 
-import { Fragment, useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ExternalLink, Loader2, PlayCircle, RefreshCw, Trash2, X } from "lucide-react"
+import { ExternalLink, Loader2, PlayCircle, RefreshCw, Scissors, Trash2, X } from "lucide-react"
 import { attachClassroomRecording, deleteClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
 import { StudentLink } from "@/components/admin/student-panel"
-import { VideoPlayer } from "@/components/video-player"
+import { formatMarkerTime, VideoPlayer } from "@/components/video-player"
 
 interface ClassroomRecordingsTabProps {
     /** Open the admin day schedule on this studio date (where the lesson is). */
@@ -55,7 +55,48 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
     const [playingId, setPlayingId] = useState<string | null>(null)
     const [playError, setPlayError] = useState<string | null>(null)
 
+    // Clip maker (#1094): start and end marked on the playing video, 15 to 45 seconds.
+    const playerRef = useRef<HTMLVideoElement | null>(null)
+    const [clip, setClip] = useState<{ start: number | null; end: number | null }>({ start: null, end: null })
+    const [clipping, setClipping] = useState(false)
+    const [clipNote, setClipNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+    const markClip = (which: "start" | "end") => {
+        const t = playerRef.current?.currentTime
+        if (t === undefined || !Number.isFinite(t)) return
+        setClipNote(null)
+        setClip(c => ({ ...c, [which]: Math.round(t * 10) / 10 }))
+    }
+    const clipSeconds = clip.start !== null && clip.end !== null ? Math.round((clip.end - clip.start) * 10) / 10 : null
+    const clipOk = clipSeconds !== null && clipSeconds >= 15 && clipSeconds <= 45
+
+    const saveClip = async (row: AdminRecordingRow) => {
+        if (!clipOk || clip.start === null || clip.end === null) return
+        setClipping(true)
+        setClipNote(null)
+        try {
+            const res = await fetch("/api/admin/classroom-clip", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ recordingId: row.id, start: clip.start, end: clip.end }),
+            })
+            const body = await res.json().catch(() => ({ error: `the server answered ${res.status}` }))
+            if (body?.success) {
+                setClipNote({ ok: true, text: `Saved to ${row.studentName || "the student"}'s Dropbox folder as "${body.name}".` })
+                setClip({ start: null, end: null })
+            } else {
+                setClipNote({ ok: false, text: `Not saved: ${body?.error || "the request failed"}` })
+            }
+        } catch {
+            setClipNote({ ok: false, text: "Not saved: the request failed" })
+        } finally {
+            setClipping(false)
+        }
+    }
+
     const togglePlay = (id: string) => {
+        setClip({ start: null, end: null })
+        setClipNote(null)
         setPlayError(null)
         setPlayingId(current => (current === id ? null : id))
     }
@@ -280,10 +321,28 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                                     key={row.id}
                                                     url={row.url}
                                                     markers={row.markers}
+                                                    videoRef={playerRef}
                                                     autoPlay
                                                     onError={() => setPlayError("This video can't play here. Open it in a new tab instead.")}
                                                 />
                                                 {playError && <p className="text-sm text-destructive">{playError}</p>}
+                                                <div className="flex flex-wrap items-center gap-2 text-sm">
+                                                    <span className="inline-flex items-center gap-1 font-medium"><Scissors className="h-4 w-4" />Clip</span>
+                                                    <Button size="sm" variant="outline" onClick={() => markClip("start")} disabled={clipping}>Start here</Button>
+                                                    <Button size="sm" variant="outline" onClick={() => markClip("end")} disabled={clipping}>End here</Button>
+                                                    <span className="text-muted-foreground">
+                                                        {clip.start === null && clip.end === null
+                                                            ? "Pause where it should start, tap Start here, then the same for the end (15 to 45 seconds)."
+                                                            : `${clip.start === null ? "?" : formatMarkerTime(clip.start)} to ${clip.end === null ? "?" : formatMarkerTime(clip.end)}`
+                                                                + (clipSeconds === null ? "" : clipOk ? ` (${Math.round(clipSeconds)} s)` : ` (${Math.round(clipSeconds)} s: needs 15 to 45)`)}
+                                                    </span>
+                                                    <Button size="sm" disabled={!clipOk || clipping} onClick={() => saveClip(row)}>
+                                                        {clipping ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Making the clip</> : "Save clip to Dropbox"}
+                                                    </Button>
+                                                </div>
+                                                {clipNote && (
+                                                    <p className={`text-sm ${clipNote.ok ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>{clipNote.text}</p>
+                                                )}
                                                 <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                                                     <span>{row.studentName || "Unknown"}, {recordedLabel(row)}</span>
                                                     <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline shrink-0">

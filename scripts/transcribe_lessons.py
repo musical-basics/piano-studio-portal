@@ -89,6 +89,8 @@ MAX_TRIES = 3
 
 AUDIO_EXTS = (".m4a", ".mp3", ".wav", ".aac")
 VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+# Clips cut from a classroom recording in admin (#1094): "2026-07-09 - Clip 12m30s.mp4".
+CLIP_NAME_RE = re.compile(r" - Clip \d+m\d{2}s(?: \(\d+\))?\.mp4$", re.I)
 HEARTBEAT_JOB = "lesson-transcripts"
 RECORDING = {"on": True}  # off for --plan and --only: only real runs show on /admin/jobs
 
@@ -368,6 +370,8 @@ def plan(entries):
         parts = e["path_display"].split("/")
         if len(parts) < 4 or ext_of(e["name"]) not in AUDIO_EXTS + VIDEO_EXTS:
             continue  # not inside a student folder, or not a recording
+        if CLIP_NAME_RE.search(e["name"]):
+            continue  # a short clip cut in admin (#1094), part of a lesson already transcribed
         by_parent[e["path_display"].rsplit("/", 1)[0]].append(e)
 
     units, meeting_videos = [], set()
