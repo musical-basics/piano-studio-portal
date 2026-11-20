@@ -2,7 +2,7 @@
 //
 // ZBackup (a third-party Zoom -> Dropbox backup app) drops every lesson
 // recording into a flat backup directory, one subfolder per recording named
-// like "2026_06_14T06-59 Yakir Shimon _ Piano Lesson". This takes the primary
+// like "2026_06_14T06-59 Alex Rivera _ Piano Lesson". This takes the primary
 // .mp4 out of each backup subfolder, moves it into the student's
 // "/Lesson Recordings/{folder}" directory (where the student dashboard reads
 // from), creates a share link, and attaches it to the matching lesson row.

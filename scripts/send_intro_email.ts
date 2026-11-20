@@ -3,8 +3,10 @@
 // for real.
 //
 // Usage:
-//   npx tsx scripts/send_intro_email.ts                      # test -> musicalbasics@gmail.com
-//   npx tsx scripts/send_intro_email.ts shunyingchen5@gmail.com   # real send to Franz
+//   STUDENT_EMAIL=... STUDENT_FIRST_NAME=... STUDENT_TEMP_PASSWORD=... STUDENT_DAY=... STUDENT_TIME=... \
+//     npx tsx scripts/send_intro_email.ts                 # test -> musicalbasics@gmail.com
+//   (same) npx tsx scripts/send_intro_email.ts <their email>   # real send
+// The family's details come from the environment, never from this file.
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { Resend } from 'resend'
@@ -14,12 +16,18 @@ config({ path: '.env.local' })
 const TEST_RECIPIENT = 'musicalbasics@gmail.com'
 const recipient = process.argv[2] || TEST_RECIPIENT
 
+function need(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`Set ${name}`)
+  return v
+}
+
 const STUDENT = {
-  firstName: 'Franz',
-  email: 'shunyingchen5@gmail.com',
-  tempPassword: 'piano123',
-  day: 'Sundays',
-  time: '3:15 PM Pacific',
+  firstName: need('STUDENT_FIRST_NAME'),
+  email: need('STUDENT_EMAIL'),
+  tempPassword: need('STUDENT_TEMP_PASSWORD'),
+  day: need('STUDENT_DAY'),
+  time: need('STUDENT_TIME'),
 }
 const PORTAL_URL = 'https://lessons.musicalbasics.com'
 const PDF_PATH = resolve('docs/Online Lessons Setup LYPS 2025.pdf')

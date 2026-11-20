@@ -178,7 +178,7 @@ export function decideStorageAlert(
     const measured: Resource[] = ['database', 'files']
     if (usage.r2) measured.push('r2')
     if (usage.emails) measured.push('emails')
-    if (usage.emails && usage.emails.day != null && usage.emails.dayLimit) measured.push('emailsDay')
+    if (usage.emails && usage.emails.day != null) measured.push('emailsDay')
     const bytesOf = (resource: Resource): number => {
         if (resource === 'r2') return usage.r2!.bytes
         if (resource === 'emails') return usage.emails!.month
@@ -187,7 +187,7 @@ export function decideStorageAlert(
     }
     const limitOf = (resource: Resource): number => {
         if (resource === 'emails') return limits.emails ?? usage.emails!.monthLimit
-        if (resource === 'emailsDay') return limits.emailsDay ?? usage.emails!.dayLimit ?? 0
+        if (resource === 'emailsDay') return limits.emailsDay ?? usage.emails!.dayLimit
         return limits[resource]
     }
     const reports: ResourceReport[] = measured.map(resource => {
@@ -290,12 +290,13 @@ const TO_DO: Record<Resource, string> = {
     emailsDay: 'What to do: move to a paid Resend plan (resend.com, Settings, Billing): paid plans have no daily limit.',
 }
 
-/** The email limit was assumed from the plan, not set: say so, and how to set it. */
+/** The email limit is the free plan's default, not a setting: say so, and how to set it. */
 function emailLimitLine(r: ResourceReport, usage: Partial<Usage>): string {
-    if (r.resource !== 'emails' || usage.emails?.limitFrom !== 'plan') return ''
-    return usage.emails.plan === 'free'
-        ? "The limit is the free plan's 3,000 a month."
-        : `${Math.round(r.limit).toLocaleString('en-US')} a month is Resend Pro's limit, assumed: if the plan is different, set RESEND_MONTHLY_LIMIT in Vercel.`
+    if (r.resource !== 'emails' || usage.emails?.limitFrom !== 'free-default') return ''
+    return usage.emails.noDailyCount
+        ? "The limit is the free plan's 3,000 a month, used because RESEND_MONTHLY_LIMIT is not set. Resend sends no daily count for this account, "
+            + "which means a paid plan: set RESEND_MONTHLY_LIMIT in Vercel to the plan's monthly emails."
+        : "The limit is the free plan's 3,000 a month (RESEND_MONTHLY_LIMIT is not set)."
 }
 
 /** One line of information: the whole Cloudflare account, other projects included (never alerted on). */
@@ -332,7 +333,7 @@ export function renderStorageEmail(due: ResourceReport[], all: ResourceReport[],
         const first = r.resource === 'emails'
             ? `<strong>${sizeOf(r.resource, r.bytes)}</strong> went out this billing month, of the Resend plan's ${Math.round(r.limit).toLocaleString('en-US')} (<strong>${r.percent}%</strong>).`
             : r.resource === 'emailsDay'
-                ? `<strong>${sizeOf(r.resource, r.bytes)}</strong> went out today (the UTC day), of the free plan's ${Math.round(r.limit).toLocaleString('en-US')} a day (<strong>${r.percent}%</strong>).`
+                ? `<strong>${sizeOf(r.resource, r.bytes)}</strong> went out today (the UTC day), of the plan's ${Math.round(r.limit).toLocaleString('en-US')} a day (<strong>${r.percent}%</strong>).`
                 : `The ${LABEL[r.resource]} is <strong>${sizeOf(r.resource, r.bytes)}</strong> of ${plan(r)} ${sizeOf(r.resource, r.limit)} (<strong>${r.percent}%</strong>).`
         const lines = [
             first,
@@ -360,7 +361,7 @@ export function renderStorageEmail(due: ResourceReport[], all: ResourceReport[],
 
 export const STORAGE_FOOTER = `Sent by the portal's daily storage check (/api/cron/storage-check). `
     + `It emails when the database, files or the studio's Cloudflare R2 video buckets pass ${WARN_AT * 100}% of their free limit, `
-    + `or the emails sent through Resend pass ${WARN_AT * 100}% of the plan's monthly limit, again at most once a week while they stay over, `
+    + `or the emails sent through Resend pass ${WARN_AT * 100}% of the monthly or daily limit, again at most once a week while they stay over, `
     + `and once more when one passes ${URGENT_AT * 100}%.`
 
 /** Reads the sizes through the service-role-only SQL function. */

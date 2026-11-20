@@ -46,9 +46,9 @@ export function pickPrimaryRecordingFile(files: ZoomRecordingFile[]): ZoomRecord
 }
 
 // A recording shorter than this is a no-show (the teacher waiting in an empty
-// room) or a dropped-connection fragment, not a lesson. Robert Alconcel's
+// room) or a dropped-connection fragment, not a lesson. One student's
 // 2026-10-22 no-show was a 2-3 minute clip that the webhook logged as a lesson,
-// charging him a credit and filing an empty video in his recordings.
+// charging a credit and filing an empty video in their recordings.
 export const MIN_LESSON_RECORDING_MINUTES = 5
 
 // ZBackup copies carry no timing, so the organizer judges length by the

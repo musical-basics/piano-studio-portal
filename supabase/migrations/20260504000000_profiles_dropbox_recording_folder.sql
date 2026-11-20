@@ -1,6 +1,6 @@
 -- Maps each student to the existing Dropbox folder under /Lesson Recordings/
--- where their recordings live. Folder names are inconsistent (e.g. "Daniel
--- Recordings", "Yakir Shimon Lesson Recordings", "Mohammed Habbab"), so we
+-- where their recordings live. Folder names are inconsistent (e.g. "Alex
+-- Recordings", "Alex Rivera Lesson Recordings", "Jordan Lee"), so we
 -- store the exact folder name per student rather than computing it.
 ALTER TABLE "public"."profiles"
     ADD COLUMN IF NOT EXISTS "dropbox_recording_folder" "text";

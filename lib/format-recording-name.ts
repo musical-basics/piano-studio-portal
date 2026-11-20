@@ -7,7 +7,7 @@
  * Convert a raw Zoom/Dropbox filename into a clean, human-readable display name.
  *
  * Handles patterns like:
- *   "2026-05-24 12.30.30 Waris Matharu's Piano Lesson 1234567890.mp4"
+ *   "2026-05-24 12.30.30 Alex Rivera's Piano Lesson 1234567890.mp4"
  *   "GMT20260524-153000_Recording_1920x1080.mp4"
  *   "shared_screen_with_speaker_view.mp4"
  *   "2026-05-24 - Lesson.mp4"  (already clean from our move script)

@@ -351,7 +351,7 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'storage-check',
         name: 'Storage check',
-        what: "Emails you when the database or files pass 80% of Supabase's free plan (500 MB and 1 GB), or the studio's Cloudflare R2 video buckets (classroom and practice videos) pass 80% of the free 10 GB, or the emails the portal sends through Resend pass 80% of the plan's monthly limit (reminders stop at the limit).",
+        what: "Emails you when the database or files pass 80% of Supabase's free plan (500 MB and 1 GB), or the studio's Cloudflare R2 video buckets (classroom and practice videos) pass 80% of the free 10 GB, or the emails sent through Resend pass 80% of the monthly or daily sending limit (reminders stop at the limit).",
         group: 'watch',
         summarize: b => (typeof b?.message === 'string' ? b.message.charAt(0).toUpperCase() + b.message.slice(1) : undefined),
     },

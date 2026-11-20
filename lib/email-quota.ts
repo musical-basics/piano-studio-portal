@@ -18,16 +18,17 @@
  * Resend's billing month, not the calendar month. The probe itself is one
  * email a day (about 30 a month).
  *
- * The limit itself isn't in any answer: RESEND_MONTHLY_LIMIT (and
- * RESEND_DAILY_LIMIT) set it; otherwise the free plan's 3,000 a month and
- * 100 a day when the daily header comes back, and 50,000 a month (Resend Pro)
- * when it doesn't. In Nov 2026 the account had no daily header (a paid plan:
- * it sent 160 emails on one day, past the free plan's 100).
+ * The limit itself isn't in any answer, so nothing is assumed about the
+ * plan: RESEND_MONTHLY_LIMIT and RESEND_DAILY_LIMIT set it, otherwise the free
+ * plan's 3,000 a month and 100 a day. The daily count is checked only when
+ * Resend sends it (the daily header). In Nov 2026 the account sent no daily
+ * header and sent up to 160 emails in a UTC day without a refusal, both signs
+ * of a paid plan: setting RESEND_MONTHLY_LIMIT to the plan's figure stops the
+ * free plan's 3,000 from alerting early.
  */
 
 export const FREE_MONTHLY_LIMIT = 3_000
 export const FREE_DAILY_LIMIT = 100
-export const PRO_MONTHLY_LIMIT = 50_000
 
 const PROBE_TO = 'delivered@resend.dev'
 const PROBE_FROM = 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>'
@@ -36,12 +37,13 @@ export type EmailQuota = {
     /** Emails used this billing month, as Resend counts them. */
     month: number
     monthLimit: number
-    /** Free plan only: emails used today (UTC day). */
+    /** Emails used today (UTC day), when Resend sends it (free plan only); null otherwise. */
     day: number | null
-    dayLimit: number | null
-    plan: 'free' | 'paid'
-    /** Whether the limits came from RESEND_MONTHLY_LIMIT / RESEND_DAILY_LIMIT or were assumed from the plan. */
-    limitFrom: 'setting' | 'plan'
+    dayLimit: number
+    /** Resend sent no daily count: its sign of a paid plan (no daily limit). */
+    noDailyCount: boolean
+    /** RESEND_MONTHLY_LIMIT set, or the free plan's 3,000 by default. */
+    limitFrom: 'setting' | 'free-default'
 }
 
 function setting(name: string): number | null {
@@ -55,16 +57,14 @@ export function quotaFromHeaders(get: (name: string) => string | null): EmailQuo
     if (get('x-resend-monthly-quota') == null || !Number.isFinite(month)) return null
     const dailyRaw = get('x-resend-daily-quota')
     const day = dailyRaw != null && Number.isFinite(Number(dailyRaw)) ? Number(dailyRaw) : null
-    const plan = day === null ? 'paid' : 'free'
     const monthSet = setting('RESEND_MONTHLY_LIMIT')
-    const daySet = setting('RESEND_DAILY_LIMIT')
     return {
         month,
-        monthLimit: monthSet ?? (plan === 'free' ? FREE_MONTHLY_LIMIT : PRO_MONTHLY_LIMIT),
+        monthLimit: monthSet ?? FREE_MONTHLY_LIMIT,
         day,
-        dayLimit: day === null ? null : daySet ?? FREE_DAILY_LIMIT,
-        plan,
-        limitFrom: monthSet ? 'setting' : 'plan',
+        dayLimit: setting('RESEND_DAILY_LIMIT') ?? FREE_DAILY_LIMIT,
+        noDailyCount: day === null,
+        limitFrom: monthSet ? 'setting' : 'free-default',
     }
 }
 

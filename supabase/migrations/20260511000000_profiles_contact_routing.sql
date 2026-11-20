@@ -22,13 +22,13 @@ BEGIN
 END $$;
 
 COMMENT ON COLUMN public.profiles.preferred_name IS
-    'Display nickname for the student (e.g. "Rob" for "Robert Alconcel"). Used in UI and message addressing when primary_contact_role is "student".';
+    'Display nickname for the student (e.g. "Sam" for "Samuel Rivera"). Used in UI and message addressing when primary_contact_role is "student".';
 
 COMMENT ON COLUMN public.profiles.parent_contact_name IS
-    'Name of the primary parent/guardian/contact person (e.g. "Amanda Daigle", "Zou Guo"). Shown in admin views and used to address outbound messages when primary_contact_role is "parent".';
+    'Name of the primary parent/guardian/contact person (e.g. "Jordan Lee", "Maria Lopez"). Shown in admin views and used to address outbound messages when primary_contact_role is "parent".';
 
 COMMENT ON COLUMN public.profiles.contact_salutation IS
-    'Explicit override for how to address the recipient in messages (e.g. "Rob", "Amanda", "Zou"). When set, takes precedence over preferred_name / parent_contact_name first-name derivation.';
+    'Explicit override for how to address the recipient in messages (e.g. "Sam", "Jordan", "Maria"). When set, takes precedence over preferred_name / parent_contact_name first-name derivation.';
 
 COMMENT ON COLUMN public.profiles.primary_contact_role IS
     'Who Lionel actually communicates with for this student: "student" (default behavior) or "parent". NULL is treated as "student". Drives default salutation routing.';

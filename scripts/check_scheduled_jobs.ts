@@ -125,7 +125,8 @@ async function main() {
 
     await wrapped('weekly-summary', async () => Response.json({ error: 'Unauthorized' }, { status: 401 }))(new Request(url + 'weekly-summary'))
     await wrapped('weekly-summary', async () => Response.json({ success: true, emailed: false }))(new Request(url + 'weekly-summary?dry=1'))
-    assert.equal(rows.has('weekly-summary'), false, 'unauthorized and dry runs are not recorded')
+    await wrapped('weekly-summary', async () => Response.json({ error: 'month= only works with dry=1' }, { status: 400 }))(new Request(url + 'weekly-summary?month=2026-10'))
+    assert.equal(rows.has('weekly-summary'), false, 'unauthorized, dry and wrong-parameter runs are not recorded')
 
     // A broken database client never breaks the run.
     res = await withCronRun('reminders', async () => Response.json({ success: true }), { client: () => { throw new Error('no env') } })(new Request(url + 'reminders'))

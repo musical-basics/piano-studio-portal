@@ -23,7 +23,7 @@ import { MonthlyStatementEmail } from '@/components/emails/monthly-statement-ema
  * Who gets one: role 'student', status 'active'. Test/teacher accounts
  * (status 'other', or a teacher's untracked credits) never do. Addressed like
  * every other family email: "Hi <resolveSalutation>," to resolveNotificationEmail.
- * When the salutation is the parent, the email names the child ("Here's Waris's
+ * When the salutation is the parent, the email names the child ("Here's Alex's
  * lesson summary"); otherwise it says "your".
  *
  * The announcement opt-out (profiles.announcement_emails_opt_out) does NOT

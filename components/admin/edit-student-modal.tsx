@@ -200,7 +200,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             name="preferredName"
                             type="text"
                             defaultValue={(student as any).preferred_name || ''}
-                            placeholder='e.g. "Rob" for Robert'
+                            placeholder='e.g. "Sam" for Samuel'
                         />
                         <p className="text-xs text-muted-foreground">
                             Used in the admin UI and as the default message salutation when you address the student directly.
@@ -272,7 +272,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             name="parentContactName"
                             type="text"
                             defaultValue={(student as any).parent_contact_name || ''}
-                            placeholder='e.g. "Amanda Daigle", "Zou Guo"'
+                            placeholder='e.g. "Jordan Lee", "Maria Lopez"'
                         />
                         <p className="text-xs text-muted-foreground">
                             The parent or guardian Lionel actually communicates with about this student.
@@ -305,7 +305,7 @@ export function EditStudentModal({ student, pricingPlans }: EditStudentModalProp
                             name="contactSalutation"
                             type="text"
                             defaultValue={(student as any).contact_salutation || ''}
-                            placeholder='e.g. "Rob", "Amanda"'
+                            placeholder='e.g. "Sam", "Jordan"'
                         />
                         <p className="text-xs text-muted-foreground">
                             Optional. If set, this is the exact name Lionel will use when greeting the recipient. Falls back to preferred name or first name of the parent contact.

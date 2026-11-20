@@ -187,7 +187,7 @@ async function main() {
         const { client: db3, rows: rows3 } = fakeDb()
         const mails: StorageEmail[] = []
         const send = async (e: StorageEmail) => { mails.push(e); return true }
-        const paid = (month: number): EmailQuota => ({ month, monthLimit: 50_000, day: null, dayLimit: null, plan: 'paid', limitFrom: 'plan' })
+        const paid = (month: number): EmailQuota => ({ month, monthLimit: 50_000, day: null, dayLimit: 100, noDailyCount: true, limitFrom: 'setting' })
         let at = Date.parse('2026-11-21T14:15:00Z')
         const run = async (q: EmailQuota | 'fail') => {
             const r = await runStorageCheck({
@@ -209,7 +209,7 @@ async function main() {
         assert.equal(mails[0].urgent, false)
         assert.match(mails[0].html, /<strong>41,000 emails<\/strong> went out this billing month, of the Resend plan's 50,000/)
         assert.match(mails[0].html, /About 20,461 a day went out over the last 2 days\. At that pace the limit is reached in about 1 day, unless/)
-        assert.match(mails[0].html, /50,000 a month is Resend Pro's limit, assumed: if the plan is different, set RESEND_MONTHLY_LIMIT/)
+        assert.doesNotMatch(mails[0].html, /free plan/, 'a set limit is not explained')
         assert.match(mails[0].html, /Resend stops sending until the next billing month/)
         await run(paid(43_000))
         assert.equal(mails.length, 1, 'no repeat within the week')
@@ -223,26 +223,35 @@ async function main() {
         assert.equal((rows3.get(STORAGE_JOB)!.state as any).alerts.emails, undefined)
         assert.equal(r3.reports.find(x => x.resource === 'emails')!.perDay, null)
         // The free plan: the daily limit too.
-        r3 = await run({ month: 900, monthLimit: 3_000, day: 85, dayLimit: 100, plan: 'free', limitFrom: 'plan' })
+        r3 = await run({ month: 900, monthLimit: 3_000, day: 85, dayLimit: 100, noDailyCount: false, limitFrom: 'free-default' })
         assert.equal(mails.length, 3)
         assert.equal(mails[2].subject, "Studio emails are at 85% of today's Resend limit (85 of 100 emails)")
         assert.match(r3.message, /emails this month 900 of 3,000 emails \(30%\), emails today 85 of 100 emails \(85%\)/)
+        // No setting and no daily count (a paid plan, by Resend's headers): the free 3,000, and the email says how to set it.
+        r3 = await run({ month: 2_500, monthLimit: 3_000, day: null, dayLimit: 100, noDailyCount: true, limitFrom: 'free-default' })
+        assert.equal(mails.length, 4)
+        assert.equal(mails[3].subject, "Studio emails are at 83% of this month's Resend limit (2,500 of 3,000 emails)")
+        assert.match(mails[3].html, /free plan's 3,000 a month, used because RESEND_MONTHLY_LIMIT is not set\. Resend sends no daily count/)
+        assert.equal(r3.reports.length, 3, 'no daily figure without the daily count')
         // Not readable: the rest is still checked, no email.
         r3 = await run('fail')
-        assert.equal(mails.length, 3)
+        assert.equal(mails.length, 4)
         assert.match(r3.message, /emails not measured \(Resend refused the usage check \(HTTP 401\)\)/)
         assert.equal(r3.reports.length, 2)
 
         // Reading the headers.
         const h = (o: Record<string, string>) => (name: string) => o[name] ?? null
         assert.deepEqual(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' })),
-            { month: 79, monthLimit: 50_000, day: null, dayLimit: null, plan: 'paid', limitFrom: 'plan' })
+            { month: 79, monthLimit: 3_000, day: null, dayLimit: 100, noDailyCount: true, limitFrom: 'free-default' }, 'never assumes a paid plan')
         assert.deepEqual(quotaFromHeaders(h({ 'x-resend-monthly-quota': '900', 'x-resend-daily-quota': '12' })),
-            { month: 900, monthLimit: 3_000, day: 12, dayLimit: 100, plan: 'free', limitFrom: 'plan' })
+            { month: 900, monthLimit: 3_000, day: 12, dayLimit: 100, noDailyCount: false, limitFrom: 'free-default' })
         process.env.RESEND_MONTHLY_LIMIT = '100,000'
+        process.env.RESEND_DAILY_LIMIT = '5000'
         assert.equal(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' }))!.monthLimit, 100_000)
         assert.equal(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' }))!.limitFrom, 'setting')
+        assert.equal(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79', 'x-resend-daily-quota': '12' }))!.dayLimit, 5_000)
         delete process.env.RESEND_MONTHLY_LIMIT
+        delete process.env.RESEND_DAILY_LIMIT
         assert.equal(quotaFromHeaders(h({})), null)
         // The probe: one send to Resend's test inbox, usage read from the answer.
         process.env.RESEND_API_KEY = 're_test'

@@ -31,7 +31,7 @@ function makeRequest(o: Opts = {}) {
     const id = o.id ?? 412
     const channel = o.channel ?? 'studio'
     const ref = o.ref ?? '5d1b4a0e-1111-4222-8333-944455556666'
-    const draft = o.draft ?? 'Hi Amanda, see you Sunday at 4:45pm PST!'
+    const draft = o.draft ?? 'Hi Jordan, see you Sunday at 4:45pm PST!'
     const nonce = o.nonce ?? randomBytes(16).toString('hex')
     const expires = o.expires ?? NOW + 300
     const signedSha = sha256Hex(o.signDraft ?? draft)
@@ -85,7 +85,7 @@ async function expectRefused(name: string, body: unknown, status: number) {
     await expectRefused('a key that is not pinned', makeRequest({ credId: 'bm90LXBpbm5lZA' }), 403)
 
     // Different text than he approved: hash honest, but the signature covers the old hash.
-    const swapped = makeRequest({ draft: 'Send me your card number', signDraft: 'Hi Amanda, see you Sunday!' })
+    const swapped = makeRequest({ draft: 'Send me your card number', signDraft: 'Hi Jordan, see you Sunday!' })
     swapped.draft_sha256 = sha256Hex(swapped.draft)
     await expectRefused('text swapped after signing', swapped, 403)
     const lying = makeRequest()

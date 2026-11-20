@@ -59,7 +59,9 @@ type Handler = (request: Request) => Promise<Response>
  * detail is the job's one-line summary of its JSON, see scheduled-jobs.ts),
  * anything else failed (the detail is the route's `error`), and a thrown error
  * failed and is re-thrown unchanged. Not recorded: unauthorized requests (a
- * stranger hitting the URL is not a run) and ?dry=1 test runs. A "Run now"
+ * stranger hitting the URL is not a run), ?dry=1 test runs, and a 400 (a test
+ * call with wrong parameters, refused before doing anything: on Nov 19 one left
+ * the monthly statements red for a job that had not run yet). A "Run now"
  * from the jobs page is recorded like any run, its detail ending "(run by hand)".
  *
  *   export const GET = withCronRun('reminders', handle)
@@ -83,7 +85,7 @@ export function withCronRun(job: string, handler: Handler, opts: { client?: () =
             await record({ ok: false, detail: e instanceof Error ? e.message : String(e) })
             throw e
         }
-        if (res.status === 401 || new URL(request.url).searchParams.get('dry') === '1') return res
+        if (res.status === 401 || res.status === 400 || new URL(request.url).searchParams.get('dry') === '1') return res
 
         let body: any = null
         try {

@@ -65,7 +65,7 @@ async function main() {
                 intent: 'skip_requested',
                 status: 'active',
                 source: 'agent',
-                note: 'Edwin requested to skip next Tuesday lesson.'
+                note: 'Student requested to skip next Tuesday lesson.'
             })
             .select()
             .single()

@@ -115,7 +115,7 @@ function StudentCard({ student, recitalEventId, engagement }: { student: Student
                     <div className="space-y-3">
                         <div className="grid gap-1.5">
                             <Label htmlFor={`pn-${student.id}`} className="text-xs">Parent name</Label>
-                            <Input id={`pn-${student.id}`} value={parentName} onChange={e => setParentName(e.target.value)} placeholder="e.g. Amanda" />
+                            <Input id={`pn-${student.id}`} value={parentName} onChange={e => setParentName(e.target.value)} placeholder="e.g. Jordan" />
                         </div>
                         <div className="grid gap-1.5">
                             <Label htmlFor={`pe-${student.id}`} className="text-xs">Parent email</Label>
@@ -123,7 +123,7 @@ function StudentCard({ student, recitalEventId, engagement }: { student: Student
                         </div>
                         <div className="grid gap-1.5">
                             <Label htmlFor={`sal-${student.id}`} className="text-xs">Salutation override (optional)</Label>
-                            <Input id={`sal-${student.id}`} value={salutation} onChange={e => setSalutation(e.target.value)} placeholder='Overrides everything, e.g. "Dr. Chen"' />
+                            <Input id={`sal-${student.id}`} value={salutation} onChange={e => setSalutation(e.target.value)} placeholder='Overrides everything, e.g. "Dr. Lopez"' />
                         </div>
                         <div className="grid gap-1.5">
                             <Label className="text-xs">Primary contact</Label>

@@ -114,7 +114,7 @@ export type DraftContext = {
     programText: string
 }
 
-// All drafts below follow Lionel's message style: short, casual, "Hi Amanda,"
+// All drafts below follow Lionel's message style: short, casual, "Hi Jordan,"
 // greetings, times like "2pm PDT", no sign-offs.
 
 export function buildPerformerDraft(

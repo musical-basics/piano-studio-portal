@@ -12,9 +12,10 @@ export const maxDuration = 60
 // 80%, at most weekly while over and once more at 95% (Lionel's #778,
 // lib/storage-usage.ts). Since #1072 also the studio's Cloudflare R2 buckets
 // (classroom and practice videos) against the free 10 GB, same 80% email.
-// Since #1073 also the emails sent through Resend this billing month against
-// the plan's limit (lib/email-quota.ts: one send to Resend's test inbox reads
-// the usage), same 80% email.
+// Since #1073 also the emails sent through Resend this billing month (and
+// today, when Resend gives the count) against the limits (RESEND_MONTHLY_LIMIT
+// and RESEND_DAILY_LIMIT, else the free plan's 3,000 and 100; lib/email-quota.ts:
+// one send to Resend's test inbox reads the usage), same 80% email.
 // Silent otherwise; nothing goes to families.
 // Manual runs: ?dry=1 measures and returns what it would email (with the HTML)
 // without sending or saving (the Resend usage read is still its one test send).
