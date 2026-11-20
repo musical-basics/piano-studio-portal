@@ -4,6 +4,7 @@ import { shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr, STUD
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { listClassroomRecordingsForAdmin, UUID_RE } from '@/lib/classroom-recordings'
+import { formatWait, loadReplyTimes, type ReplyTimes } from '@/lib/reply-times'
 
 /**
  * Monday morning summary of last week, for Lionel only (#754): one email to the
@@ -47,6 +48,8 @@ export type WeeklySummary = {
     }
     /** Active families at 0 lessons or below. */
     zeroFamilies: { name: string; credits: number; nextPayment: string | null; perPayment: number | null; planEnds: string | null }[]
+    /** How long family messages waited for an answer (#1054); null when it could not be read. */
+    replies: ReplyTimes | null
 }
 
 /** Monday (YYYY-MM-DD) of the week holding this date. */
@@ -194,6 +197,14 @@ export async function buildWeeklySummary(
         }
     }))
 
+    // ---- Reply times (#1054). A failed read leaves the section out, not the email.
+    let replies: ReplyTimes | null = null
+    try {
+        replies = await loadReplyTimes(client, startIso, endIso)
+    } catch (e: any) {
+        console.error('[weekly-summary] reply times failed:', e?.message || e)
+    }
+
     return {
         weekStart: monday,
         weekEnd: sunday,
@@ -202,6 +213,7 @@ export async function buildWeeklySummary(
         videos: { ...videos, unmatched },
         credits: { used, added, additions },
         zeroFamilies,
+        replies,
     }
 }
 
@@ -295,6 +307,25 @@ export function renderWeeklySummary(s: WeeklySummary): { subject: string; html: 
             return `<li>${escapeHtml(f.name)}: ${f.credits} lessons${plan}</li>`
         }).join('')}</ul>`)
         parts.push(`<p style="${MUTED}">Balance as of this morning.</p>`)
+    }
+
+    const R = s.replies
+    if (R) {
+        parts.push(`<h3 style="${H}">Replies to families</h3>`)
+        if (R.answered === 0 && R.stillWaiting.length === 0) {
+            parts.push(`<p style="${P}">No family messages last week.</p>`)
+        } else {
+            if (R.answered > 0) {
+                const longest = R.longest
+                    ? `, longest ${formatWait(R.longest.minutes)} (${escapeHtml(R.longest.name)}, ${studioDay(R.longest.at)})`
+                    : ''
+                parts.push(`<p style="${P}">${plural(R.answered, 'message')} answered: typical wait ${formatWait(R.typicalMinutes ?? 0)}${longest}.</p>`)
+            }
+            if (R.stillWaiting.length) {
+                parts.push(`<p style="${P}"><b>Still waiting:</b> ${R.stillWaiting.map(w => `${escapeHtml(w.name)} (since ${studioDay(w.at)})`).join(', ')}.</p>`)
+            }
+            parts.push(`<p style="${MUTED}">From a family's first unanswered message to your next message in that thread. A thank-you you did not answer shows as still waiting.</p>`)
+        }
     }
 
     return {
