@@ -125,6 +125,55 @@ async function main() {
     assert.ok(readings.length <= 36, `kept ${readings.length} readings`)
     assert.equal(new Set(readings.map((x: any) => x.date)).size, readings.length)
 
+    // ---- Cloudflare R2 (#1072): the whole account against the free 10 GB, decimal GB, never "urgent".
+    {
+        const { client: db2, rows: rows2 } = fakeDb()
+        const mails: StorageEmail[] = []
+        const send = async (e: StorageEmail) => { mails.push(e); return true }
+        const GB = 1e9
+        const r2At = (gb: number) => async () => ({
+            bytes: gb * GB,
+            files: 300,
+            buckets: [
+                { name: 'other-site', bytes: (gb - 2.5) * GB, files: 200 },
+                { name: 'musicalbasics-recordings', bytes: 2.5 * GB, files: 99 },
+                { name: 'empty', bytes: 0, files: 0 },
+            ],
+        })
+        let at = Date.parse('2026-11-21T14:15:00Z')
+        const run = async (gb: number | 'fail') => {
+            const r = await runStorageCheck({
+                client: db2, usage: usage(21, 176), now: new Date(at), sendAlert: send,
+                measureR2: gb === 'fail' ? async () => { throw new Error('R2 list buckets: HTTP 403') } : r2At(gb),
+            })
+            at += 86_400_000
+            return r
+        }
+        let r2 = await run(7.9)
+        assert.equal(mails.length, 0)
+        assert.match(r2.message, /Cloudflare R2 storage 7\.9 GB of 10 GB \(79%\)/)
+        r2 = await run(8.2)
+        assert.equal(mails.length, 1)
+        assert.equal(mails[0].subject, 'Studio Cloudflare R2 storage is at 82% of the free 10 GB (8.2 GB of 10 GB)')
+        assert.equal(mails[0].urgent, false)
+        assert.match(mails[0].html, /musicalbasics-recordings \(classroom videos\) 2\.5 GB \(99 files\)/)
+        assert.doesNotMatch(mails[0].html, /empty 0/)
+        assert.match(mails[0].html, /whole Cloudflare account/)
+        assert.match(mails[0].html, /database is 21 MB of 500 MB \(4%\), fine/)
+        // Over the free 10 GB: the 95% email, with the monthly cost, still not urgent.
+        await run(15.5)
+        assert.equal(mails.length, 2)
+        assert.equal(mails[1].urgent, false)
+        assert.match(mails[1].subject, /^Studio Cloudflare R2 storage is at 155%/)
+        assert.match(mails[1].html, /costs about \$0\.09 a month \(6 GB over the free 10 GB\)/)
+        // R2 cannot be measured: Supabase is still checked, the R2 alert state is kept, no email.
+        r2 = await run('fail')
+        assert.equal(mails.length, 2)
+        assert.match(r2.message, /R2 not measured \(R2 list buckets: HTTP 403\)/)
+        assert.ok((rows2.get(STORAGE_JOB)!.state as any).alerts.r2)
+        assert.equal(r2.reports.length, 2)
+    }
+
     console.log(`storage alert: all checks passed (${sent.length} emails in the scenario)`)
 }
 

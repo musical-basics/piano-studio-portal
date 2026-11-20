@@ -257,7 +257,7 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'storage-check',
         name: 'Storage check',
-        what: "Emails you when the database or files pass 80% of Supabase's free plan (500 MB and 1 GB).",
+        what: "Emails you when the database or files pass 80% of Supabase's free plan (500 MB and 1 GB), or Cloudflare R2 (classroom videos) passes 80% of its free 10 GB.",
         group: 'watch',
         summarize: b => (typeof b?.message === 'string' ? b.message.charAt(0).toUpperCase() + b.message.slice(1) : undefined),
     },
