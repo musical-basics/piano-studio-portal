@@ -433,8 +433,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             } else {
                 toast({
                     title: "No-Show Recorded",
-                    description: `${lesson.student.name} marked as No-Show. Credit forfeited.`
+                    // #1097: the bar at the top offers Undo for 10 minutes.
+                    description: `${lesson.student.name} marked as No-Show. Credit forfeited. Undo is at the top of the page for 10 minutes.`
                 })
+                setCalendarVersion(v => v + 1)
             }
         }
     }
@@ -913,7 +915,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             </header>
 
             <main className="container mx-auto px-4 py-8">
-                {/* #1086: Undo for 10 minutes after a cancel, whichever tab it came from */}
+                {/* #1086, #1097: Undo for 10 minutes after a cancel or a no-show, whichever tab it came from */}
                 <RecentUndoBar version={calendarVersion} onChanged={() => setCalendarVersion(v => v + 1)} />
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
                     <TabsList className="w-full justify-start overflow-x-auto h-auto p-1">

@@ -247,6 +247,10 @@ export function eventLine(ev: EventRow, name: string): DayChange {
                 Array.isArray(d.restored) && d.restored.length ? `kept its ${d.restored.join(', ')}` : null,
             ])
             break
+        case 'no_show_undone':
+            what = `Undid the no-show of ${when} (back to unlogged)`
+            extra = join([creditWords(d.credits_before, d.credits_after), d.reason ? `why: ${d.reason}` : null])
+            break
         default:
             what = `${String(ev.kind)} ${when}`
     }
@@ -274,6 +278,7 @@ export function creditSource(source: string | null, note: string | null, delta: 
     if (/^monthly plan renewal/i.test(s)) return { who: 'the portal on its own', words: 'plan renewal payment' }
     if (/^log undone: /i.test(s)) return { who: 'you', words: `log undone: ${s.replace(/^log undone: /i, '')}` }
     if (/^unlogged lesson logged late/i.test(s)) return { who: 'you', words: s }
+    if (/^no-show undone: /i.test(s)) return { who: 'you', words: `no-show undone: ${s.replace(/^no-show undone: /i, '')}` }
     if (/^no-show/i.test(s)) return { who: 'you', words: 'no-show' }
     if (/^late charge/i.test(s)) return { who: 'you', words: s }
     if (/^logged by /i.test(s)) return { who: 'the portal on its own', words: s }
@@ -491,6 +496,7 @@ export function summarizeDayChanges(lines: DayChange[]): string {
         ['held', 'put on hold', 'put on hold'],
         ['released', 'released', 'released'],
         ['cancel_undone', 'cancel undone', 'cancels undone'],
+        ['no_show_undone', 'no-show undone', 'no-shows undone'],
         ['credit', 'other credit change', 'other credit changes'],
     ]
     const parts: string[] = []

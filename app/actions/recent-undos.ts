@@ -3,8 +3,15 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { listRecentCancelUndosCore, undoCancelCore, type RecentUndo, type UndoCancelResult } from '@/lib/core/undo-cancel'
+import {
+    getUndoNoShowPreviewCore,
+    listRecentNoShowUndosCore,
+    undoNoShowCore,
+    type UndoNoShowPreview,
+    type UndoNoShowResult,
+} from '@/lib/core/no-show'
 
-export type { RecentUndo, UndoCancelResult }
+export type { RecentUndo, UndoCancelResult, UndoNoShowPreview, UndoNoShowResult }
 
 // These run with the service key, so they check the caller themselves: a server
 // action can be called by anyone who has its id.
@@ -22,8 +29,8 @@ export async function getRecentUndos(): Promise<{ items: RecentUndo[] } | { erro
     const admin = await adminId()
     if (typeof admin !== 'string') return admin
     try {
-        const items = await listRecentCancelUndosCore()
-        return { items: items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) }
+        const [cancels, noShows] = await Promise.all([listRecentCancelUndosCore(), listRecentNoShowUndosCore()])
+        return { items: [...cancels, ...noShows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) }
     } catch (e: any) {
         return { error: e?.message ?? 'Could not load what can be undone' }
     }
@@ -34,6 +41,26 @@ export async function undoCancel(cancellationId: string): Promise<UndoCancelResu
     const admin = await adminId()
     if (typeof admin !== 'string') return admin
     const result = await undoCancelCore({ adminId: admin, cancellationId })
+    revalidatePath('/admin')
+    revalidatePath('/student')
+    return result
+}
+
+/** What undoing a no-show would do, for its dialog. Changes nothing. */
+export async function getUndoNoShowPreview(lessonId: string): Promise<UndoNoShowPreview | { error: string }> {
+    const admin = await adminId()
+    if (typeof admin !== 'string') return admin
+    return getUndoNoShowPreviewCore(lessonId)
+}
+
+/** Gives back the credit of a no-show marked in the last 10 minutes, with a reason (#1097). */
+export async function undoNoShow(
+    lessonId: string,
+    options: { reason: string; sendFamilyMessage: boolean; expectedMessage?: string },
+): Promise<UndoNoShowResult> {
+    const admin = await adminId()
+    if (typeof admin !== 'string') return admin
+    const result = await undoNoShowCore({ adminId: admin, lessonId, ...options })
     revalidatePath('/admin')
     revalidatePath('/student')
     return result

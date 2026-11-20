@@ -5,10 +5,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * each time a lesson is booked, moved, cancelled, removed, logged, marked a
  * no-show or missed, has its log undone, or is held or released, with who did
  * it. Written next to the real action and never allowed to fail it.
- * Since #1086 also 'cancel_undone' (a cancel undone within 10 minutes).
+ * Since #1086 and #1097 also 'cancel_undone' and 'no_show_undone' (undone
+ * within 10 minutes).
  */
 
-export const LESSON_EVENT_KINDS = ['booked', 'moved', 'cancelled', 'removed', 'logged', 'no_show', 'missed', 'unlogged', 'held', 'released', 'cancel_undone'] as const
+export const LESSON_EVENT_KINDS = ['booked', 'moved', 'cancelled', 'removed', 'logged', 'no_show', 'missed', 'unlogged', 'held', 'released', 'cancel_undone', 'no_show_undone'] as const
 export type LessonEventKind = (typeof LESSON_EVENT_KINDS)[number]
 
 /** admin = Lionel (pages, his email buttons, his agent); family = student or parent; auto = the portal on its own. */
