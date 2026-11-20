@@ -682,6 +682,8 @@ export type ScheduleLessonArgs = {
     confirmOverride?: boolean
     /** For "Today's changes" (#1005): who and how, when not Lionel himself. */
     event?: LessonEventContext | null
+    /** false when the caller records its own event (Undo of a cancel, #1086, records 'cancel_undone'). */
+    recordEvent?: boolean
 }
 
 export async function scheduleLessonCore({
@@ -693,6 +695,7 @@ export async function scheduleLessonCore({
     duration = 60,
     confirmOverride = false,
     event = null,
+    recordEvent = true,
 }: ScheduleLessonArgs) {
     const { data: student, error: studentError } = await client
         .from('profiles')
@@ -730,11 +733,13 @@ export async function scheduleLessonCore({
     // silently return zero rows and defeat the warning. Matches logLessonCore /
     // cancelLessonCore, which route privileged reads/writes the same way.
     const supabaseAdmin = createAdminClient()
+    // An undone cancel (#1086) never happened, as far as this warning goes.
     const { data: priorCancellations } = await supabaseAdmin
         .from('cancellation_log')
         .select('lesson_date, lesson_time, cancelled_by, was_late, cancelled_at')
         .eq('student_id', studentId)
         .eq('lesson_date', date)
+        .is('undone_at', null)
         .order('cancelled_at', { ascending: false })
 
     const hasPriorCancellation = Boolean(priorCancellations && priorCancellations.length > 0)
@@ -820,16 +825,18 @@ export async function scheduleLessonCore({
         lesson = lessonData
     }
 
-    await recordLessonEvent({
-        kind: 'booked',
-        actor: 'admin',
-        studentId,
-        lessonId: lesson?.id,
-        date,
-        time,
-        detail: { duration },
-        context: event,
-    })
+    if (recordEvent) {
+        await recordLessonEvent({
+            kind: 'booked',
+            actor: 'admin',
+            studentId,
+            lessonId: lesson?.id,
+            date,
+            time,
+            detail: { duration },
+            context: event,
+        })
+    }
 
     const scheduledStudentEmail = resolveNotificationEmail(student)
     if (resend && scheduledStudentEmail) {
@@ -1195,9 +1202,11 @@ export type CancelLessonArgs = {
 }
 
 export async function cancelLessonCore({ client, actorId, actorRole, lessonId, notify = true, event = null }: CancelLessonArgs) {
+    // The whole row: it is kept on cancellation_log.undo_snapshot so Lionel's
+    // "Undo" (#1086, lib/core/undo-cancel.ts) can book it back with what it carried.
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, date, time, status, zoom_meeting_id, google_event_id')
+        .select('*')
         .eq('id', lessonId)
         .single()
 
@@ -1226,6 +1235,12 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
     // front (before the row is deleted) so it can feed the audit log and the
     // admin notification regardless of whether a fee is actually charged below.
     const wasLate = isLateCancellation(lesson.date, lesson.time, studioNow())
+
+    // The family's homework ticks go with the row (cascade), so keep them for Undo too.
+    const { data: homeworkTicks } = await supabaseAdmin
+        .from('homework_ticks')
+        .select('item_index, item_text, ticked_at')
+        .eq('lesson_id', lessonId)
 
     const { error: deleteError } = await supabaseAdmin
         .from('lessons')
@@ -1381,6 +1396,14 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
                 actor_id: actorId,
                 was_late: wasLate,
                 fee_charged: lateCancelFee,
+                // #1086: what Undo needs to book it back (see lib/undo-window.ts).
+                undo_snapshot: {
+                    lesson,
+                    homework_ticks: homeworkTicks ?? [],
+                    kind: event?.kind ?? 'cancelled',
+                    notify,
+                    via: event?.via ?? null,
+                },
             })
         if (logError) {
             console.error('cancelLessonCore: cancellation_log insert failed (non-blocking):', logError)
@@ -1586,6 +1609,7 @@ export async function autoBookingBlockReason(studentId: string, date: string, ti
             .select('lesson_date')
             .eq('student_id', studentId)
             .eq('lesson_date', date)
+            .is('undone_at', null)
             .limit(1),
     ])
     if (flags && flags.length > 0) return (flags[0] as any).intent
@@ -1672,6 +1696,7 @@ export async function autoScheduleStandingLessonsCore({ client, adminId, fromDat
         .in('student_id', studentIds)
         .gte('lesson_date', fromDate)
         .lte('lesson_date', toDate)
+        .is('undone_at', null)
     const cancelledKeys = new Set((priorCancellations || []).map((c: any) => `${c.student_id}|${c.lesson_date}`))
 
     const slotsByStudent = new Map<string, Array<{ day: string; time: string; duration: number }>>()

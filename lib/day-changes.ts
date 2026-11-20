@@ -239,6 +239,14 @@ export function eventLine(ev: EventRow, name: string): DayChange {
             what = `Released ${when} from hold`
             extra = join([d.reason ? `was: ${d.reason}` : null])
             break
+        case 'cancel_undone':
+            what = `Undid the cancel of ${when} (booked again)`
+            extra = join([
+                d.zoom === false ? 'no new Zoom meeting' : 'new Zoom link',
+                d.calendar === false ? 'no calendar event' : 'calendar event back',
+                Array.isArray(d.restored) && d.restored.length ? `kept its ${d.restored.join(', ')}` : null,
+            ])
+            break
         default:
             what = `${String(ev.kind)} ${when}`
     }
@@ -482,6 +490,7 @@ export function summarizeDayChanges(lines: DayChange[]): string {
         ['unlogged', 'log undone', 'logs undone'],
         ['held', 'put on hold', 'put on hold'],
         ['released', 'released', 'released'],
+        ['cancel_undone', 'cancel undone', 'cancels undone'],
         ['credit', 'other credit change', 'other credit changes'],
     ]
     const parts: string[] = []

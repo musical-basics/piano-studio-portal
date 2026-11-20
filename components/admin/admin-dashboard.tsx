@@ -51,6 +51,7 @@ import { WaitingMessagesPill } from "@/components/admin/waiting-messages-pill"
 import type { WaitingThread } from "@/lib/waiting-messages"
 import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { MoveRequestsCard } from "@/components/admin/move-requests-card"
+import { RecentUndoBar } from "@/components/admin/recent-undo-bar"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
 import { FreeReasonChips, NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
 import { isFreeTrialLesson } from "@/app/actions/free-trial"
@@ -515,7 +516,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             } else {
                 toast({
                     title: "Lesson Cancelled",
-                    description: result.message
+                    // #1086: the bar at the top offers Undo for 10 minutes.
+                    description: `${result.message ?? ''} Undo is at the top of the page for 10 minutes.`.trim()
                 })
                 setCalendarVersion(v => v + 1)
             }
@@ -911,6 +913,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
             </header>
 
             <main className="container mx-auto px-4 py-8">
+                {/* #1086: Undo for 10 minutes after a cancel, whichever tab it came from */}
+                <RecentUndoBar version={calendarVersion} onChanged={() => setCalendarVersion(v => v + 1)} />
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
                     <TabsList className="w-full justify-start overflow-x-auto h-auto p-1">
                         <TabsTrigger value="dashboard" className="gap-2">

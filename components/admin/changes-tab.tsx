@@ -21,6 +21,7 @@ const KIND_LABEL: Record<DayChange["kind"], string> = {
     unlogged: "Log undone",
     held: "On hold",
     released: "Released",
+    cancel_undone: "Cancel undone",
     credit: "Credits",
 }
 
@@ -33,6 +34,7 @@ const KIND_TONE: Partial<Record<DayChange["kind"], string>> = {
     no_show: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
     logged: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
     unlogged: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+    cancel_undone: "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300",
     credit: "bg-muted text-foreground",
 }
 
