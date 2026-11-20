@@ -214,6 +214,16 @@ export const PORTAL_JOBS: JobInfo[] = [
         ].filter(Boolean).join(', '),
     },
     {
+        job: 'classroom-library-check',
+        name: 'Classroom videos missing from the library',
+        what: 'Compares classroom storage with the recordings library each week, adds any lesson-length video that never reached it and puts it on its lesson when that lesson has no video (never logs). Emails you only when it finds one.',
+        group: 'recordings',
+        summarize: b => [
+            len(b?.added) ? `${plural(len(b.added), 'video')} added to the library` : 'Library complete',
+            len(b?.missingFiles) ? `${plural(len(b.missingFiles), 'file')} gone from R2` : '',
+        ].filter(Boolean).join(', '),
+    },
+    {
         job: 'capture-payments',
         name: 'Collect held card payments',
         what: 'Collects card payments that are only on hold, 3 days after checkout, before the hold expires.',
