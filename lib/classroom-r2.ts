@@ -96,6 +96,19 @@ export async function r2ObjectSize(bucket: string, key: string): Promise<number 
     return Number(res.headers.get('content-length') || 0)
 }
 
+export async function putR2Object(bucket: string, key: string, body: Uint8Array | ArrayBuffer, contentType: string): Promise<void> {
+    const res = await client().fetch(endpoint(bucket, key), { method: 'PUT', body: body as BodyInit, headers: { 'content-type': contentType } })
+    if (!res.ok) throw new Error(`R2 PUT ${key}: HTTP ${res.status}`)
+}
+
+/** A link that reads the object for `seconds` (private buckets). */
+export async function r2SignedGetUrl(bucket: string, key: string, seconds = 3600): Promise<string> {
+    const url = new URL(endpoint(bucket, key))
+    url.searchParams.set('X-Amz-Expires', String(seconds))
+    const signed = await client().sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } })
+    return signed.url
+}
+
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
     const res = await client().fetch(endpoint(bucket, key), { method: 'DELETE' })
     if (!res.ok && res.status !== 404) throw new Error(`R2 DELETE ${key}: HTTP ${res.status}`)

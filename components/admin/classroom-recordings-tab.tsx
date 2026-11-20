@@ -5,8 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ExternalLink, Loader2, PlayCircle, RefreshCw, X } from "lucide-react"
-import { attachClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
+import { ExternalLink, Loader2, PlayCircle, RefreshCw, Trash2, X } from "lucide-react"
+import { attachClassroomRecording, deleteClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
 import { playableVideoUrl } from "@/lib/classroom-video-url"
 import { StudentLink } from "@/components/admin/student-panel"
@@ -48,6 +48,7 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
     const [loadError, setLoadError] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [attaching, setAttaching] = useState<string | null>(null)
+    const [deleting, setDeleting] = useState<string | null>(null)
     // Shown above the table, next to the rows it is about.
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
     // The one recording playing in place (#791); opening another closes it.
@@ -95,6 +96,29 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
         }
     }
 
+    // #1096: tests and no-shows only (under 5 minutes, on no lesson); asks first.
+    const remove = async (row: AdminRecordingRow) => {
+        const length = row.minutes === null ? "" : ` (${lengthLabel(row.minutes)})`
+        const who = row.studentName || "this student"
+        if (!window.confirm(`Delete the ${recordedLabel(row)} recording of ${who}${length}? It is on no lesson. The video file is removed from storage for good.`)) return
+        setDeleting(row.id)
+        setNotice(null)
+        try {
+            const res = await deleteClassroomRecording(row.id)
+            if ("error" in res) {
+                setNotice({ ok: false, text: `Not deleted: ${res.error}` })
+            } else {
+                setNotice({ ok: true, text: `Deleted the ${recordedLabel(row)} recording.` })
+                if (playingId === row.id) setPlayingId(null)
+                await load()
+            }
+        } catch {
+            setNotice({ ok: false, text: "Not deleted: the request failed" })
+        } finally {
+            setDeleting(null)
+        }
+    }
+
     const statusCell = (row: AdminRecordingRow) => {
         const s = row.status
         switch (s.kind) {
@@ -105,7 +129,16 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                     </Button>
                 )
             case "too_short":
-                return <Badge variant="outline" className="text-muted-foreground">Too short (no-show)</Badge>
+                return (
+                    <div className="flex flex-col items-start gap-1">
+                        <Badge variant="outline" className="text-muted-foreground">Too short (no-show)</Badge>
+                        {row.canDelete && (
+                            <Button size="sm" variant="outline" className="text-destructive" disabled={deleting !== null} onClick={() => remove(row)}>
+                                {deleting === row.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Trash2 className="h-4 w-4 mr-1" />Delete</>}
+                            </Button>
+                        )}
+                    </div>
+                )
             case "not_attached_yet":
                 return (
                     <div className="flex flex-col items-start gap-1">
@@ -146,7 +179,7 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                     <div>
                         <CardTitle className="text-2xl font-serif">Classroom recordings</CardTitle>
                         <CardDescription>
-                            Newest first. Times are studio time. Attaching only puts the video on the lesson: it doesn&apos;t log it or email anyone.
+                            Newest first. Times are studio time. Attaching only puts the video on the lesson: it doesn&apos;t log it or email anyone. Delete is offered only for tests and no-shows (under 5 minutes, on no lesson).
                         </CardDescription>
                     </div>
                     <Button variant="outline" size="sm" onClick={load} disabled={isLoading}>

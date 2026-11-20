@@ -3,6 +3,8 @@ import { MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock, shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { notifyRecordingReady } from '@/lib/recording-ready-email'
 import { autoLogClassroomLesson, studioAdminId } from '@/lib/classroom-auto-log'
+import { liveR2, r2KeyFromUrl, RECORDINGS_BUCKET, type R2Api } from '@/lib/classroom-r2'
+import { isR2VideoUrl } from '@/lib/classroom-video-url'
 
 /**
  * Hand-off from the classroom app (classroom.musicalbasics.com, same Supabase
@@ -339,6 +341,8 @@ export type AdminRecordingRow = {
     /** Stop minus start; null without a start stamp. */
     minutes: number | null
     status: AdminRecordingStatus
+    /** A test or no-show (under 5 minutes, on no lesson, still on R2): the tab offers Delete (#1096). */
+    canDelete: boolean
 }
 
 const NEAREST_WITHIN_DAYS = 7
@@ -388,11 +392,14 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
             recordedAt: new Date(anchorMs).toISOString(),
             hasStartStamp: startMs !== null,
             minutes,
+            canDelete: false,
         }
 
         const on = lessonByUrl.get(rec.url)
         if (on) return { ...base, status: { kind: 'attached', ...lessonRef(on) } }
-        if (minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES) return { ...base, status: { kind: 'too_short' } }
+        if (minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES) {
+            return { ...base, status: { kind: 'too_short' }, canDelete: isR2VideoUrl(rec.url) }
+        }
         if (!UUID_RE.test(rec.student_id || '')) return { ...base, status: { kind: 'no_lesson', nearest: null } }
 
         const anchorDate = isoToStudioWallClock(new Date(anchorMs).toISOString()).localDate
@@ -456,4 +463,55 @@ export async function attachRecordingToLessonByHand(
     if (error) return { error: `Could not attach: ${error.message}` }
     if (!updated || updated.length === 0) return { error: 'That lesson already has a video' }
     return { success: true, date: lesson.date, time: String(lesson.time).slice(0, 5) }
+}
+
+/**
+ * Admin one-tap Delete (#1096), for test and no-show recordings only: under 5
+ * minutes by the start time in its file name, on no lesson, still on R2. Deletes
+ * the R2 file and then the library row (its Dropbox copy row goes with it), and
+ * a piano-camera file saved with it the same way. Anything else is refused
+ * before a byte is touched, so a lesson video can never be deleted here.
+ */
+export async function deleteNoShowRecording(
+    recordingId: string,
+    opts: { client?: DbClient; r2?: R2Api; bucket?: string } = {},
+): Promise<{ success: true; files: number } | { error: string }> {
+    const supabase = opts.client ?? createAdminClient()
+    const r2 = opts.r2 ?? liveR2
+    const bucket = opts.bucket ?? RECORDINGS_BUCKET
+
+    const { data: rec } = await supabase
+        .from('classroom_recordings')
+        .select('id, student_id, url, created_at, kind, r2_key')
+        .eq('id', recordingId)
+        .maybeSingle()
+    if (!rec?.url) return { error: 'Recording not found' }
+    if ((rec.kind || LESSON_KIND) !== LESSON_KIND) return { error: 'Only lesson recordings can be deleted here' }
+    const minutes = recordingMinutes(rec)
+    if (minutes === null) return { error: 'Its length is unknown (no start time), so it is kept' }
+    if (minutes >= MIN_LESSON_RECORDING_MINUTES) return { error: `It is ${Math.round(minutes)} minutes long; only recordings under ${MIN_LESSON_RECORDING_MINUTES} minutes can be deleted` }
+    const key = isR2VideoUrl(rec.url) ? r2KeyFromUrl(rec.url) : null
+    if (!key) return { error: 'It is not on R2 (moved to Dropbox), so it is kept' }
+    const { data: on, error: onError } = await supabase.from('lessons').select('id').eq('video_url', rec.url).limit(1)
+    if (onError) return { error: `Could not check its lessons: ${onError.message}` }
+    if (on && on.length > 0) return { error: 'It is on a lesson, so it is kept' }
+
+    // The piano-camera file recorded alongside it, if any.
+    const { data: piano } = await supabase.from('classroom_recordings').select('id, url').eq('lesson_recording_url', rec.url)
+    const targets = [{ id: rec.id as string, key }, ...(piano || []).map(p => ({ id: p.id as string, key: r2KeyFromUrl(p.url as string) }))]
+
+    let files = 0
+    for (const t of targets) {
+        try {
+            if (t.key) {
+                await r2.deleteObject(bucket, t.key)
+                files++
+            }
+        } catch (err) {
+            return { error: `Could not delete the file: ${err instanceof Error ? err.message : String(err)}` }
+        }
+        const { error } = await supabase.from('classroom_recordings').delete().eq('id', t.id)
+        if (error) return { error: `File deleted, but the row could not be: ${error.message}` }
+    }
+    return { success: true, files }
 }
