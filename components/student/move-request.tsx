@@ -11,10 +11,13 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { CalendarClock, CheckCircle2, Clock, Info, Loader2 } from "lucide-react"
 import { getMoveOptions, requestLessonMove, withdrawLessonMove, type MoveOptions } from "@/app/actions/move-requests"
 import { claimMakeupSlot, getMakeupOptions } from "@/app/actions/makeup-slots"
 import type { FamilyMoveState } from "@/lib/core/move-requests"
+import { MOVE_NOTE_MAX } from "@/lib/move-requests"
 
 /**
  * The family picks one of the teacher's free times for one of its lessons.
@@ -72,6 +75,8 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false, kind =
     const [options, setOptions] = useState<MoveOptions | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
     const [picked, setPicked] = useState("")
+    // "Request a different time" only (#1346): a short reason for the teacher.
+    const [note, setNote] = useState("")
     const [isSending, setIsSending] = useState(false)
     const [sendError, setSendError] = useState<string | null>(null)
     const [sentLabel, setSentLabel] = useState<string | null>(null)
@@ -82,6 +87,7 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false, kind =
         setOptions(null)
         setLoadError(null)
         setPicked("")
+        setNote("")
         setSendError(null)
         setSentLabel(null)
         const load = kind === "makeup" ? getMakeupOptions : getMoveOptions
@@ -120,7 +126,7 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false, kind =
         try {
             const res = kind === "makeup"
                 ? await claimMakeupSlot(picked, lessonId)
-                : await requestLessonMove(lessonId, date, time)
+                : await requestLessonMove(lessonId, date, time, note.trim() || null)
             if ("error" in res) {
                 setSendError(res.error)
             } else {
@@ -199,6 +205,22 @@ export function MoveRequestDialog({ lessonId, onClose, isPreview = false, kind =
                             <p className="text-sm">
                                 {text.picked} <span className="font-medium">{pickedLabel}</span> ({options.duration} minutes).
                             </p>
+                        )}
+                        {kind === "request" && (
+                            <div className="space-y-1.5">
+                                <Label htmlFor="move-note" className="text-sm font-normal">
+                                    Add a short note for your teacher <span className="text-muted-foreground">(optional)</span>
+                                </Label>
+                                <Input
+                                    id="move-note"
+                                    value={note}
+                                    onChange={e => setNote(e.target.value.slice(0, MOVE_NOTE_MAX))}
+                                    maxLength={MOVE_NOTE_MAX}
+                                    placeholder="e.g. soccer game, travelling"
+                                    disabled={isSending}
+                                    data-testid="move-note"
+                                />
+                            </div>
                         )}
                         {isPreview && (
                             <p className="flex items-start gap-2 text-sm text-amber-700">

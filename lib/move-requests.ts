@@ -39,6 +39,22 @@ export type MoveRequestRow = {
     decided_via: string | null
     decided_at: string | null
     created_at: string
+    /** The family's optional short note (#1346). */
+    note: string | null
+}
+
+/** The longest note a family can add to a request (#1346). */
+export const MOVE_NOTE_MAX = 200
+
+/**
+ * A family's note as stored (#1346): one line, trimmed, at most
+ * MOVE_NOTE_MAX characters; null when there is nothing left.
+ */
+export function cleanMoveNote(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null
+    const one = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!one) return null
+    return Array.from(one).slice(0, MOVE_NOTE_MAX).join('').trim()
 }
 
 /** The lesson as the stale check needs it (null when the row is gone). */

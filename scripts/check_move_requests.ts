@@ -7,7 +7,8 @@
  *   npx tsx scripts/check_move_requests.ts
  */
 import assert from 'node:assert/strict'
-import { familySlotLabel, lessonWeek, outcomeForAdmin, staleReason, studioSlotLabel, weekLabel } from '../lib/move-requests'
+import { MOVE_NOTE_MAX, cleanMoveNote, familySlotLabel, lessonWeek, outcomeForAdmin, staleReason, studioSlotLabel, weekLabel } from '../lib/move-requests'
+import { describeMoveRequest } from '../lib/move-requests-email'
 import { signLessonAction, verifyLessonAction } from '../lib/lesson-action-links'
 import { buildMorningEmail } from '../lib/unlogged-lessons'
 import type { PendingMoveRequest } from '../lib/core/move-requests'
@@ -65,6 +66,7 @@ const pending: PendingMoveRequest = {
     id: 'r1', lessonId: 'l1', studentId: 's1', studentName: 'Piano Student',
     fromDate: '2026-11-20', fromTime: '16:30', toDate: '2026-11-21', toTime: '17:00', duration: 60,
     fromLabel: 'Fri, Nov 20 at 4:30pm EST', toLabel: 'Sat, Nov 21 at 5:00pm EST', createdAt: '2026-11-19T12:00:00Z',
+    note: null,
 }
 const only = buildMorningEmail('2026-11-18', [], [], { now, baseUrl: 'https://example.test', moveRequests: [pending] })
 assert.equal(only.subject, '1 family asks to move a lesson')
@@ -82,6 +84,19 @@ assert.equal(two.subject, '2 families ask to move a lesson')
 // Without requests the email reads as before.
 const none = buildMorningEmail('2026-11-18', [], [], { now, baseUrl: 'https://example.test' })
 assert.equal(none.html, '')
+
+// The family's note (#1346): one trimmed line, capped, shown escaped under the request.
+assert.equal(cleanMoveNote('  soccer   game \n\n after school '), 'soccer game after school')
+assert.equal(cleanMoveNote('   '), null)
+assert.equal(cleanMoveNote(undefined), null)
+assert.equal(cleanMoveNote(42), null)
+assert.equal(cleanMoveNote('x'.repeat(500))!.length, MOVE_NOTE_MAX)
+assert.equal(Array.from(cleanMoveNote('\u{1F3B9}'.repeat(300))!).length, MOVE_NOTE_MAX)
+assert.doesNotMatch(describeMoveRequest(pending), /note/)
+const noted = describeMoveRequest({ ...pending, note: 'travelling <b>& back</b>' })
+assert.match(noted, /Their note: &ldquo;travelling &lt;b&gt;&amp; back&lt;\/b&gt;&rdquo;/)
+const notedEmail = buildMorningEmail('2026-11-18', [], [], { now, baseUrl: 'https://example.test', moveRequests: [{ ...pending, note: 'soccer game' }] })
+assert.match(notedEmail.html, /Their note: &ldquo;soccer game&rdquo;/)
 
 // No em dashes anywhere a person reads.
 for (const s of [only.subject, only.html, only.footer, two.subject, weekLabel('2026-11-20'), outcomeForAdmin('lesson_changed')]) {

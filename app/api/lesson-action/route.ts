@@ -276,11 +276,13 @@ async function moveGet(client: DbClient, claims: LessonActionClaims, token: stri
     const form = (label: string, cls: string) =>
         `<form method="post" action="/api/lesson-action"><input type="hidden" name="t" value="${esc(token)}"><button class="${cls}" type="submit">${esc(label)}</button></form>`
     const when = `${esc(pending.fromLabel)} &rarr; ${esc(pending.toLabel)}, ${pending.duration} min`
+    const note = pending.note ? `<p class="muted">Their note: &ldquo;${esc(pending.note)}&rdquo;</p>` : ''
 
     if (claims.a === 'decline_move') {
         return page('Decline this request?', `
 <h1>Decline ${esc(pending.studentName)}'s request?</h1>
 <p class="muted">They asked to move ${esc(pending.fromLabel)} to ${esc(pending.toLabel)}.</p>
+${note}
 <ul class="effects">
 <li>The lesson stays at ${esc(pending.fromLabel)}</li>
 <li>Sends nothing: no email, portal message or text. The family sees in the portal that the lesson stays at its time.</li>
@@ -295,6 +297,7 @@ ${form('Decline', 'remove')}`)
     return page('Approve this move?', `
 <h1>Move ${esc(pending.studentName)}'s lesson?</h1>
 <p class="muted">${when}</p>
+${note}
 <ul class="effects">
 <li>Moves the lesson to ${esc(pending.toLabel)}; the Zoom meeting and the calendar event follow</li>
 <li>Sends 1 family the usual "Lesson Rescheduled" email, nothing else</li>

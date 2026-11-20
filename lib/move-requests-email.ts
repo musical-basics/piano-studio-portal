@@ -15,9 +15,13 @@ const BUTTON = 'display:inline-block;padding:11px 18px;margin:0 8px 6px 0;border
 const APPROVE_STYLE = `${BUTTON};background:#15803d;color:#ffffff;border:1px solid #15803d`
 const DECLINE_STYLE = `${BUTTON};background:#ffffff;color:#44403c;border:1px solid #a8a29e`
 
-/** "Piano Student: Thu, Nov 20 at 4:30pm EST -> Fri, Nov 21 at 5:00pm EST (60 min)" */
+/**
+ * "Piano Student: Thu, Nov 20 at 4:30pm EST -> Fri, Nov 21 at 5:00pm EST (60 min)",
+ * with the family's note under it when there is one (#1346).
+ */
 export function describeMoveRequest(r: PendingMoveRequest): string {
-    return `${escapeHtml(r.studentName)}: ${escapeHtml(r.fromLabel)} &rarr; <b>${escapeHtml(r.toLabel)}</b> (${r.duration} min)`
+    const line = `${escapeHtml(r.studentName)}: ${escapeHtml(r.fromLabel)} &rarr; <b>${escapeHtml(r.toLabel)}</b> (${r.duration} min)`
+    return r.note ? `${line}<br><span style="color:#57534e">Their note: &ldquo;${escapeHtml(r.note)}&rdquo;</span>` : line
 }
 
 export function moveRequestsNote(n: number): string {

@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, CalendarClock, Check, CheckCircle2, Loader2, X, XCircle } from "lucide-react"
+import { ArrowRight, CalendarClock, Check, CheckCircle2, Loader2, MessageSquareText, X, XCircle } from "lucide-react"
 import { approveMoveRequest, declineMoveRequest } from "@/app/actions/move-requests"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
 import { StudentLink } from "@/components/admin/student-panel"
@@ -88,6 +88,12 @@ export function MoveRequestsCard({ requests, onChanged }: MoveRequestsCardProps)
                                         <span className="font-medium">{r.toLabel}</span>
                                         <span className="text-muted-foreground">({r.duration} min, asked {askedAgo(r.createdAt)})</span>
                                     </p>
+                                    {r.note && (
+                                        <p className="mt-1 text-sm flex items-start gap-1.5" data-testid="move-request-note">
+                                            <MessageSquareText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                                            <span className="italic break-words">&ldquo;{r.note}&rdquo;</span>
+                                        </p>
+                                    )}
                                 </div>
                                 {!outcome?.ok && !outcome?.closed && (
                                     <div className="flex gap-2 shrink-0">

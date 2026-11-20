@@ -24,6 +24,7 @@ import { findFreeSlotsCore } from '@/lib/core/free-slots'
 import { LATE_CANCEL_WINDOW_HOURS } from '@/lib/billing-policy'
 import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import {
+    cleanMoveNote,
     familySlotLabel,
     lessonWeek,
     outcomeForAdmin,
@@ -35,7 +36,7 @@ import {
     type MoveRequestRow,
 } from '@/lib/move-requests'
 
-const COLUMNS = 'id, lesson_id, student_id, from_date, from_time, to_date, to_time, duration, status, outcome, decided_via, decided_at, created_at'
+const COLUMNS = 'id, lesson_id, student_id, from_date, from_time, to_date, to_time, duration, status, outcome, decided_via, decided_at, created_at, note'
 
 const hhmm = (t: string) => String(t).slice(0, 5)
 
@@ -70,6 +71,8 @@ export type PendingMoveRequest = {
     fromLabel: string
     toLabel: string
     createdAt: string
+    /** The family's short note with the request (#1346), or null. */
+    note: string | null
 }
 
 async function loadLesson(client: DbClient, lessonId: string): Promise<(MoveRequestLesson & { student_id: string }) | null | { error: string }> {
@@ -322,12 +325,13 @@ export async function claimMakeupSlotCore(
 }
 
 /**
- * Files a family's request to move a lesson to one of the offered free times.
+ * Files a family's request to move a lesson to one of the offered free times,
+ * with its optional short note (#1346).
  * The caller must have checked that `studentId` is the signed-in family itself.
  */
 export async function fileMoveRequestCore(
     client: DbClient,
-    { studentId, lessonId, date, time }: { studentId: string; lessonId: string; date: string; time: string },
+    { studentId, lessonId, date, time, note }: { studentId: string; lessonId: string; date: string; time: string; note?: string | null },
 ): Promise<{ success: true; toLabel: string } | { error: string }> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return { error: 'Pick one of the times in the list.' }
 
@@ -351,6 +355,7 @@ export async function fileMoveRequestCore(
         to_time: time,
         duration: options.duration,
         status: 'pending',
+        note: cleanMoveNote(note),
     })
     if (error) {
         if (error.code === '23505') return { error: 'You already asked to move this lesson. Refresh the page to see that request.' }
@@ -440,6 +445,7 @@ function toPending(r: MoveRequestRow, studentName: string): PendingMoveRequest {
         fromLabel: studioSlotLabel(r.from_date, r.from_time),
         toLabel: studioSlotLabel(r.to_date, r.to_time),
         createdAt: r.created_at,
+        note: r.note ?? null,
     }
 }
 

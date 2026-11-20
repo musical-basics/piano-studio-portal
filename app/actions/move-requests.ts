@@ -46,14 +46,15 @@ export async function getMoveOptions(lessonId: string): Promise<MoveOptions | { 
 }
 
 /**
- * The family asks to move one of its own lessons to one of the offered times.
+ * The family asks to move one of its own lessons to one of the offered times,
+ * with an optional short note for Lionel (#1346).
  * Only the family itself: an admin (previewing a student or not) is refused.
  */
-export async function requestLessonMove(lessonId: string, date: string, time: string): Promise<{ success: true; toLabel: string } | { error: string }> {
+export async function requestLessonMove(lessonId: string, date: string, time: string, note?: string | null): Promise<{ success: true; toLabel: string } | { error: string }> {
     const me = await caller()
     if (!me) return { error: 'Please sign in again.' }
     if (me.role === 'admin') return { error: 'This is a preview: only the family can send a request.' }
-    const result = await fileMoveRequestCore(createAdminClient(), { studentId: me.userId, lessonId, date, time })
+    const result = await fileMoveRequestCore(createAdminClient(), { studentId: me.userId, lessonId, date, time, note })
     revalidatePath('/student')
     revalidatePath('/admin')
     return result
