@@ -236,7 +236,7 @@ export async function moveOldClassroomVideos(opts: MoveOptions = {}): Promise<Mo
             if (!folderOf.get(rec.student_id)) { keep(rec, key, bytes, 'student has no Dropbox folder', true); continue }
             if (minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES) { keep(rec, key, bytes, `no-show, under ${MIN_LESSON_RECORDING_MINUTES} min`); continue }
             if (size === null) { keep(rec, key, bytes, 'not in the R2 bucket and no Dropbox copy', true); continue }
-            if (size < MIN_BYTES_WITHOUT_START) { keep(rec, key, size, `too small for a Dropbox copy (${Math.round(size / 1e6)} MB)`); continue }
+            if (minutes === null && size < MIN_BYTES_WITHOUT_START) { keep(rec, key, size, `no start time and too small for a Dropbox copy (${Math.round(size / 1e6)} MB)`); continue }
             // Lesson-length, never queued (older than the copy job looks): queue it now.
             if (!dryRun) {
                 const { error } = await supabase.from(COPIES_TABLE).insert({ recording_id: rec.id, url: rec.url, student_id: rec.student_id, status: 'pending' })

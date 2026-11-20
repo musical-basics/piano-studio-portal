@@ -20,8 +20,10 @@ import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStampM
  * Runs from the classroom-recordings cron (every 30 minutes) and the classroom's
  * webhook, after the attach step. It copies every lesson-length recording of a
  * student with a Dropbox folder, attached to a lesson or not. Skipped: under 5
- * minutes (no-shows) or under 100 MB (empty room or test), guest/test ids (not
- * a profile id), students without a folder (picked up once a folder is set).
+ * minutes (no-shows; by length, not size, since the Jul 2 lesson ran 22 minutes
+ * in 50 MB), an old file without a start stamp under 100 MB (it has no length
+ * to go by), guest/test ids (not a profile id), students without a folder
+ * (picked up once a folder is set).
  *
  * Families are not emailed about these copies: the classroom hand-off already
  * sends "your recording is ready", and the new-recordings cron ignores files
@@ -242,9 +244,9 @@ export async function syncClassroomDropboxCopies(opts: CopySyncOptions = {}): Pr
     if (pending.length > 0) {
         // Dates come from the recording; the folder from the profile as it is now.
         const recIds = pending.map(p => p.recording_id)
-        const { data: recInfo, error: recInfoError } = await supabase.from('classroom_recordings').select('id, url, created_at').in('id', recIds)
+        const { data: recInfo, error: recInfoError } = await supabase.from('classroom_recordings').select('id, url, created_at, r2_key').in('id', recIds)
         if (recInfoError) throw new Error(`classroom_recordings lookup failed: ${recInfoError.message}`)
-        const recById = new Map((recInfo || []).map(r => [r.id as string, r as { id: string; url: string; created_at: string }]))
+        const recById = new Map((recInfo || []).map(r => [r.id as string, r as { id: string; url: string; created_at: string; r2_key: string | null }]))
         const pendingStudents = [...new Set(pending.map(p => p.student_id))].filter(id => !profiles.has(id))
         if (pendingStudents.length > 0) {
             const { data } = await supabase.from('profiles').select('id, role, dropbox_recording_folder').in('id', pendingStudents)
@@ -287,11 +289,15 @@ export async function syncClassroomDropboxCopies(opts: CopySyncOptions = {}): Pr
                 result.waiting.push({ recordingId: row.recording_id, reason: 'file not in R2 yet' })
                 continue
             }
-            // Real classroom video runs ~20 MB a minute, so a file this small is an
-            // empty room or a test even when it ran 5+ minutes (two 6-minute, 6 MB
-            // files from the egress's first day), or an old unstamped fragment.
-            if (size < MIN_BYTES_WITHOUT_START) {
-                const reason = `too small to be a lesson (${Math.round(size / 1e6)} MB)`
+            // Judged by length: under 5 minutes is a no-show. A lesson can be small
+            // (the Jul 2 one ran 22 minutes in 50 MB), so size only decides for an
+            // old file without a start stamp: under 100 MB is a recorder fragment.
+            const minutes = recordingMinutes(rec)
+            const tooShort = minutes !== null
+                ? (minutes < MIN_LESSON_RECORDING_MINUTES ? `no-show, under ${MIN_LESSON_RECORDING_MINUTES} min` : null)
+                : (size < MIN_BYTES_WITHOUT_START ? `no start time and too small to be a lesson (${Math.round(size / 1e6)} MB)` : null)
+            if (tooShort) {
+                const reason = tooShort
                 result.skipped.push({ recordingId: row.recording_id, reason })
                 if (!dryRun) await updateRow(supabase, row.id, { status: 'skipped', size_bytes: size, error: reason, finished_at: now.toISOString() })
                 continue

@@ -131,7 +131,7 @@ const recordings = [
     rec('r-nofolder', S2, '2026-11-17T18:00:00Z', '2026-11-17T18:45:00Z'),        // no folder: skip, listed
     rec('r-guest', GUEST, '2026-11-17T18:00:00Z', '2026-11-17T18:45:00Z'),        // guest id: skip
     rec('r-old', S1, null, '2026-11-10T23:08:58Z'),                               // no stamp, big: copy
-    rec('r-empty', S1, '2026-11-12T01:17:17Z', '2026-11-12T01:23:36Z'),           // 6 min but 6 MB: skip
+    { ...rec('r-empty', S1, null, '2026-11-12T01:23:36Z'), url: `${R2}/${S1}_1762910000000_part2.webm` }, // no stamp, 6 MB: skip
 ]
 const sizes: Record<string, number> = {
     [recordings[0].url]: 1_002_792_113,
@@ -279,6 +279,25 @@ async function main() {
     let dryEmails = 0
     await syncClassroomDropboxCopies({ client: db3, dbx: fakeDropbox({}).dbx, now: NOW, dryRun: true, alert: async () => { dryEmails++; return true } })
     assert.equal(dryEmails, 0)
+
+    // Judged by length, not size: a 22-minute lesson in 50 MB (Jul 2) is copied; a 3-minute
+    // one is a no-show even when big.
+    const small = rec('r-small', S1, '2026-07-03T00:55:07Z', '2026-07-03T01:17:14Z')
+    const bigShort = { ...rec('r-big-short', S1, '2026-07-04T18:13:43Z', '2026-07-04T18:16:43Z') }
+    const db4 = fakeDb({
+        classroom_recordings: [small, bigShort].map(r => ({ ...r })),
+        profiles: [{ id: S1, role: 'student', name: 'Student One', dropbox_recording_folder: 'Student One Recordings' }],
+        // Queued by hand (older than the 14-day look-back), as the daily move does.
+        [COPIES_TABLE]: [
+            { id: 'c-small', recording_id: 'r-small', url: small.url, student_id: S1, status: 'pending', attempts: 0, dropbox_path: null, job_id: null, size_bytes: null, started_at: null, created_at: '2026-11-18T00:00:00Z' },
+            { id: 'c-big-short', recording_id: 'r-big-short', url: bigShort.url, student_id: S1, status: 'pending', attempts: 0, dropbox_path: null, job_id: null, size_bytes: null, started_at: null, created_at: '2026-11-18T00:00:01Z' },
+        ],
+    })
+    const box4 = fakeDropbox({})
+    const sizes4: Record<string, number> = { [small.url]: 50_200_506, [bigShort.url]: 300_000_000 }
+    const r4 = await syncClassroomDropboxCopies({ client: db4, dbx: box4.dbx, headSize: async u => sizes4[u] ?? null, now: NOW, alert: async () => true })
+    assert.deepEqual(r4.started.map(s => s.recordingId), ['r-small'])
+    assert.ok(r4.skipped.some(s => s.recordingId === 'r-big-short' && /no-show/.test(s.reason)))
 
     console.log('classroom Dropbox copies: all checks passed')
 }
