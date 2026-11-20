@@ -1,4 +1,5 @@
 import { revalidatePath } from 'next/cache'
+import { recordLessonEvent } from '@/lib/lesson-events'
 import type { DbClient } from '@/lib/supabase/admin'
 import { logLessonCore } from '@/lib/core/lessons'
 import { LATE_LOG_SOURCE_ADMIN, isTooOldForUsualLog, logOldLessonQuietly } from '@/lib/late-lesson-log'
@@ -235,6 +236,7 @@ export async function removeUnloggedLessonForAdmin(client: DbClient, expected: E
     }
     if (!deleted || deleted.length === 0) return { ok: false, text: 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.' }
     console.log(`[admin-unlogged] removed ${lesson.id} from admin (no one notified)`)
+    await recordLessonEvent({ kind: 'removed', actor: 'admin', studentId: lesson.student_id, lessonId: lesson.id, date: lesson.date, time: lesson.time })
     try {
         revalidatePath('/admin')
         revalidatePath('/student')
@@ -260,22 +262,33 @@ function refreshAdmin() {
 export async function setLessonHold(client: DbClient, lessonId: string, reason: string | null): Promise<UnloggedActionResult> {
     const { data: lesson, error } = await client
         .from('lessons')
-        .select('id, status, on_hold_reason')
+        .select('id, status, on_hold_reason, student_id, date, time')
         .eq('id', lessonId)
         .maybeSingle()
     if (error || !lesson) return { ok: false, text: 'This lesson was not found. Nothing changed.' }
+    const held = (kind: 'held' | 'released', why?: string) => recordLessonEvent({
+        kind,
+        actor: 'admin',
+        studentId: lesson.student_id as string,
+        lessonId,
+        date: lesson.date as string,
+        time: String(lesson.time),
+        context: { reason: why },
+    })
     if (reason !== null) {
         const why = reason.replace(/\s+/g, ' ').trim().slice(0, 300)
         if (!why) return { ok: false, text: 'Type why it is on hold.' }
         if (!UNLOGGED_STATUSES.includes(lesson.status as string)) return { ok: false, text: 'Only a lesson that is not logged yet can be put on hold.' }
         const { error: e2 } = await client.from('lessons').update({ on_hold_reason: why, on_hold_at: new Date().toISOString() }).eq('id', lessonId)
         if (e2) return { ok: false, text: `Not saved: ${e2.message}` }
+        await held('held', why)
         refreshAdmin()
         return { ok: true, text: `On hold: ${why}. It is out of the count and the emails until you release it.` }
     }
     if (!lesson.on_hold_reason) return { ok: true, text: 'This lesson was not on hold.' }
     const { error: e3 } = await client.from('lessons').update({ on_hold_reason: null, on_hold_at: null }).eq('id', lessonId)
     if (e3) return { ok: false, text: `Not saved: ${e3.message}` }
+    await held('released', lesson.on_hold_reason as string)
     refreshAdmin()
     return { ok: true, text: 'Released: it is back in the unlogged list and the emails.' }
 }

@@ -17,6 +17,7 @@ import { recordBillingTransaction } from '@/lib/core/billing'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { checkFreeTrial } from '@/lib/free-trial'
 import { FREE_TRIAL_REASON } from '@/lib/free-lesson-reasons'
+import { actorForCompletedSource, recordLessonEvent, type LessonEventContext } from '@/lib/lesson-events'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -369,6 +370,8 @@ export type LogLessonArgs = {
      * balance and lessons.free_reason keeps the optional reason ('' for none).
      */
     free?: { reason?: string | null } | null
+    /** For "Today's changes" (#1005): who and how, when the caller knows better. */
+    event?: LessonEventContext | null
 }
 
 export async function logLessonCore({
@@ -382,6 +385,7 @@ export async function logLessonCore({
     awaitNotifications = false,
     completedSource = 'agent_log',
     free: freeAsked = null,
+    event = null,
 }: LogLessonArgs) {
     // Credit deduction is a privileged cross-user write on `profiles`. When this
     // is called from the admin UI, `client` is the admin's own RLS-scoped session,
@@ -512,6 +516,28 @@ export async function logLessonCore({
         }
     }
 
+    // "Today's changes" (#1005). An already logged and charged lesson is no change.
+    if (!isAlreadyCompleted || creditRepaired) {
+        await recordLessonEvent({
+            kind: 'logged',
+            actor: actorForCompletedSource(completedSource),
+            studentId: lesson.student_id,
+            lessonId,
+            date: lesson.date,
+            time: lesson.time,
+            detail: {
+                credits_before: previousCredits,
+                credits_after: newCredits,
+                free: Boolean(free && needsCredit),
+                trial,
+                repaired: creditRepaired,
+                source: completedSource,
+                ...(completedSource === 'agent_log' ? { via: 'agent' } : {}),
+            },
+            context: event,
+        })
+    }
+
     let nextLesson: any = null
     const notificationTasks: Promise<void>[] = []
 
@@ -555,6 +581,15 @@ export async function logLessonCore({
                     console.error('logLessonCore: Auto-create next lesson failed:', createError)
                 } else {
                     nextLesson = createdLesson
+                    await recordLessonEvent({
+                        kind: 'booked',
+                        actor: 'auto',
+                        studentId: lesson.student_id,
+                        lessonId: (createdLesson as any)?.id,
+                        date: nextWeekDateStr,
+                        time: lesson.time,
+                        detail: { reason: 'next week, after the log' },
+                    })
                     notificationTasks.push(sendAutoScheduledLessonEmail({
                         client,
                         adminId,
@@ -621,6 +656,8 @@ export type ScheduleLessonArgs = {
     time: string
     duration?: number
     confirmOverride?: boolean
+    /** For "Today's changes" (#1005): who and how, when not Lionel himself. */
+    event?: LessonEventContext | null
 }
 
 export async function scheduleLessonCore({
@@ -631,6 +668,7 @@ export async function scheduleLessonCore({
     time,
     duration = 60,
     confirmOverride = false,
+    event = null,
 }: ScheduleLessonArgs) {
     const { data: student, error: studentError } = await client
         .from('profiles')
@@ -757,6 +795,17 @@ export async function scheduleLessonCore({
     } else {
         lesson = lessonData
     }
+
+    await recordLessonEvent({
+        kind: 'booked',
+        actor: 'admin',
+        studentId,
+        lessonId: lesson?.id,
+        date,
+        time,
+        detail: { duration },
+        context: event,
+    })
 
     const scheduledStudentEmail = resolveNotificationEmail(student)
     if (resend && scheduledStudentEmail) {
@@ -903,6 +952,8 @@ export type RescheduleLessonArgs = {
     newTime: string
     newDuration?: number
     confirmOverride?: boolean
+    /** For "Today's changes" (#1005): who and how, when not Lionel himself. */
+    event?: LessonEventContext | null
 }
 
 export async function rescheduleLessonCore({
@@ -913,10 +964,11 @@ export async function rescheduleLessonCore({
     newTime,
     newDuration = 60,
     confirmOverride = false,
+    event = null,
 }: RescheduleLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
-        .select('student_id, date, time, zoom_meeting_id, google_event_id')
+        .select('student_id, date, time, duration, zoom_meeting_id, google_event_id')
         .eq('id', lessonId)
         .single()
 
@@ -965,6 +1017,22 @@ export async function rescheduleLessonCore({
 
     if (updateError) {
         return { error: updateError.message }
+    }
+
+    if (moved || Number((lesson as any).duration) !== newDuration) {
+        await recordLessonEvent({
+            kind: 'moved',
+            actor: 'admin',
+            studentId: lesson.student_id,
+            lessonId,
+            date: newDate,
+            time: newTime,
+            detail: {
+                from: { date: lesson.date, time: String(lesson.time).slice(0, 5), duration: (lesson as any).duration ?? null },
+                to: { date: newDate, time: newTime.slice(0, 5), duration: newDuration },
+            },
+            context: event,
+        })
     }
 
     const { data: studentForUpdates } = await client
@@ -1082,9 +1150,11 @@ export type CancelLessonArgs = {
     // are cleared as a side effect (e.g. marking a student inactive), where the
     // conversation already happened and a pile of emails would only confuse.
     notify?: boolean
+    /** For "Today's changes" (#1005): who and why; kind 'missed' when "I missed this" removes it. */
+    event?: (LessonEventContext & { kind?: 'cancelled' | 'missed' }) | null
 }
 
-export async function cancelLessonCore({ client, actorId, actorRole, lessonId, notify = true }: CancelLessonArgs) {
+export async function cancelLessonCore({ client, actorId, actorRole, lessonId, notify = true, event = null }: CancelLessonArgs) {
     const { data: lesson, error: lessonFetchError } = await client
         .from('lessons')
         .select('student_id, date, time, status, zoom_meeting_id, google_event_id')
@@ -1278,6 +1348,17 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
         console.error('cancelLessonCore: cancellation_log insert threw (non-blocking):', logErr)
     }
 
+    await recordLessonEvent({
+        kind: event?.kind ?? 'cancelled',
+        actor: actorRole === 'student' ? 'family' : 'admin',
+        studentId: lesson.student_id,
+        lessonId,
+        date: lesson.date,
+        time: lesson.time,
+        detail: { was_late: wasLate, fee: lateCancelFee, was_status: lesson.status },
+        context: event,
+    })
+
     // Notify the studio admin by email that a cancellation happened. Non-blocking.
     if (resend && notify) {
         try {
@@ -1402,6 +1483,7 @@ export async function cancelUpcomingLessonsForStudentCore({
             actorRole: 'admin',
             lessonId: l.id,
             notify: false,
+            event: { reason: 'student set inactive' },
         })
         if ('error' in res && res.error) result.errors.push({ date: l.date, time: l.time, error: res.error })
         else result.cancelled.push({ date: l.date, time: l.time })
@@ -1592,6 +1674,7 @@ export async function autoScheduleStandingLessonsCore({ client, adminId, fromDat
                     date,
                     time: slot.time,
                     duration: slot.duration,
+                    event: { actor: 'auto', reason: 'standing weekly lesson' },
                 })
                 if (res && 'success' in res && res.success) {
                     bookedKeys.add(key)

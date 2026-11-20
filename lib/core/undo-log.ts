@@ -25,6 +25,7 @@
  */
 
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
+import { recordLessonEvent } from '@/lib/lesson-events'
 import { sendMessageCore } from '@/lib/core/messages'
 import { resolveSalutation } from '@/lib/core/students'
 import { smsConfigured } from '@/lib/sms'
@@ -195,6 +196,8 @@ export async function undoLessonLogCore({
 
     const source = `${UNDO_LOG_SOURCE_PREFIX}${reason}`
     const done: string[] = []
+    let creditsBefore: number | null = null
+    let creditsAfter: number | null = null
 
     // 2. The credit back, and the ledger labels.
     if (creditBack > 0) {
@@ -212,6 +215,8 @@ export async function undoLessonLogCore({
             return { error: `Nothing was changed: could not give the credit back (${creditError.message}).` }
         }
         done.push(`${creditBack} credit given back (${previous} to ${next})`)
+        creditsBefore = previous
+        creditsAfter = next
 
         // The trigger can't see a source set over the REST API, so label the
         // row it just wrote (the credit check and payment check skip labelled rows).
@@ -260,6 +265,17 @@ export async function undoLessonLogCore({
     }
 
     done.push(mode === 'free' ? 'lesson kept as a free lesson' : 'lesson back to unlogged')
+
+    await recordLessonEvent({
+        kind: 'unlogged',
+        actor: 'admin',
+        studentId: lesson.student_id,
+        lessonId,
+        date: lesson.date,
+        time: lesson.time,
+        detail: { mode, credits_before: creditsBefore, credits_after: creditsAfter },
+        context: { reason },
+    })
 
     // 3. The family message, only when ticked.
     if (sendFamilyMessage) {

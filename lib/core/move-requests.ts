@@ -307,6 +307,7 @@ export async function claimMakeupSlotCore(
         // The family picked this time itself just now, which outranks an older
         // skip/move note of theirs for that day.
         confirmOverride: true,
+        event: { actor: 'family', via: 'make-up picker' },
     })
     if ('error' in result && result.error) {
         const taken = /already booked/i.test(String(result.error))
@@ -529,6 +530,7 @@ export async function approveMoveRequestCore({
         // The family picked this time itself just now, which outranks an older
         // skip/move note for that day; the warning is passed on below.
         confirmOverride: true,
+        event: { reason: 'the family asked', ...(via === 'email' ? { via: 'email button' } : {}) },
     })
     if ('error' in result && result.error) {
         const taken = /already booked/i.test(String(result.error))

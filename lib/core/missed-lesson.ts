@@ -310,6 +310,7 @@ export async function missedLessonCore({
                 date: makeup.date,
                 time: makeup.time,
                 duration: lesson.duration,
+                event: { reason: 'make-up for a missed lesson' },
             })
             if ('error' in booked && booked.error) {
                 const why = booked.error === 'lesson_intent_conflict'
@@ -363,6 +364,10 @@ export async function missedLessonCore({
         actorRole: 'admin',
         lessonId,
         notify: false,
+        event: {
+            kind: 'missed',
+            reason: [wantCredit ? '$15 account credit' : '', makeup ? `make-up ${makeup.date} ${makeup.time}` : ''].filter(Boolean).join(', '),
+        },
     })
     if ('error' in removed && removed.error) {
         return {

@@ -13,6 +13,7 @@ import { findLastHomework } from '@/lib/last-homework'
 import { LESSON_NOTE_PHRASES } from '@/lib/lesson-note-phrases'
 import { checkFreeTrial } from '@/lib/free-trial'
 import { randomBytes } from 'crypto'
+import { recordLessonEvent } from '@/lib/lesson-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -565,7 +566,7 @@ export async function POST(request: Request) {
             await giveBack()
             return message('Not over yet', "This lesson hasn't finished yet, so it can't be marked a no-show. Nothing changed.")
         }
-        const result = await markNoShowCore(lesson.id)
+        const result = await markNoShowCore(lesson.id, { via: 'email button' })
         if (!result.ok && result.changed) {
             await record('nothing: changed while confirming', lesson.student_id)
             return message('Already handled', 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.')
@@ -611,6 +612,7 @@ export async function POST(request: Request) {
             completedSource: 'admin_ui',
             // Serverless: finish the usual emails before the response ends the function.
             awaitNotifications: true,
+            event: { via: 'email button' },
         })
         if ('error' in result) {
             await record(`failed: ${result.error}`, lesson.student_id)
@@ -641,6 +643,7 @@ export async function POST(request: Request) {
         return message('Already handled', 'This lesson changed while you were confirming (logged or removed elsewhere). Nothing changed.')
     }
     await record('removed', lesson.student_id)
+    await recordLessonEvent({ kind: 'removed', actor: 'admin', studentId: lesson.student_id, lessonId: lesson.id, date: lesson.date, time: String(lesson.time), detail: { via: 'email button' } })
     console.log(`[lesson-action] removed ${lesson.id} from email (no one notified)`)
     return message('Removed', `${label} is removed. No credit was taken and nobody was told.`)
 }

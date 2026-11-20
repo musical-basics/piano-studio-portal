@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone, Film, Wallet } from "lucide-react"
+import { Clock, Calendar, CalendarClock, MessageCircle, LayoutDashboard, Plus, Loader2, Video, FileText, Pencil, Music, ShieldAlert, Star, Mail, DollarSign, Megaphone, Film, Wallet, History } from "lucide-react"
 import { AdminChat } from "./admin-chat"
 import { PricingManager } from "@/components/admin/pricing-manager"
 import { PricingPlan } from "@/app/actions/pricing"
@@ -43,6 +43,7 @@ import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-
 import { TranscriptSearch } from "@/components/admin/transcript-search"
 import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
 import { BalancesTab } from "@/components/admin/balances-tab"
+import { ChangesTab } from "@/components/admin/changes-tab"
 import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import { WaitingMessagesPill } from "@/components/admin/waiting-messages-pill"
@@ -912,6 +913,10 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             <LayoutDashboard className="h-4 w-4" />
                             <span className="hidden sm:inline">Today</span>
                         </TabsTrigger>
+                        <TabsTrigger value="changes" className="gap-2">
+                            <History className="h-4 w-4" />
+                            <span className="hidden sm:inline">Changes</span>
+                        </TabsTrigger>
                         <TabsTrigger value="calendar" className="gap-2">
                             <Calendar className="h-4 w-4" />
                             <span className="hidden sm:inline">Calendar</span>
@@ -1035,6 +1040,11 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                             onMessage={handleJumpToMessage}
                             pricingPlans={pricingPlans}
                         />
+                    </TabsContent>
+
+                    {/* #1005: every lesson and credit change of the day, whoever made it */}
+                    <TabsContent value="changes" className="space-y-4">
+                        {activeTab === "changes" && <ChangesTab />}
                     </TabsContent>
 
                     {/* Scheduled Lessons Tab */}

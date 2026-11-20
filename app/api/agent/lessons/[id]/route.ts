@@ -33,6 +33,7 @@ export async function PATCH(
         newTime: time,
         newDuration: parsedDuration,
         confirmOverride: confirm_override === true,
+        event: { via: 'agent' },
     })
 
     if ('error' in result) {
@@ -68,6 +69,7 @@ export async function DELETE(
         actorId: ctx.admin.id,
         actorRole: 'admin',
         lessonId: id,
+        event: { via: 'agent' },
     })
 
     if ('error' in result) return agentError(result.error ?? 'Request failed', 400)

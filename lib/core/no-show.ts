@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { UNLOGGED_STATUSES } from '@/lib/unlogged-lessons'
+import { recordLessonEvent } from '@/lib/lesson-events'
 
 /**
  * A no-show: the student never came, so the lesson is forfeited. The admin
@@ -30,13 +31,13 @@ export type NoShowResult =
     | { ok: false; changed: true; status: string | null }
     | { ok: false; changed?: false; error: string }
 
-export async function markNoShowCore(lessonId: string): Promise<NoShowResult> {
+export async function markNoShowCore(lessonId: string, { via }: { via?: string } = {}): Promise<NoShowResult> {
     const client = createAdminClient()
     const started = new Date()
 
     const { data: before, error: readError } = await client
         .from('lessons')
-        .select('id, student_id, status, on_hold_reason')
+        .select('id, student_id, status, on_hold_reason, date, time')
         .eq('id', lessonId)
         .maybeSingle()
     if (readError) return { ok: false, error: `lesson lookup failed: ${readError.message}` }
@@ -98,6 +99,17 @@ export async function markNoShowCore(lessonId: string): Promise<NoShowResult> {
         const { error: labelError } = await client.from('credit_transactions').update({ source: NO_SHOW_LEDGER_SOURCE }).eq('id', rows[0].id)
         if (labelError) console.error('[no-show] ledger label not saved:', labelError.message)
     }
+
+    await recordLessonEvent({
+        kind: 'no_show',
+        actor: 'admin',
+        studentId,
+        lessonId,
+        date: (before as any).date,
+        time: (before as any).time,
+        detail: { credits_before: previousCredits, credits_after: newCredits },
+        context: { via },
+    })
 
     try {
         revalidatePath('/admin')

@@ -21,6 +21,7 @@ import { createAdminClient as createServiceClient } from '@/lib/supabase/admin'
 import { checkFreeTrial } from '@/lib/free-trial'
 import { FREE_TRIAL_REASON } from '@/lib/free-lesson-reasons'
 import { markNoShowCore } from '@/lib/core/no-show'
+import { recordLessonEvent } from '@/lib/lesson-events'
 import { shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
 import type { AdminTodayEvent, LessonWithStudent } from '@/types/admin'
@@ -219,6 +220,16 @@ export async function logPastLesson(
 
             console.log('logPastLesson: Credit snapshot saved:', startingBalance, '->', newBalance)
         }
+
+        await recordLessonEvent({
+            kind: 'logged',
+            actor: 'admin',
+            studentId,
+            lessonId: newLesson?.id ?? null,
+            date,
+            time,
+            detail: { credits_before: startingBalance, credits_after: newBalance, free: Boolean(free), trial, added: true },
+        })
     }
 
     // Auto-create next week's lesson
@@ -242,7 +253,7 @@ export async function logPastLesson(
             }
 
             if (!existingLesson && !blockReason) {
-                await supabase
+                const { data: nextLesson } = await supabase
                     .from('lessons')
                     .insert({
                         student_id: studentId,
@@ -251,6 +262,11 @@ export async function logPastLesson(
                         duration: duration || 60,
                         status: 'scheduled',
                     })
+                    .select('id')
+                    .maybeSingle()
+                if (nextLesson) {
+                    await recordLessonEvent({ kind: 'booked', actor: 'auto', studentId, lessonId: nextLesson.id, date: nextWeekDateStr, time, detail: { reason: 'next week, after the log' } })
+                }
                 console.log(`logPastLesson: Auto-created next lesson for ${nextWeekDateStr} at ${time}`)
             }
         } catch (autoCreateError) {

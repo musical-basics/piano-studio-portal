@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
         time,
         duration: parsedDuration,
         confirmOverride: confirm_override === true,
+        event: { via: 'agent' },
     })
 
     if ('error' in result) {

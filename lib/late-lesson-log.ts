@@ -1,4 +1,5 @@
 import { revalidatePath } from 'next/cache'
+import { recordLessonEvent } from '@/lib/lesson-events'
 import type { DbClient } from '@/lib/supabase/admin'
 import { shiftDateStr, studioToday } from '@/lib/studio-timezone'
 import { UNLOGGED_STATUSES } from '@/lib/unlogged-lessons'
@@ -95,6 +96,16 @@ export async function logOldLessonQuietly(
             await undo()
             return { ok: false, error: `could not log the free trial: ${freeError.message}` }
         }
+        await recordLessonEvent({
+            kind: 'logged',
+            actor: 'admin',
+            studentId,
+            lessonId,
+            date: String(before.date),
+            time: String(before.time),
+            detail: { credits_before: previousCredits, credits_after: previousCredits, free: true, trial: true, quiet: true },
+            context: { via: source === LATE_LOG_SOURCE ? 'email button' : undefined },
+        })
         try {
             revalidatePath('/admin')
             revalidatePath('/student')
@@ -132,6 +143,17 @@ export async function logOldLessonQuietly(
         const { error: labelError } = await client.from('credit_transactions').update({ source }).eq('id', rows[0].id)
         if (labelError) console.error('[late-lesson-log] ledger label not saved:', labelError.message)
     }
+
+    await recordLessonEvent({
+        kind: 'logged',
+        actor: 'admin',
+        studentId,
+        lessonId,
+        date: String(before.date),
+        time: String(before.time),
+        detail: { credits_before: previousCredits, credits_after: newCredits, quiet: true },
+        context: { via: source === LATE_LOG_SOURCE ? 'email button' : undefined },
+    })
 
     try {
         revalidatePath('/admin')
