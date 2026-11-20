@@ -2,6 +2,7 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { formatStudioTime } from '@/lib/backup-watchdog'
 import { isoToStudioWallClock } from '@/lib/studio-timezone'
+import { measureEmailQuota, type EmailQuota } from '@/lib/email-quota'
 import { measureR2, PRACTICE_BUCKET, R2_FREE_BYTES, R2_PRICE_PER_GB_MONTH, r2Configured, RECORDINGS_BUCKET, type R2Usage } from '@/lib/classroom-r2'
 
 /**
@@ -24,6 +25,12 @@ import { measureR2, PRACTICE_BUCKET, R2_FREE_BYTES, R2_PRICE_PER_GB_MONTH, r2Con
  * nothing stops, it just costs $0.015 per GB a month, so an R2 email is never
  * marked urgent. If R2 cannot be measured the run still checks Supabase.
  *
+ * Since #1073 it also checks the emails the portal sends through Resend
+ * against the plan's monthly limit (and the daily one, on the free plan),
+ * read from Resend's own usage headers (lib/email-quota.ts), with the same 80%
+ * email and a repeat at 95%: past the limit Resend stops sending, reminders
+ * included. If it cannot be read the run still checks the rest.
+ *
  * State lives on the job's cron_heartbeats row (`state`): one reading a day for
  * the last five weeks (for the growth figure) and the last email per resource.
  */
@@ -39,8 +46,9 @@ export const URGENT_AT = 0.95
 export const REPEAT_DAYS = 7
 const HISTORY_DAYS = 35
 
-export type Resource = 'database' | 'files' | 'r2'
-export type Limits = Record<Resource, number>
+export type Resource = 'database' | 'files' | 'r2' | 'emails' | 'emailsDay'
+/** Storage limits are fixed; the email limits come with the reading (EmailQuota) unless set here (dry-run tests). */
+export type Limits = Record<'database' | 'files' | 'r2', number> & { emails?: number; emailsDay?: number }
 export type Level = 0 | 80 | 95
 
 export type Usage = {
@@ -52,9 +60,12 @@ export type Usage = {
     /** Cloudflare R2, every bucket on the account; null when it could not be measured (or is not set up). */
     r2?: R2Usage | null
     r2Error?: string
+    /** Resend: emails used this billing month (and today on the free plan); null when it could not be read. */
+    emails?: EmailQuota | null
+    emailsError?: string
 }
 
-export type Reading = { date: string; at: string; database: number; files: number; r2?: number }
+export type Reading = { date: string; at: string; database: number; files: number; r2?: number; emails?: number }
 
 export type StorageState = {
     /** One reading per Eastern day, oldest first, at most HISTORY_DAYS old. */
@@ -71,7 +82,7 @@ export type ResourceReport = {
     limit: number
     percent: number
     level: Level
-    /** Bytes per day since the oldest earlier reading, null without one. */
+    /** Bytes (emails, for the email resources) per day since the oldest earlier reading, null without one. */
     perDay: number | null
     /** How many days that growth figure spans. */
     overDays: number | null
@@ -81,8 +92,15 @@ export type ResourceReport = {
 
 export type StorageEmail = { subject: string; html: string; urgent: boolean }
 
-const LABEL: Record<Resource, string> = { database: 'database', files: 'file storage', r2: 'classroom and practice video storage (Cloudflare R2)' }
-const TITLE: Record<Resource, string> = { database: 'Database', files: 'File storage', r2: 'Cloudflare R2 (classroom and practice videos)' }
+const LABEL: Record<Resource, string> = {
+    database: 'database', files: 'file storage', r2: 'classroom and practice video storage (Cloudflare R2)',
+    emails: 'emails this month', emailsDay: 'emails today',
+}
+const TITLE: Record<Resource, string> = {
+    database: 'Database', files: 'File storage', r2: 'Cloudflare R2 (classroom and practice videos)',
+    emails: 'Emails sent through Resend this month', emailsDay: 'Emails sent through Resend today',
+}
+const isEmail = (resource: Resource) => resource === 'emails' || resource === 'emailsDay'
 
 /** Supabase sizes count 1 MB = 1024 * 1024 bytes; Cloudflare counts 1 GB = 10^9 bytes. */
 export function formatSize(bytes: number, unit: 'binary' | 'decimal' = 'binary'): string {
@@ -94,7 +112,15 @@ export function formatSize(bytes: number, unit: 'binary' | 'decimal' = 'binary')
 }
 
 function sizeOf(resource: Resource, bytes: number): string {
+    if (isEmail(resource)) return `${Math.round(bytes).toLocaleString('en-US')} email${bytes === 1 ? '' : 's'}`
     return formatSize(bytes, resource === 'r2' ? 'decimal' : 'binary')
+}
+
+/** "79 of 50,000 emails", "176 MB of 1 GB". */
+function amountOf(r: Pick<ResourceReport, 'resource' | 'bytes' | 'limit'>): string {
+    return isEmail(r.resource)
+        ? `${Math.round(r.bytes).toLocaleString('en-US')} of ${sizeOf(r.resource, r.limit)}`
+        : `${sizeOf(r.resource, r.bytes)} of ${sizeOf(r.resource, r.limit)}`
 }
 
 /** Whole percent, rounded down so "80%" never shows below the 80% line. */
@@ -112,13 +138,26 @@ function studioDate(at: Date): string {
 }
 
 function growth(readings: Reading[], resource: Resource, bytes: number, now: Date): { perDay: number | null; overDays: number | null } {
+    // Today's count starts from zero each day: no growth figure.
+    if (resource === 'emailsDay') return { perDay: null, overDays: null }
+    const key = resource as 'database' | 'files' | 'r2' | 'emails'
     const today = studioDate(now)
-    const earlier = readings.filter(r => r.date < today && typeof r[resource] === 'number')
+    let earlier = readings.filter(r => r.date < today && typeof r[key] === 'number')
+    if (resource === 'emails') {
+        // The count restarts each billing month: only the readings since the last restart.
+        for (let i = earlier.length - 1; i > 0; i--) {
+            if ((earlier[i].emails as number) < (earlier[i - 1].emails as number)) {
+                earlier = earlier.slice(i)
+                break
+            }
+        }
+        if (earlier.length && bytes < (earlier[earlier.length - 1].emails as number)) earlier = []
+    }
     if (!earlier.length) return { perDay: null, overDays: null }
     const oldest = earlier[0]
     const days = (now.getTime() - Date.parse(oldest.at)) / 86_400_000
     if (days < 0.5) return { perDay: null, overDays: null }
-    return { perDay: (bytes - (oldest[resource] as number)) / days, overDays: Math.round(days) }
+    return { perDay: (bytes - (oldest[key] as number)) / days, overDays: Math.round(days) }
 }
 
 /**
@@ -135,12 +174,25 @@ export function decideStorageAlert(
     limits: Limits = FREE_PLAN_LIMITS,
 ): { state: StorageState; reports: ResourceReport[]; email: StorageEmail | null } {
     const alerts: StorageState['alerts'] = { ...prev.alerts }
-    // R2 only when it was measured; a failed measurement leaves its alert state alone.
-    const measured: Resource[] = usage.r2 ? ['database', 'files', 'r2'] : ['database', 'files']
-    const bytesOf = (resource: Resource) => (resource === 'r2' ? usage.r2!.bytes : usage[resource])
+    // R2 and the emails only when they were measured; a failed measurement leaves their alert state alone.
+    const measured: Resource[] = ['database', 'files']
+    if (usage.r2) measured.push('r2')
+    if (usage.emails) measured.push('emails')
+    if (usage.emails && usage.emails.day != null && usage.emails.dayLimit) measured.push('emailsDay')
+    const bytesOf = (resource: Resource): number => {
+        if (resource === 'r2') return usage.r2!.bytes
+        if (resource === 'emails') return usage.emails!.month
+        if (resource === 'emailsDay') return usage.emails!.day ?? 0
+        return usage[resource]
+    }
+    const limitOf = (resource: Resource): number => {
+        if (resource === 'emails') return limits.emails ?? usage.emails!.monthLimit
+        if (resource === 'emailsDay') return limits.emailsDay ?? usage.emails!.dayLimit ?? 0
+        return limits[resource]
+    }
     const reports: ResourceReport[] = measured.map(resource => {
         const bytes = bytesOf(resource)
-        const limit = limits[resource]
+        const limit = limitOf(resource)
         const level = levelOf(bytes, limit)
         const last = prev.alerts[resource]
         let due = false
@@ -160,7 +212,11 @@ export function decideStorageAlert(
     const cutoff = now.getTime() - HISTORY_DAYS * 86_400_000
     const readings = [
         ...prev.readings.filter(r => r.date !== today && Date.parse(r.at) >= cutoff),
-        { date: today, at: now.toISOString(), database: usage.database, files: usage.files, ...(usage.r2 ? { r2: usage.r2.bytes } : {}) },
+        {
+            date: today, at: now.toISOString(), database: usage.database, files: usage.files,
+            ...(usage.r2 ? { r2: usage.r2.bytes } : {}),
+            ...(usage.emails ? { emails: usage.emails.month } : {}),
+        },
     ]
 
     const due = reports.filter(r => r.due)
@@ -174,6 +230,15 @@ function growthLine(r: ResourceReport): string {
     }
     const grew = r.perDay * r.overDays
     const span = r.overDays === 1 ? 'the last day' : `the last ${r.overDays} days`
+    if (isEmail(r.resource)) {
+        if (grew <= 0) return `None went out over ${span}.`
+        const left = (r.limit - r.bytes) / r.perDay
+        const days = Math.max(1, Math.round(left))
+        const eta = left > 0 && left < 45
+            ? ` At that pace the limit is reached in about ${days} day${days === 1 ? '' : 's'}, unless the billing month restarts first.`
+            : ''
+        return `About ${Math.round(r.perDay).toLocaleString('en-US')} a day went out over ${span}.${eta}`
+    }
     if (grew <= 0) return `It did not grow over ${span}.`
     const perMonth = r.perDay * 30
     const daysLeft = (r.limit - r.bytes) / r.perDay
@@ -192,6 +257,7 @@ function biggestLine(r: ResourceReport, usage: Partial<Usage>): string {
             ? `By bucket: ${buckets.map(b => `${esc(b.name)}${b.name === RECORDINGS_BUCKET ? ' (classroom videos)' : b.name === PRACTICE_BUCKET ? ' (practice videos)' : ''} ${formatSize(b.bytes, 'decimal')} (${b.files} file${b.files === 1 ? '' : 's'})`).join(', ')}.`
             : ''
     }
+    if (isEmail(r.resource)) return ''
     if (r.resource === 'database') {
         const tables = (usage.tables ?? []).slice(0, 5)
         return tables.length ? `Biggest tables: ${tables.map(t => `${esc(t.name)} ${formatSize(t.bytes)}`).join(', ')}.` : ''
@@ -206,6 +272,9 @@ const AT_LIMIT: Record<Resource, string> = {
     database: 'At the limit Supabase makes the database read-only: lessons, logs, credits and messages stop saving until it is back under.',
     files: 'At the limit Supabase stops taking uploads: lesson materials, sheet music and chat attachments would fail to upload.',
     r2: `Past ${formatSize(R2_FREE_BYTES, 'decimal')} nothing stops working: Cloudflare charges $${R2_PRICE_PER_GB_MONTH} per GB a month over it.`,
+    emails: 'At the limit Resend stops sending until the next billing month (unless extra emails are turned on in its billing settings): '
+        + 'lesson reminders, lesson notes, chat notifications and these alerts would all stop.',
+    emailsDay: 'At the limit Resend stops sending until midnight UTC: lesson reminders, lesson notes, chat notifications and these alerts would all stop.',
 }
 
 const TO_DO: Record<Resource, string> = {
@@ -216,6 +285,17 @@ const TO_DO: Record<Resource, string> = {
     r2: 'What to do: classroom videos older than 60 days already move to their Dropbox copy every day on their own. '
         + 'To bring it down further, delete test and no-show recordings (admin, Classroom recordings) or old practice videos, '
         + 'or let it be and pay the cents above.',
+    emails: 'What to do: move to a bigger Resend plan, or turn on extra emails, before it runs out (resend.com, Settings, Billing). '
+        + 'Every site that sends through the same Resend account counts toward it, and so do emails it receives (chat replies).',
+    emailsDay: 'What to do: move to a paid Resend plan (resend.com, Settings, Billing): paid plans have no daily limit.',
+}
+
+/** The email limit was assumed from the plan, not set: say so, and how to set it. */
+function emailLimitLine(r: ResourceReport, usage: Partial<Usage>): string {
+    if (r.resource !== 'emails' || usage.emails?.limitFrom !== 'plan') return ''
+    return usage.emails.plan === 'free'
+        ? "The limit is the free plan's 3,000 a month."
+        : `${Math.round(r.limit).toLocaleString('en-US')} a month is Resend Pro's limit, assumed: if the plan is different, set RESEND_MONTHLY_LIMIT in Vercel.`
 }
 
 /** One line of information: the whole Cloudflare account, other projects included (never alerted on). */
@@ -241,14 +321,22 @@ export function renderStorageEmail(due: ResourceReport[], all: ResourceReport[],
     // Only Supabase stops working at its limit; R2 just costs a little more.
     const urgent = due.some(r => r.level === 95 && r.resource !== 'r2')
     const plan = (r: ResourceReport) => (r.resource === 'r2' ? 'the free' : "the free plan's")
-    const subject = due.length === 1
+    const subject = due.length === 1 && isEmail(due[0].resource)
+        ? `${urgent ? 'Urgent: s' : 'S'}tudio emails are at ${due[0].percent}% of ${due[0].resource === 'emails' ? "this month's" : "today's"} Resend limit (${amountOf(due[0])})`
+        : due.length === 1
         ? `${urgent ? 'Urgent: s' : 'S'}tudio ${LABEL[due[0].resource]} is at ${due[0].percent}% of ${due[0].resource === 'r2' ? `the free ${sizeOf('r2', due[0].limit)}` : 'the free plan'} (${sizeOf(due[0].resource, due[0].bytes)} of ${sizeOf(due[0].resource, due[0].limit)})`
         : due.length === 2 && due.every(r => r.resource !== 'r2')
             ? `${urgent ? 'Urgent: s' : 'S'}tudio database and file storage are both near the free plan's limits`
-            : `${urgent ? 'Urgent: s' : 'S'}tudio ${due.map(r => LABEL[r.resource]).join(' and ')} are near their free limits`
+            : `${urgent ? 'Urgent: s' : 'S'}tudio ${due.map(r => LABEL[r.resource]).join(' and ')} are near their ${due.some(r => isEmail(r.resource)) ? '' : 'free '}limits`
     const section = (r: ResourceReport) => {
+        const first = r.resource === 'emails'
+            ? `<strong>${sizeOf(r.resource, r.bytes)}</strong> went out this billing month, of the Resend plan's ${Math.round(r.limit).toLocaleString('en-US')} (<strong>${r.percent}%</strong>).`
+            : r.resource === 'emailsDay'
+                ? `<strong>${sizeOf(r.resource, r.bytes)}</strong> went out today (the UTC day), of the free plan's ${Math.round(r.limit).toLocaleString('en-US')} a day (<strong>${r.percent}%</strong>).`
+                : `The ${LABEL[r.resource]} is <strong>${sizeOf(r.resource, r.bytes)}</strong> of ${plan(r)} ${sizeOf(r.resource, r.limit)} (<strong>${r.percent}%</strong>).`
         const lines = [
-            `The ${LABEL[r.resource]} is <strong>${sizeOf(r.resource, r.bytes)}</strong> of ${plan(r)} ${sizeOf(r.resource, r.limit)} (<strong>${r.percent}%</strong>).`,
+            first,
+            emailLimitLine(r, usage),
             growthLine(r),
             r2CostLine(r),
             biggestLine(r, usage),
@@ -261,16 +349,18 @@ export function renderStorageEmail(due: ResourceReport[], all: ResourceReport[],
     const others = all.filter(r => !r.due)
     const html = due.map(section).join('')
         + (others.length
-            ? `<p style="margin:16px 0 4px;color:#444">${others.map(r => `The ${LABEL[r.resource]} is ${sizeOf(r.resource, r.bytes)} of ${sizeOf(r.resource, r.limit)} (${r.percent}%)${r.level ? ', already emailed about' : ', fine'}.`).join(' ')}</p>`
+            ? `<p style="margin:16px 0 4px;color:#444">${others.map(r => `${isEmail(r.resource) ? `${LABEL[r.resource].charAt(0).toUpperCase()}${LABEL[r.resource].slice(1)}:` : `The ${LABEL[r.resource]} is`} ${amountOf(r)} (${r.percent}%)${r.level ? ', already emailed about' : ', fine'}.`).join(' ')}</p>`
             : '')
         + (usage.r2Error ? `<p style="margin:16px 0 4px;color:#444">Cloudflare R2 could not be measured today: ${esc(usage.r2Error)}</p>` : '')
+        + (usage.emailsError ? `<p style="margin:16px 0 4px;color:#444">The Resend email usage could not be read today: ${esc(usage.emailsError)}</p>` : '')
         + (accountLine(usage) ? `<p style="margin:16px 0 4px;color:#444">${accountLine(usage)}</p>` : '')
         + `<p style="margin:16px 0 0;color:#444">Measured ${esc(formatStudioTime(now))}.</p>`
     return { subject, html, urgent }
 }
 
 export const STORAGE_FOOTER = `Sent by the portal's daily storage check (/api/cron/storage-check). `
-    + `It emails when the database, files or the studio's Cloudflare R2 video buckets pass ${WARN_AT * 100}% of their free limit, again at most once a week while they stay over, `
+    + `It emails when the database, files or the studio's Cloudflare R2 video buckets pass ${WARN_AT * 100}% of their free limit, `
+    + `or the emails sent through Resend pass ${WARN_AT * 100}% of the plan's monthly limit, again at most once a week while they stay over, `
     + `and once more when one passes ${URGENT_AT * 100}%.`
 
 /** Reads the sizes through the service-role-only SQL function. */
@@ -312,6 +402,8 @@ export type StorageCheckOptions = {
     usage?: Usage
     /** Measures R2 (default: every bucket on the account, when the R2 key is set). Tests pass a fake. */
     measureR2?: () => Promise<R2Usage | null>
+    /** Reads the Resend usage (default: lib/email-quota.ts, one probe send). Tests pass a fake. */
+    measureEmails?: () => Promise<EmailQuota | null>
     /** Defaults to sendCronAlert to the studio inbox. Returns whether it went out. */
     sendAlert?: (email: StorageEmail) => Promise<boolean>
 }
@@ -338,6 +430,14 @@ export async function runStorageCheck(opts: StorageCheckOptions): Promise<Storag
             usage.r2Error = err instanceof Error ? err.message : String(err)
         }
     }
+    if (!opts.usage || opts.measureEmails) {
+        try {
+            usage.emails = await (opts.measureEmails ?? (() => measureEmailQuota()))()
+        } catch (err) {
+            usage.emails = null
+            usage.emailsError = err instanceof Error ? err.message : String(err)
+        }
+    }
     const before = await readState(opts.client)
     const { state, reports, email } = decideStorageAlert(before, usage, now, opts.limits)
 
@@ -361,9 +461,10 @@ export async function runStorageCheck(opts: StorageCheckOptions): Promise<Storag
     }
     if (!dryRun) await writeState(opts.client, after, now, emailed)
 
-    const sizes = reports.map(r => `${LABEL[r.resource]} ${sizeOf(r.resource, r.bytes)} of ${sizeOf(r.resource, r.limit)} (${r.percent}%)`).join(', ')
+    const sizes = reports.map(r => `${LABEL[r.resource]} ${amountOf(r)} (${r.percent}%)`
+        + (r.resource === 'r2' && usage.r2?.account ? ` (whole Cloudflare account ${formatSize(usage.r2.account.bytes, 'decimal')}, other projects included, not checked)` : '')).join(', ')
         + (usage.r2Error ? `, R2 not measured (${usage.r2Error})` : '')
-        + (usage.r2?.account ? ` (whole Cloudflare account ${formatSize(usage.r2.account.bytes, 'decimal')}, other projects included, not checked)` : '')
+        + (usage.emailsError ? `, emails not measured (${usage.emailsError})` : '')
     const mail = email ? (dryRun ? `, would email "${email.subject}"` : emailed ? ', emailed the studio' : ', email failed to send') : ''
     return {
         message: `${sizes}${mail}${dryRun ? ' (dry run, nothing saved)' : ''}`,

@@ -8,6 +8,7 @@
  */
 import assert from 'node:assert/strict'
 import { runStorageCheck, STORAGE_JOB, type StorageEmail, type Usage } from '../lib/storage-usage'
+import { measureEmailQuota, quotaFromHeaders, type EmailQuota } from '../lib/email-quota'
 import type { DbClient } from '../lib/supabase/admin'
 
 const MB = 1024 * 1024
@@ -178,6 +179,83 @@ async function main() {
         assert.match(r2.message, /R2 not measured \(R2 list buckets: HTTP 403\)/)
         assert.ok((rows2.get(STORAGE_JOB)!.state as any).alerts.r2)
         assert.equal(r2.reports.length, 2)
+    }
+
+    // ---- Resend emails (#1073): this billing month's sends against the plan's limit, same 80% email,
+    // urgent at 95% (sending stops at the limit); the count restarts each billing month.
+    {
+        const { client: db3, rows: rows3 } = fakeDb()
+        const mails: StorageEmail[] = []
+        const send = async (e: StorageEmail) => { mails.push(e); return true }
+        const paid = (month: number): EmailQuota => ({ month, monthLimit: 50_000, day: null, dayLimit: null, plan: 'paid', limitFrom: 'plan' })
+        let at = Date.parse('2026-11-21T14:15:00Z')
+        const run = async (q: EmailQuota | 'fail') => {
+            const r = await runStorageCheck({
+                client: db3, usage: usage(21, 176), now: new Date(at), sendAlert: send,
+                measureEmails: q === 'fail' ? async () => { throw new Error('Resend refused the usage check (HTTP 401)') } : async () => q,
+            })
+            at += 86_400_000
+            return r
+        }
+        let r3 = await run(paid(79))
+        assert.equal(mails.length, 0)
+        assert.match(r3.message, /emails this month 79 of 50,000 emails \(0%\)/)
+        assert.equal((rows3.get(STORAGE_JOB)!.state as any).readings[0].emails, 79)
+        r3 = await run(paid(39_000))
+        assert.equal(mails.length, 0)
+        r3 = await run(paid(41_000))
+        assert.equal(mails.length, 1)
+        assert.equal(mails[0].subject, "Studio emails are at 82% of this month's Resend limit (41,000 of 50,000 emails)")
+        assert.equal(mails[0].urgent, false)
+        assert.match(mails[0].html, /<strong>41,000 emails<\/strong> went out this billing month, of the Resend plan's 50,000/)
+        assert.match(mails[0].html, /About 20,461 a day went out over the last 2 days\. At that pace the limit is reached in about 1 day, unless/)
+        assert.match(mails[0].html, /50,000 a month is Resend Pro's limit, assumed: if the plan is different, set RESEND_MONTHLY_LIMIT/)
+        assert.match(mails[0].html, /Resend stops sending until the next billing month/)
+        await run(paid(43_000))
+        assert.equal(mails.length, 1, 'no repeat within the week')
+        await run(paid(47_600))
+        assert.equal(mails.length, 2)
+        assert.equal(mails[1].urgent, true, 'sending stops at the limit')
+        assert.match(mails[1].subject, /^Urgent: studio emails are at 95%/)
+        // A new billing month: back to a low count, the alert resets, no growth from last month's readings.
+        r3 = await run(paid(120))
+        assert.equal(mails.length, 2)
+        assert.equal((rows3.get(STORAGE_JOB)!.state as any).alerts.emails, undefined)
+        assert.equal(r3.reports.find(x => x.resource === 'emails')!.perDay, null)
+        // The free plan: the daily limit too.
+        r3 = await run({ month: 900, monthLimit: 3_000, day: 85, dayLimit: 100, plan: 'free', limitFrom: 'plan' })
+        assert.equal(mails.length, 3)
+        assert.equal(mails[2].subject, "Studio emails are at 85% of today's Resend limit (85 of 100 emails)")
+        assert.match(r3.message, /emails this month 900 of 3,000 emails \(30%\), emails today 85 of 100 emails \(85%\)/)
+        // Not readable: the rest is still checked, no email.
+        r3 = await run('fail')
+        assert.equal(mails.length, 3)
+        assert.match(r3.message, /emails not measured \(Resend refused the usage check \(HTTP 401\)\)/)
+        assert.equal(r3.reports.length, 2)
+
+        // Reading the headers.
+        const h = (o: Record<string, string>) => (name: string) => o[name] ?? null
+        assert.deepEqual(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' })),
+            { month: 79, monthLimit: 50_000, day: null, dayLimit: null, plan: 'paid', limitFrom: 'plan' })
+        assert.deepEqual(quotaFromHeaders(h({ 'x-resend-monthly-quota': '900', 'x-resend-daily-quota': '12' })),
+            { month: 900, monthLimit: 3_000, day: 12, dayLimit: 100, plan: 'free', limitFrom: 'plan' })
+        process.env.RESEND_MONTHLY_LIMIT = '100,000'
+        assert.equal(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' }))!.monthLimit, 100_000)
+        assert.equal(quotaFromHeaders(h({ 'x-resend-monthly-quota': '79' }))!.limitFrom, 'setting')
+        delete process.env.RESEND_MONTHLY_LIMIT
+        assert.equal(quotaFromHeaders(h({})), null)
+        // The probe: one send to Resend's test inbox, usage read from the answer.
+        process.env.RESEND_API_KEY = 're_test'
+        let probe: { url: string; body: any } | null = null
+        const q = await measureEmailQuota((async (url: string, init: RequestInit) => {
+            probe = { url, body: JSON.parse(String(init.body)) }
+            return new Response('{"id":"x"}', { headers: { 'x-resend-monthly-quota': '80' } })
+        }) as unknown as typeof fetch)
+        assert.equal(q.month, 80)
+        assert.equal(probe!.url, 'https://api.resend.com/emails')
+        assert.deepEqual(probe!.body.to, ['delivered@resend.dev'])
+        await assert.rejects(measureEmailQuota((async () => new Response('{"message":"This API key is restricted"}', { status: 401 })) as unknown as typeof fetch),
+            /Resend refused the usage check \(HTTP 401: This API key is restricted\)/)
     }
 
     console.log(`storage alert: all checks passed (${sent.length} emails in the scenario)`)

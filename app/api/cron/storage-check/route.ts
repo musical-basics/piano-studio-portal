@@ -12,10 +12,14 @@ export const maxDuration = 60
 // 80%, at most weekly while over and once more at 95% (Lionel's #778,
 // lib/storage-usage.ts). Since #1072 also the studio's Cloudflare R2 buckets
 // (classroom and practice videos) against the free 10 GB, same 80% email.
+// Since #1073 also the emails sent through Resend this billing month against
+// the plan's limit (lib/email-quota.ts: one send to Resend's test inbox reads
+// the usage), same 80% email.
 // Silent otherwise; nothing goes to families.
 // Manual runs: ?dry=1 measures and returns what it would email (with the HTML)
-// without sending or saving. With ?dry=1 only, ?db_limit_mb=N and
-// ?files_limit_mb=N (and ?r2_limit_gb=N for R2) stand in for the limits, to see the email.
+// without sending or saving (the Resend usage read is still its one test send).
+// With ?dry=1 only, ?db_limit_mb=N and ?files_limit_mb=N (and ?r2_limit_gb=N
+// for R2, ?emails_limit=N for Resend) stand in for the limits, to see the email.
 export const GET = withCronRun('storage-check', handle)
 
 async function handle(request: Request) {
@@ -33,6 +37,7 @@ async function handle(request: Request) {
         database: mb('db_limit_mb') ?? FREE_PLAN_LIMITS.database,
         files: mb('files_limit_mb') ?? FREE_PLAN_LIMITS.files,
         r2: (dryRun && Number(searchParams.get('r2_limit_gb')) > 0 ? Number(searchParams.get('r2_limit_gb')) * 1e9 : null) ?? FREE_PLAN_LIMITS.r2,
+        ...(dryRun && Number(searchParams.get('emails_limit')) > 0 ? { emails: Number(searchParams.get('emails_limit')) } : {}),
     }
 
     try {
