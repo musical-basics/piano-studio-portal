@@ -1,5 +1,5 @@
 import type { DbClient } from '@/lib/supabase/admin'
-import { STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
+import { isoToStudioWallClock, shiftDateStr, STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
 import vercelConfig from '@/vercel.json'
 
 /**
@@ -11,6 +11,10 @@ import vercelConfig from '@/vercel.json'
  * what each does, turns the cron schedules (UTC) into Eastern words, and works
  * out a status per job: worked, failed, late (no run within about twice its
  * interval) or never recorded.
+ *
+ * Since #1077 each job also gets a row of marks for the last 30 days (green
+ * worked, red failed at least once, grey no run), from cron_runs through the
+ * SQL function cron_run_days (migration 20261120140000).
  *
  * Adding a cron to vercel.json? Add it to PORTAL_JOBS below and wrap its route
  * in withCronRun; scripts/check_scheduled_jobs.ts fails until both are done.
@@ -419,6 +423,8 @@ export type JobView = {
     /** When it last worked, when that is earlier than the last run. */
     lastWorkedAt: string | null
     detail: string | null
+    /** The last HISTORY_DAYS studio days, oldest first; null when the history could not be read. */
+    days: DayMark[] | null
 }
 
 export function lateAfterMinutes(job: Pick<JobInfo, 'lateAfterMinutes'>, intervalMinutes: number): number {
@@ -457,15 +463,108 @@ export function allJobs(now: Date = new Date()): (JobInfo & { runsOn: 'portal' |
     return [...portal, ...mac]
 }
 
+// ------------------------------------------------------------- history ---
+
+export const HISTORY_DAYS = 30
+
+/** One studio day of one job's runs, as cron_run_days() returns it. */
+export type RunDayRow = {
+    job: string
+    /** YYYY-MM-DD, studio time. */
+    day: string
+    runs: number
+    failed: number
+    last_at: string
+    last_detail: string | null
+    last_duration_ms: number | null
+    failed_at: string | null
+    failed_detail: string | null
+}
+
+export type DayMark = {
+    date: string
+    state: 'ok' | 'failed' | 'none'
+    /** What the mark says on hover or tap. */
+    text: string
+}
+
+function dayLabel(date: string): string {
+    return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function clock(iso: string): string {
+    const at = new Date(iso)
+    const p = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', { timeZone: STUDIO_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
+            .formatToParts(at).map(x => [x.type, x.value]),
+    )
+    return `${p.hour}:${p.minute}${String(p.dayPeriod).toLowerCase()} ${studioTzAbbr(at)}`
+}
+
+function took(ms: number | null): string {
+    if (ms == null) return ''
+    if (ms < 1000) return ' Took under a second.'
+    if (ms < 60_000) return ` Took ${Math.round(ms / 1000)} second${Math.round(ms / 1000) === 1 ? '' : 's'}.`
+    return ` Took ${Math.round(ms / 60_000)} min.`
+}
+
+const sentence = (s: string | null) => (s ? ` ${s.replace(/[.\s]+$/, '')}.` : '')
+
+/** What one day's mark says. */
+export function describeDay(date: string, row: RunDayRow | undefined): DayMark {
+    const day = dayLabel(date)
+    if (!row || !row.runs) return { date, state: 'none', text: `${day}: no run.` }
+    if (row.runs === 1) {
+        return row.failed
+            ? { date, state: 'failed', text: `${day}, ${clock(row.last_at)}: failed.${sentence(row.failed_detail ?? row.last_detail)}` }
+            : { date, state: 'ok', text: `${day}, ${clock(row.last_at)}: worked.${sentence(row.last_detail)}${took(row.last_duration_ms)}` }
+    }
+    if (!row.failed) {
+        return { date, state: 'ok', text: `${day}: ${row.runs} runs, all worked. Last at ${clock(row.last_at)}:${sentence(row.last_detail) || ' no detail.'}` }
+    }
+    const at = row.failed_at ? ` Last failure at ${clock(row.failed_at)}:` : ' Last failure:'
+    return { date, state: 'failed', text: `${day}: ${row.failed} of ${row.runs} runs failed.${at}${sentence(row.failed_detail) || ' no error text.'}` }
+}
+
+/** One mark per studio day, oldest first, ending today. */
+export function dayMarks(rows: RunDayRow[], today: string, days = HISTORY_DAYS): DayMark[] {
+    const byDay = new Map(rows.map(r => [r.day, r]))
+    return Array.from({ length: days }, (_, i) => {
+        const date = shiftDateStr(today, i - (days - 1))
+        return describeDay(date, byDay.get(date))
+    })
+}
+
+/** Every job's runs per studio day; null when the history can't be read (the page then leaves the marks out). */
+export async function loadRunDays(client: DbClient, now: Date = new Date()): Promise<Map<string, RunDayRow[]> | null> {
+    const since = new Date(now.getTime() - (HISTORY_DAYS + 1) * 86_400_000).toISOString()
+    const { data, error } = await client.rpc('cron_run_days', { p_since: since, p_tz: STUDIO_TZ })
+    if (error) {
+        console.error('[ScheduledJobs] cron_run_days failed (marks left out):', error.message)
+        return null
+    }
+    const byJob = new Map<string, RunDayRow[]>()
+    for (const r of (data ?? []) as RunDayRow[]) {
+        const list = byJob.get(r.job) ?? []
+        list.push({ ...r, day: String(r.day).slice(0, 10) })
+        byJob.set(r.job, list)
+    }
+    return byJob
+}
+
 /** Server-side, with the service-role client: every job and how it last went. */
 export async function loadScheduledJobs(client: DbClient, now: Date = new Date()): Promise<JobView[]> {
     const jobs = allJobs(now)
-    const { data, error } = await client
-        .from('cron_heartbeats')
-        .select('job, last_run_at, last_finished_at, last_ok, last_detail')
-        .in('job', jobs.map(j => j.job))
+    const [{ data, error }, history] = await Promise.all([
+        client
+            .from('cron_heartbeats')
+            .select('job, last_run_at, last_finished_at, last_ok, last_detail')
+            .in('job', jobs.map(j => j.job)),
+        loadRunDays(client, now),
+    ])
     if (error) throw new Error(`cron_heartbeats read failed: ${error.message}`)
     const rows = new Map(((data ?? []) as HeartbeatRow[]).map(r => [r.job, r]))
+    const today = isoToStudioWallClock(now.toISOString()).localDate
     return jobs.map(j => ({
         job: j.job,
         name: j.name,
@@ -475,5 +574,6 @@ export async function loadScheduledJobs(client: DbClient, now: Date = new Date()
         schedule: j.schedule,
         intervalMinutes: j.intervalMinutes,
         ...jobStatus(rows.get(j.job), lateAfterMinutes(j, j.intervalMinutes), now),
+        days: history ? dayMarks(history.get(j.job) ?? [], today) : null,
     }))
 }

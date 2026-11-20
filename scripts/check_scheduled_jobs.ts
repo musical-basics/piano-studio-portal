@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import vercel from '../vercel.json'
-import { allJobs, describeCron, jobForPath, jobStatus, MAC_JOBS, PORTAL_JOBS, summarizeJobRun } from '../lib/scheduled-jobs'
+import { allJobs, dayMarks, describeCron, HISTORY_DAYS, jobForPath, jobStatus, MAC_JOBS, PORTAL_JOBS, summarizeJobRun, type RunDayRow } from '../lib/scheduled-jobs'
 import { withCronRun } from '../lib/cron-runs'
 import type { DbClient } from '../lib/supabase/admin'
 
@@ -103,6 +103,7 @@ async function main() {
     assert.equal(row.last_ok, true)
     assert.equal(row.last_detail, '2 reminders sent')
     assert.ok(row.last_run_at && row.last_finished_at)
+    assert.equal(typeof row.last_duration_ms, 'number', 'the run time is recorded (#1077)')
 
     await wrapped('reminders', async () => Response.json({ error: 'database timed out' }, { status: 500 }))(new Request(url + 'reminders'))
     row = rows.get('reminders')!
@@ -121,6 +122,24 @@ async function main() {
     // A broken database client never breaks the run.
     res = await withCronRun('reminders', async () => Response.json({ success: true }), { client: () => { throw new Error('no env') } })(new Request(url + 'reminders'))
     assert.equal(res.status, 200)
+
+    // 6. The 30 days of marks (#1077).
+    const day = (d: string, runs: number, failed: number, extra: Partial<RunDayRow> = {}): RunDayRow => ({
+        job: 'x', day: d, runs, failed, last_at: `${d}T14:15:00Z`, last_detail: 'Nothing new', last_duration_ms: 2300,
+        failed_at: failed ? `${d}T15:10:00Z` : null, failed_detail: failed ? 'Dropbox said no' : null, ...extra,
+    })
+    const marks = dayMarks([day('2026-11-20', 1, 0), day('2026-11-19', 144, 2), day('2026-11-18', 3, 0), day('2026-10-01', 1, 1)], '2026-11-20')
+    assert.equal(marks.length, HISTORY_DAYS)
+    assert.equal(marks[0].date, '2026-10-22', 'oldest first, 30 days ending today')
+    assert.equal(marks[29].date, '2026-11-20')
+    assert.equal(marks[29].state, 'ok')
+    assert.equal(marks[29].text, 'Fri, Nov 20, 9:15am EST: worked. Nothing new. Took 2 seconds.')
+    assert.equal(marks[28].state, 'failed')
+    assert.equal(marks[28].text, 'Thu, Nov 19: 2 of 144 runs failed. Last failure at 10:10am EST: Dropbox said no.')
+    assert.equal(marks[27].text, 'Wed, Nov 18: 3 runs, all worked. Last at 9:15am EST: Nothing new.')
+    assert.equal(marks[26].state, 'none')
+    assert.equal(marks[26].text, 'Tue, Nov 17: no run.')
+    assert.ok(!marks.some(m => m.date === '2026-10-01'), 'older days fall off')
 
     console.log(`scheduled jobs: all checks passed (${crons.length} portal jobs, ${MAC_JOBS.length} Mac jobs)`)
 }

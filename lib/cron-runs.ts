@@ -12,14 +12,19 @@ import { summarizeJobRun } from '@/lib/scheduled-jobs'
  * it, so their alerting (reminder gaps, the backup watchdog, payment capture)
  * reads exactly what it did before. last_alert_at and state are never touched.
  *
+ * Since #1077 each run also lands in cron_runs (30 days of history, the marks
+ * on the jobs page). A trigger on cron_heartbeats writes it whenever
+ * last_finished_at moves, so this file and the Mac's scripts feed it without
+ * writing it themselves; last_duration_ms carries how long the run took.
+ *
  * Best-effort: a failed write is logged and never fails the run itself.
  */
 
 const DETAIL_MAX = 500
 
-export type CronRun = { ok: boolean; detail?: string | null }
+export type CronRun = { ok: boolean; detail?: string | null; durationMs?: number | null }
 
-export async function recordCronRun(client: DbClient, job: string, { ok, detail }: CronRun): Promise<void> {
+export async function recordCronRun(client: DbClient, job: string, { ok, detail, durationMs }: CronRun): Promise<void> {
     try {
         const now = new Date().toISOString()
         const row: Record<string, unknown> = {
@@ -27,6 +32,7 @@ export async function recordCronRun(client: DbClient, job: string, { ok, detail 
             last_finished_at: now,
             last_ok: ok,
             last_detail: detail ? detail.replace(/\s+/g, ' ').trim().slice(0, DETAIL_MAX) : null,
+            last_duration_ms: durationMs != null && Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
         }
         if (ok) row.last_run_at = now
         const { error } = await client.from('cron_heartbeats').upsert(row, { onConflict: 'job' })
@@ -50,8 +56,9 @@ type Handler = (request: Request) => Promise<Response>
  * `opts.client` swaps the database client (tests).
  */
 export function withCronRun(job: string, handler: Handler, opts: { client?: () => DbClient } = {}): Handler {
-    const record = (run: CronRun) => recordWith(opts.client ?? createAdminClient, job, run)
     return async function GET(request: Request): Promise<Response> {
+        const started = Date.now()
+        const record = (run: CronRun) => recordWith(opts.client ?? createAdminClient, job, { ...run, durationMs: Date.now() - started })
         let res: Response
         try {
             res = await handler(request)

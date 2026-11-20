@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatStudioTime } from "@/lib/backup-watchdog"
 import { GROUP_TITLES, loadScheduledJobs, type JobGroup, type JobStatus, type JobView } from "@/lib/scheduled-jobs"
+import { RunMarks } from "./run-marks"
 
 export const dynamic = "force-dynamic"
 
 // Every scheduled job (Lionel's #777): the portal's crons (vercel.json) and the
 // Mac's backup, restore test and family watcher, with when each last ran and
 // whether it worked. Data from cron_heartbeats via lib/scheduled-jobs.ts.
+// Since #1077 each job has a row of marks for its last 30 days (cron_runs).
 
 const STATUS: Record<JobStatus, { label: string; dot: string; text: string }> = {
     ok: { label: "Worked", dot: "bg-green-500", text: "text-green-700 dark:text-green-400" },
@@ -66,6 +68,7 @@ function JobRow({ job, now }: { job: JobView; now: Date }) {
                         )}
                     </div>
                 )}
+                {job.days && <RunMarks marks={job.days} />}
             </div>
         </li>
     )
@@ -135,7 +138,8 @@ export default async function ScheduledJobsPage() {
             </div>
             <p className="text-sm text-muted-foreground">
                 Everything the portal and the Mac do on their own: when each last ran and whether it worked.
-                Times are Eastern. Late means no run in about twice its usual gap.
+                Times are Eastern. Late means no run in about twice its usual gap. The marks under each job are its last
+                30 days: green worked, red at least one run failed, grey no run that day.
             </p>
 
             {loadError ? (
