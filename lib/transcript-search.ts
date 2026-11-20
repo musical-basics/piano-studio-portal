@@ -5,9 +5,11 @@ import type { DbClient } from '@/lib/supabase/admin'
  * every lesson recording overnight (scripts/transcribe_lessons.py, #953) into
  * lesson_transcripts; search_lesson_transcripts() (Postgres full-text search,
  * English stemming, so "pedal" also finds "pedaling") returns the matching
- * lessons with the lines that matched. Admin only: the callers check
- * (app/actions/transcripts.ts) and the table and function are service-role
- * only. Never shown in the family portal.
+ * lessons with the lines that matched. The table and function are
+ * service-role only, so every caller checks who is asking first: the admin
+ * search (app/actions/transcripts.ts), and since #1342 each family's own
+ * transcripts in their History tab (app/actions/my-transcripts.ts, which
+ * passes only_student so a family only ever sees its own lessons).
  */
 
 /** One transcript line: start and end in seconds from the start of the recording. */

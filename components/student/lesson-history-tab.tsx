@@ -1,19 +1,25 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { History, PlayCircle, PlusCircle, MinusCircle } from "lucide-react"
+import { CheckCircle2, FileText, History, Loader2, PlayCircle, PlusCircle, MinusCircle, Search, X } from "lucide-react"
 import { VideoPlayer } from "@/components/video-player"
 import type { BalanceChange, LessonHistory, LessonHistoryRow, LessonHistoryStatus } from "@/lib/lesson-history"
 import type { RecordingMarker } from "@/lib/recording-markers"
+import { clockTime, highlightParts, queryTerms, type TranscriptSegment } from "@/lib/transcript-search"
+import { getMyLessonTranscript, searchMyTranscripts, type MyTranscriptHit } from "@/app/actions/my-transcripts"
 
 /**
  * "Lesson history" (#737): the family's own lessons, built on the server
  * (lib/lesson-history.ts). Since #937-#939 each held lesson shows its notes and
  * homework with a Play button for its recording, and purchases, renewals and
  * adjustments sit between the lessons, so every change to the balance is here.
+ * Since #1065 each held lesson says how it was counted, and since #1342 a
+ * lesson with a transcript shows it under its video, with a search box over
+ * all of this family's transcripts.
  */
 
 const STATUS: Record<LessonHistoryStatus, { label: string; className: string }> = {
@@ -76,6 +82,170 @@ function LongText({ label, text }: { label: string; text: string }) {
     )
 }
 
+/** A transcript line with the search words in bold. */
+function Highlighted({ text, terms }: { text: string; terms: string[] }) {
+    return (
+        <>
+            {highlightParts(text, terms).map((p, i) =>
+                p.hit ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-700/60 rounded px-0.5">{p.text}</mark> : <span key={i}>{p.text}</span>,
+            )}
+        </>
+    )
+}
+
+/** The lesson's transcript (#1342), each line a button that plays from that moment when there is a video. */
+function TranscriptPanel({
+    lessonId,
+    terms,
+    onSeek,
+}: {
+    lessonId: string
+    terms: string[]
+    onSeek: ((seconds: number) => void) | null
+}) {
+    const [segments, setSegments] = useState<TranscriptSegment[] | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    useEffect(() => {
+        let alive = true
+        setSegments(null)
+        setError(null)
+        getMyLessonTranscript(lessonId)
+            .then((res) => {
+                if (!alive) return
+                if ("error" in res) setError(res.error)
+                else setSegments(res.segments)
+            })
+            .catch(() => alive && setError("The transcript did not load, try again"))
+        return () => { alive = false }
+    }, [lessonId])
+
+    return (
+        <div className="space-y-2" data-testid="lesson-transcript">
+            <p className="text-sm font-medium flex items-center gap-1.5">
+                <FileText className="h-4 w-4" /> Transcript
+                <span className="text-xs font-normal text-muted-foreground">(made automatically, so some words may be off)</span>
+            </p>
+            {error ? (
+                <p className="text-sm text-muted-foreground">{error}</p>
+            ) : !segments ? (
+                <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading...</p>
+            ) : segments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No words were picked up in this recording.</p>
+            ) : (
+                <ul className="max-h-72 overflow-y-auto rounded-md border divide-y text-sm">
+                    {segments.map((s, i) => (
+                        <li key={i}>
+                            <button
+                                type="button"
+                                disabled={!onSeek}
+                                onClick={() => onSeek?.(s.s)}
+                                className="w-full text-left px-3 py-1.5 flex gap-3 hover:bg-muted/50 disabled:hover:bg-transparent disabled:cursor-default"
+                            >
+                                <span className="text-xs text-muted-foreground tabular-nums w-12 shrink-0 pt-0.5">{clockTime(s.s)}</span>
+                                <span className="min-w-0"><Highlighted text={s.t} terms={terms} /></span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    )
+}
+
+/** Search box over the family's own transcripts (#1342). */
+function TranscriptSearch({
+    rowsById,
+    onOpen,
+}: {
+    rowsById: Map<string, LessonHistoryRow>
+    onOpen: (row: LessonHistoryRow, seconds: number | null, terms: string[]) => void
+}) {
+    const [query, setQuery] = useState("")
+    const [busy, setBusy] = useState(false)
+    const [answer, setAnswer] = useState<{ q: string; results: MyTranscriptHit[] } | null>(null)
+    const [error, setError] = useState<string | null>(null)
+
+    const run = async (e?: FormEvent) => {
+        e?.preventDefault()
+        const q = query.trim()
+        if (q.length < 2) { setError("Type a word or a phrase to look for"); return }
+        setBusy(true)
+        setError(null)
+        try {
+            const res = await searchMyTranscripts(q)
+            if ("error" in res) { setError(res.error); setAnswer(null) }
+            else setAnswer({ q, results: res.results.filter((r) => rowsById.has(r.lessonId)) })
+        } catch {
+            setError("The search did not work, try again")
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    const terms = answer ? queryTerms(answer.q) : []
+    return (
+        <Card className="border-2 p-4 gap-3" data-testid="transcript-search">
+            <form onSubmit={run} className="flex gap-2">
+                <div className="relative flex-1">
+                    <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                    <Input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder='Search your lessons, e.g. "pedal" or "left hand"'
+                        className="pl-8"
+                        aria-label="Search what was said in your lessons"
+                    />
+                </div>
+                <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}</Button>
+                {answer && (
+                    <Button type="button" variant="ghost" size="icon" aria-label="Clear the search" onClick={() => { setAnswer(null); setQuery("") }}>
+                        <X className="h-4 w-4" />
+                    </Button>
+                )}
+            </form>
+            {error && <p className="text-sm text-muted-foreground">{error}</p>}
+            {answer && (
+                answer.results.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nothing found for "{answer.q}" in your lesson transcripts.</p>
+                ) : (
+                    <div className="space-y-3" data-testid="transcript-results">
+                        <p className="text-xs text-muted-foreground">
+                            {answer.results.length === 1 ? "1 lesson mentions" : `${answer.results.length} lessons mention`} "{answer.q}". Tap a line to play from there.
+                        </p>
+                        {answer.results.map((r) => {
+                            const row = rowsById.get(r.lessonId)!
+                            return (
+                                <div key={r.lessonId} className="space-y-1">
+                                    <p className="text-sm font-medium">{formatDay(row.date)}</p>
+                                    <ul className="text-sm space-y-0.5">
+                                        {r.hits.map((h, i) => (
+                                            <li key={i}>
+                                                <button
+                                                    type="button"
+                                                    className="w-full text-left flex gap-3 rounded px-2 py-1 hover:bg-muted/50"
+                                                    onClick={() => onOpen(row, h.s, terms)}
+                                                >
+                                                    <span className="text-xs text-muted-foreground tabular-nums w-12 shrink-0 pt-0.5">{clockTime(h.s)}</span>
+                                                    <span className="min-w-0"><Highlighted text={h.t} terms={terms} /></span>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    {r.hitCount > r.hits.length && (
+                                        <button type="button" className="text-xs text-primary hover:underline px-2" onClick={() => onOpen(row, null, terms)}>
+                                            {r.hitCount - r.hits.length} more in this lesson
+                                        </button>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                )
+            )}
+        </Card>
+    )
+}
+
 type Entry = { kind: "lesson"; row: LessonHistoryRow } | { kind: "change"; change: BalanceChange }
 
 /** Lessons and balance changes, newest first (a change sorts by its day, before that day's lessons). */
@@ -100,7 +270,17 @@ export function LessonHistoryTab({
     const { rows } = history
     const left = (n: number | null) => (n === null ? "–" : String(n))
     const [playing, setPlaying] = useState<LessonHistoryRow | null>(null)
+    const [seekTo, setSeekTo] = useState<{ seconds: number; key: number } | undefined>(undefined)
+    const [terms, setTerms] = useState<string[]>([])
     const entries = mergeEntries(history)
+    const rowsById = useMemo(() => new Map(rows.filter((r) => r.hasTranscript).map((r) => [r.id, r])), [rows])
+
+    const open = (row: LessonHistoryRow, seconds: number | null = null, searchTerms: string[] = []) => {
+        setPlaying(row)
+        setTerms(searchTerms)
+        // A few seconds of lead-in, so the sentence is heard from its start.
+        setSeekTo(seconds === null ? undefined : { seconds: Math.max(0, seconds - 2), key: Date.now() })
+    }
 
     return (
         <div className="space-y-4">
@@ -117,6 +297,8 @@ export function LessonHistoryTab({
                 <Stat label="Upcoming" value={history.upcoming} />
                 <Stat label="Lessons left now" value={left(history.leftNow)} />
             </div>
+
+            {rowsById.size > 0 && <TranscriptSearch rowsById={rowsById} onOpen={open} />}
 
             {rows.length === 0 && entries.length === 0 ? (
                 <Card className="border-2 border-dashed p-12 text-center bg-muted/10">
@@ -158,14 +340,23 @@ export function LessonHistoryTab({
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
-                                                {e.row.videoUrl && (
-                                                    <Button variant="outline" size="sm" className="h-7 gap-1" onClick={() => setPlaying(e.row)}>
+                                                {e.row.videoUrl ? (
+                                                    <Button variant="outline" size="sm" className="h-7 gap-1" onClick={() => open(e.row)}>
                                                         <PlayCircle className="h-3.5 w-3.5" /> Play
                                                     </Button>
-                                                )}
+                                                ) : e.row.hasTranscript ? (
+                                                    <Button variant="outline" size="sm" className="h-7 gap-1" onClick={() => open(e.row)}>
+                                                        <FileText className="h-3.5 w-3.5" /> Transcript
+                                                    </Button>
+                                                ) : null}
                                                 <StatusPill status={e.row.status} />
                                             </div>
                                         </div>
+                                        {e.row.countedBy && (
+                                            <p className="text-xs text-muted-foreground flex items-start gap-1.5" data-testid="counted-by">
+                                                <CheckCircle2 className="h-3.5 w-3.5 mt-px shrink-0" /> {e.row.countedBy}
+                                            </p>
+                                        )}
                                         {e.row.notes && <LongText label="Notes" text={e.row.notes} />}
                                         {e.row.homework && <LongText label="Homework" text={e.row.homework} />}
                                     </li>
@@ -185,13 +376,20 @@ export function LessonHistoryTab({
                 <p>A number below zero means lessons taken ahead of your next payment.</p>
             </div>
 
-            <Dialog open={!!playing} onOpenChange={(open) => !open && setPlaying(null)}>
+            <Dialog open={!!playing} onOpenChange={(isOpen) => { if (!isOpen) { setPlaying(null); setSeekTo(undefined) } }}>
                 <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="font-serif">{playing ? `Lesson, ${formatDay(playing.date)}` : "Lesson"}</DialogTitle>
                     </DialogHeader>
                     {playing?.videoUrl && (
-                        <VideoPlayer url={playing.videoUrl} title={formatDay(playing.date)} markers={markersByLesson[playing.id]} />
+                        <VideoPlayer url={playing.videoUrl} title={formatDay(playing.date)} markers={markersByLesson[playing.id]} seekTo={seekTo} />
+                    )}
+                    {playing?.hasTranscript && (
+                        <TranscriptPanel
+                            lessonId={playing.id}
+                            terms={terms}
+                            onSeek={playing.videoUrl ? (s) => setSeekTo({ seconds: Math.max(0, s - 2), key: Date.now() }) : null}
+                        />
                     )}
                 </DialogContent>
             </Dialog>

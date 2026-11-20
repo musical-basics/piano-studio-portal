@@ -14,8 +14,14 @@ import { familyLocalTime, formatStudioTime } from '@/lib/family-time'
  *     Nothing was taken; "Left after" is the unchanged balance.
  *   - Not counted: over, but never logged, so nothing was taken for it.
  *   - Upcoming: not over yet.
- * Cancelled lessons are deleted, so they never show. How a lesson was logged
- * stays out of this view on purpose.
+ * Cancelled lessons are deleted, so they never show.
+ *
+ * Since #1065 each held lesson also says how it was counted (countedByLine):
+ * automatically from the Zoom recording, the classroom recording or classroom
+ * attendance, or logged by Lionel, plus the minutes Zoom saw the student in the
+ * lesson when Zoom's saved attendance shows they joined. Attendance that shows
+ * no student is left out: many of those were classroom lessons where only the
+ * Zoom meeting went unused, so it would read as a missed lesson that wasn't.
  *
  * Since #937-#939 each held lesson also carries its notes, homework and a
  * recording link, and the balance changes that are not lessons (purchases,
@@ -43,6 +49,19 @@ export type LessonHistoryRow = {
     homework: string | null
     /** The lesson's recording (#937), held lessons only. */
     videoUrl: string | null
+    /** How the lesson was counted (#1065), held lessons only. */
+    countedBy: string | null
+    /** A transcript of the lesson's recording exists (#1342), held lessons only. */
+    hasTranscript: boolean
+}
+
+/** Zoom's saved attendance for one lesson, as much as the history needs. */
+export type LessonAttendance = { kind: string | null; studentSeconds: number | null }
+
+/** Extra records the page reads with the service key, for this family's lessons only. */
+export type LessonHistoryExtras = {
+    attendance?: Record<string, LessonAttendance>
+    transcriptLessonIds?: Set<string>
 }
 
 /** A change to the balance that is not a lesson (#939). */
@@ -82,6 +101,42 @@ type SourceLesson = {
     notes?: string | null
     homework?: string | null
     video_url?: string | null
+    completed_source?: string | null
+}
+
+/** Classroom recordings live on Cloudflare R2; Zoom ones in Dropbox. */
+function classroomVideo(url: string | null | undefined): boolean {
+    return !!url && /r2\.dev|r2\.cloudflarestorage/i.test(url)
+}
+
+/**
+ * One line for a family on how a held lesson was counted (#1065), from
+ * lessons.completed_source (see lib/auto-logged-lessons.ts for the values):
+ * zoom_webhook = Zoom's recording logged it, classroom_attendance = together in
+ * the classroom 20+ minutes, system with a classroom video = the classroom
+ * hand-off, admin_ui = Lionel pressed Log (admin, the email buttons). Older
+ * lessons (no source), an assistant's log and the old credit repair read
+ * "Logged by the studio". When Zoom saw the student, the minutes follow.
+ */
+export function countedByLine(lesson: SourceLesson, attendance?: LessonAttendance | null): string {
+    let how: string
+    if (lesson.status === 'cancelled') how = 'Counted as a no-show'
+    else {
+        switch (lesson.completed_source) {
+            case 'zoom_webhook': how = 'Counted automatically when Zoom saved the recording'; break
+            case 'classroom_attendance': how = 'Counted automatically: you and Lionel were in the classroom together 20+ minutes'; break
+            case 'system':
+                how = classroomVideo(lesson.video_url) ? 'Counted automatically from the classroom recording' : 'Logged by the studio'
+                break
+            case 'admin_ui': how = 'Logged by Lionel'; break
+            default: how = 'Logged by the studio'
+        }
+    }
+    const secs = attendance?.studentSeconds ?? 0
+    if (attendance?.kind === 'student_joined' && secs >= 60) {
+        how += `. Zoom: you were in the lesson ${Math.round(secs / 60)} min`
+    }
+    return how
 }
 
 export type LedgerRow = {
@@ -159,12 +214,14 @@ export function buildLessonHistory(
     now: Date = new Date(),
     familyTz?: string | null,
     ledger: LedgerRow[] = [],
+    extras: LessonHistoryExtras = {},
 ): LessonHistory {
     const key = (l: SourceLesson) => `${l.date} ${String(l.time).slice(0, 5)}`
     const rows = [...lessons]
         .sort((a, b) => key(b).localeCompare(key(a)))
         .map((l): LessonHistoryRow => {
             const status = lessonHistoryStatus(l, now)
+            const held = status === 'counted' || status === 'free'
             return {
                 id: l.id,
                 date: l.date,
@@ -176,6 +233,8 @@ export function buildLessonHistory(
                 notes: status === 'counted' || status === 'free' ? (l.notes || '').trim() || null : null,
                 homework: status === 'counted' || status === 'free' ? (l.homework || '').trim() || null : null,
                 videoUrl: status === 'counted' || status === 'free' ? l.video_url || null : null,
+                countedBy: held ? countedByLine(l, extras.attendance?.[l.id]) : null,
+                hasTranscript: held && !!extras.transcriptLessonIds?.has(l.id),
             }
         })
 

@@ -6,7 +6,7 @@ import { getStudentResources } from "@/app/actions/resources"
 import { getLatestAnnouncement } from "@/app/actions/announcements"
 import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
-import { buildLessonHistory } from "@/lib/lesson-history"
+import { buildLessonHistory, type LessonAttendance } from "@/lib/lesson-history"
 import { getMarkersForLessons } from "@/lib/recording-markers"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { familyMoveStatesCore, type FamilyMoveState } from "@/lib/core/move-requests"
@@ -85,13 +85,30 @@ export default async function StudentPage({
   // Balance changes that are not lessons (#939: purchases, renewals, adjustments
   // with Lionel's reason). The ledger is service-role only; this reads only the
   // effective student's rows (the signed-in family, or the admin's preview).
-  const { data: ledger } = await createAdminClient()
+  const admin = createAdminClient()
+  const { data: ledger } = await admin
     .from("credit_transactions")
     .select("id, changed_at, delta, new_credits, source, note")
     .eq("student_id", effectiveUserId)
     .order("changed_at", { ascending: false })
     .limit(200)
-  const history = buildLessonHistory(lessons || [], profile.credits ?? null, new Date(), profile.timezone, ledger || [])
+  // How each lesson was counted (#1065): Zoom's saved attendance, and which
+  // lessons have a transcript (#1342). Both tables are service-role only, so
+  // these reads are limited to this family's own lessons by id / student.
+  const lessonIds = (lessons || []).map((l: any) => l.id as string)
+  const [{ data: attendanceRows }, { data: transcriptRows }] = await Promise.all([
+    lessonIds.length
+      ? admin.from("zoom_lesson_attendance").select("lesson_id, kind, student_seconds").in("lesson_id", lessonIds)
+      : Promise.resolve({ data: [] as any[] }),
+    admin.from("lesson_transcripts").select("lesson_id").eq("student_id", effectiveUserId).not("lesson_id", "is", null),
+  ])
+  const attendance: Record<string, LessonAttendance> = {}
+  for (const a of attendanceRows || []) attendance[a.lesson_id] = { kind: a.kind ?? null, studentSeconds: a.student_seconds ?? null }
+  const transcriptLessonIds = new Set<string>((transcriptRows || []).map((t: any) => t.lesson_id as string))
+  const history = buildLessonHistory(lessons || [], profile.credits ?? null, new Date(), profile.timezone, ledger || [], {
+    attendance,
+    transcriptLessonIds,
+  })
 
   // Moments Lionel marked in classroom recordings (#874), for the lessons above
   // (already limited to this family by their own session).
