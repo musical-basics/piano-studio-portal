@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Music, Video, Plus, XCircle, MoreVertical } from "lucide-react"
 import type { LessonWithStudent } from "@/types/admin"
+import { StudentLink } from "@/components/admin/student-panel"
 
 interface ScheduledTabProps {
     lessons: LessonWithStudent[]
@@ -65,7 +66,7 @@ export function ScheduledTab({ lessons, adminZoomLink, onReschedule, onCancel, o
                                             <span className="text-xs">{formatDate(lesson.date).split(' ')[1]}</span>
                                         </div>
                                         <div>
-                                            <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
+                                            <h3 className="font-semibold text-lg"><StudentLink id={lesson.student.id} name={lesson.student.name || 'Student'} /></h3>
                                             <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                                                 <div className="flex items-center gap-1">
                                                     <Calendar className="h-3 w-3" />

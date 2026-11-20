@@ -22,6 +22,7 @@ import { LibraryFileSelector } from "@/components/admin/library-file-selector"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { StudentLink } from "@/components/admin/student-panel"
 
 type StudentWithMessages = Profile & {
   lastMessage: Message | null
@@ -549,7 +550,7 @@ export function AdminChat({ initialStudentId, onClearInitialStudent }: AdminChat
                 <User className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h3 className="font-serif font-semibold leading-none">{selectedStudent.name}</h3>
+                <h3 className="font-serif font-semibold leading-none"><StudentLink id={selectedStudent.id} name={selectedStudent.name} /></h3>
                 <p className="text-xs text-muted-foreground mt-1">{selectedStudent.email}</p>
               </div>
             </div>

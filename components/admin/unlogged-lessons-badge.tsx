@@ -14,6 +14,7 @@ import { getLastHomework } from "@/app/actions/last-homework"
 import type { LastHomework } from "@/lib/last-homework"
 import { appendNotePhrase } from "@/lib/lesson-note-phrases"
 import { NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
+import { StudentLink } from "@/components/admin/student-panel"
 
 /**
  * The red "N unlogged" badge next to the studio name on the admin home (#760).
@@ -40,7 +41,7 @@ function LessonLine({ lesson }: { lesson: AdminUnloggedLesson }) {
     return (
         <div className="min-w-0">
             <p className="font-medium leading-snug">
-                {lesson.studentName}
+                <StudentLink id={lesson.studentId} name={lesson.studentName} />
                 {lesson.accountStatus && <span className="font-normal text-muted-foreground"> (account: {lesson.accountStatus})</span>}
             </p>
             <p className="text-sm text-muted-foreground">

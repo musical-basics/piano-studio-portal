@@ -4,11 +4,12 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, Clock, Pencil, Trash2, MoreHorizontal } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2, Calendar as CalendarIcon, Clock, Pencil, Trash2, MoreHorizontal, User } from "lucide-react"
 import { getLessonsForDateRange } from "@/app/actions/lessons"
 import type { Lesson, Profile } from "@/lib/supabase/database.types"
 import type { AdminEvent, EventInvite } from "@/app/actions/events"
 import { isoToStudioWallClock } from "@/lib/studio-timezone"
+import { useStudentPanel } from "@/components/admin/student-panel"
 
 // Helper to format date as YYYY-MM-DD for comparison/filtering
 const formatDateKey = (date: Date) => {
@@ -51,6 +52,7 @@ interface MasterCalendarProps {
 }
 
 export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDeleteEvent, onSelectDate, refreshTrigger = 0 }: MasterCalendarProps) {
+    const panel = useStudentPanel()
     const [currentDate, setCurrentDate] = useState(new Date())
     const [items, setItems] = useState<CalendarItem[]>([])
     const [isLoading, setIsLoading] = useState(true)
@@ -261,6 +263,17 @@ export function MasterCalendar({ onEditLesson, onDeleteLesson, onEditEvent, onDe
                                                         </PopoverTrigger>
                                                         <PopoverContent className="w-40 p-1" align="start">
                                                             <div className="flex flex-col gap-0.5">
+                                                                {panel && item.student_id && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="justify-start h-8 px-2 font-normal"
+                                                                        onClick={() => panel.openStudent(item.student_id, item.student?.name)}
+                                                                    >
+                                                                        <User className="h-3 w-3 mr-2" />
+                                                                        Student details
+                                                                    </Button>
+                                                                )}
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"

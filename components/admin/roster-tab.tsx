@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EditStudentModal } from "./edit-student-modal"
 import { PricingPlan } from "@/app/actions/pricing"
 import { StudentProfileSheet } from "./student-profile-sheet"
+import { useStudentPanel } from "./student-panel"
 import { useTransition } from "react"
 
 type SortKey = 'name' | 'lesson_day' | 'credits'
@@ -321,6 +322,8 @@ function StudentTable({
     // #934: add or take lessons with a reason
     const [adjustStudent, setAdjustStudent] = useState<StudentRoster | null>(null)
     const [profileStudent, setProfileStudent] = useState<StudentRoster | null>(null)
+    // #1087: the name opens the same side panel as everywhere else in admin ("Full history" there opens the profile sheet).
+    const panel = useStudentPanel()
 
     return (
         <>
@@ -368,7 +371,7 @@ function StudentTable({
                                 <TableCell className="font-medium">
                                     <button
                                         className="hover:underline hover:text-blue-600 transition-colors text-left cursor-pointer"
-                                        onClick={() => setProfileStudent(student)}
+                                        onClick={() => panel ? panel.openStudent(student.id, student.name) : setProfileStudent(student)}
                                     >
                                         {student.name || 'Unknown'}
                                     </button>

@@ -17,6 +17,7 @@ import {
     type TranscriptSegment,
 } from "@/lib/transcript-search"
 import { studioToday } from "@/lib/studio-timezone"
+import { StudentLink } from "@/components/admin/student-panel"
 
 // Lionel's #954: find every lesson where a word came up ("octave", "Grieg",
 // "pedal"), from the transcripts the Mac writes overnight (#953). Each line
@@ -133,7 +134,7 @@ export function TranscriptSearch() {
                                     <li key={r.id} className="space-y-2 p-3">
                                         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                                             <p className="font-medium">
-                                                {r.studentName}
+                                                <StudentLink id={r.studentId} name={r.studentName} />
                                                 <span className="font-normal text-muted-foreground">
                                                     {" "}· {dayLabel(r.recordedOn)}{r.lessonTime ? `, ${timeLabel(r.lessonTime)}` : ""}
                                                     {r.durationSeconds ? ` · ${Math.round(r.durationSeconds / 60)} min` : ""}

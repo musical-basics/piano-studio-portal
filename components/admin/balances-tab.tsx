@@ -19,6 +19,7 @@ import {
     type SortKey,
 } from "@/lib/balances"
 import { STUDIO_TZ, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
+import { StudentLink } from "@/components/admin/student-panel"
 
 const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
     { key: "name", label: "Family" },
@@ -96,7 +97,7 @@ export function BalancesTable({
                             tabIndex={onOpen ? 0 : undefined}
                             title={onOpen ? "Open chat" : undefined}
                         >
-                            <TableCell className="font-medium">{row.name}</TableCell>
+                            <TableCell className="font-medium"><StudentLink id={row.studentId} name={row.name} /></TableCell>
                             <TableCell className="text-right whitespace-nowrap">
                                 <span className={CREDIT_TONE[credit.tone]}>{credit.text}</span>
                                 {credit.note && <span className="block text-xs text-muted-foreground">{credit.note}</span>}
@@ -161,7 +162,7 @@ export function BalancesTab({ onMessage }: { onMessage?: (studentId: string) => 
                     <div>
                         <CardTitle className="text-2xl font-serif">Balances</CardTitle>
                         <CardDescription>
-                            Every active family: lessons left, last and next lesson, and next payment. Click a column to sort, or a family to open their chat.
+                            Every active family: lessons left, last and next lesson, and next payment. Click a column to sort, a name for their details, or the rest of a row to open their chat.
                         </CardDescription>
                     </div>
                     <Button variant="outline" size="sm" onClick={load} disabled={loading} className="shrink-0">

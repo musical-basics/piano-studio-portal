@@ -9,6 +9,7 @@ import { ExternalLink, Loader2, PlayCircle, RefreshCw, X } from "lucide-react"
 import { attachClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
 import { playableVideoUrl } from "@/lib/classroom-video-url"
+import { StudentLink } from "@/components/admin/student-panel"
 
 interface ClassroomRecordingsTabProps {
     /** Open the admin day schedule on this studio date (where the lesson is). */
@@ -199,7 +200,7 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                         </Button>
                                     </TableCell>
                                     <TableCell className="font-medium">
-                                        {row.studentName || <span className="text-muted-foreground">{row.studentId || "Unknown"}</span>}
+                                        {row.studentName ? <StudentLink id={row.studentId} name={row.studentName} /> : <span className="text-muted-foreground">{row.studentId || "Unknown"}</span>}
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap">
                                         <a href={row.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline" title="Open in a new tab">

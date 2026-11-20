@@ -9,6 +9,7 @@ import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/ad
 import type { HomeworkStatus } from "@/lib/homework"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 import { ZoomAttendanceLine, useLessonAttendance } from "@/components/admin/zoom-attendance-line"
+import { StudentLink } from "@/components/admin/student-panel"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
 
@@ -242,7 +243,7 @@ export function DashboardTab({
                                             <span className="text-xs">{formatTime(lesson.time).split(' ')[1]}</span>
                                         </div>
                                         <div>
-                                            <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
+                                            <h3 className="font-semibold text-lg"><StudentLink id={lesson.student.id} name={lesson.student.name || 'Student'} /></h3>
                                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="h-3 w-3" />

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Music, Video, FileText, Pencil, Undo2 } from "lucide-react"
 import type { LessonWithStudent } from "@/types/admin"
 import { ZoomAttendanceLine, useLessonAttendance } from "@/components/admin/zoom-attendance-line"
+import { StudentLink } from "@/components/admin/student-panel"
 
 interface CompletedTabProps {
     lessons: LessonWithStudent[]
@@ -63,7 +64,7 @@ export function CompletedTab({ lessons, onEdit, onUndoLog }: CompletedTabProps) 
                                                 <Music className="h-6 w-6 text-muted-foreground" />
                                             </div>
                                             <div>
-                                                <h3 className="font-semibold text-lg">{lesson.student.name || 'Student'}</h3>
+                                                <h3 className="font-semibold text-lg"><StudentLink id={lesson.student.id} name={lesson.student.name || 'Student'} /></h3>
                                                 <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                                                     <div className="flex items-center gap-1">
                                                         <Calendar className="h-3 w-3" />

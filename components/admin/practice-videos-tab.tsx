@@ -14,6 +14,7 @@ import {
     markPracticeVideoWatched,
     type AdminPracticeVideo,
 } from "@/app/actions/practice-videos"
+import { StudentLink } from "@/components/admin/student-panel"
 
 function formatWhen(iso: string): string {
     return new Date(iso).toLocaleString("en-US", {
@@ -105,7 +106,7 @@ export function PracticeVideosTab({ onWaitingChange }: { onWaitingChange?: (n: n
                                 <div className="min-w-0">
                                     <p className="font-semibold flex items-center gap-2">
                                         <Video className="h-4 w-4 text-primary shrink-0" />
-                                        {v.student_name}
+                                        <StudentLink id={v.student_id} name={v.student_name} />
                                         {!v.comment && <Badge variant="destructive" className="text-[10px]">New</Badge>}
                                     </p>
                                     <p className="text-xs text-muted-foreground">

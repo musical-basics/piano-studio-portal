@@ -44,6 +44,7 @@ import { TranscriptSearch } from "@/components/admin/transcript-search"
 import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
 import { BalancesTab } from "@/components/admin/balances-tab"
 import { ChangesTab } from "@/components/admin/changes-tab"
+import { StudentLink, StudentPanelProvider } from "@/components/admin/student-panel"
 import { countPracticeVideosWaiting } from "@/app/actions/practice-videos"
 import { UnloggedLessonsBadge } from "@/components/admin/unlogged-lessons-badge"
 import { WaitingMessagesPill } from "@/components/admin/waiting-messages-pill"
@@ -827,6 +828,8 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     return (
         <div className="min-h-screen bg-background">
+            {/* #1087: any student name in admin opens their side panel */}
+            <StudentPanelProvider students={students} onMessage={handleJumpToMessage} onSchedule={handleOpenSchedule} onLogPast={handleLogPastLesson}>
             {/* Header */}
             <header className="border-b bg-card sticky top-0 z-10">
                 <div className="container mx-auto px-4 py-4">
@@ -1044,7 +1047,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
                     {/* #1005: every lesson and credit change of the day, whoever made it */}
                     <TabsContent value="changes" className="space-y-4">
-                        {activeTab === "changes" && <ChangesTab />}
+                        {activeTab === "changes" && <ChangesTab renderName={(id, name) => <StudentLink id={id} name={name} />} />}
                     </TabsContent>
 
                     {/* Scheduled Lessons Tab */}
@@ -1164,6 +1167,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                     </TabsContent>
                 </Tabs >
             </main >
+            </StudentPanelProvider>
 
             {/* "Undo log" (#794), opened from Today and from Completed */}
             <UndoLogDialog

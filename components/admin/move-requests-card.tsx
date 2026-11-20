@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowRight, CalendarClock, Check, CheckCircle2, Loader2, X, XCircle } from "lucide-react"
 import { approveMoveRequest, declineMoveRequest } from "@/app/actions/move-requests"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
+import { StudentLink } from "@/components/admin/student-panel"
 
 interface MoveRequestsCardProps {
     requests: PendingMoveRequest[]
@@ -80,7 +81,7 @@ export function MoveRequestsCard({ requests, onChanged }: MoveRequestsCardProps)
                         <div key={r.id} className="rounded-md border p-3 space-y-2" data-testid="move-request-row">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="min-w-0">
-                                    <p className="font-semibold">{r.studentName}</p>
+                                    <p className="font-semibold"><StudentLink id={r.studentId} name={r.studentName} /></p>
                                     <p className="text-sm flex flex-wrap items-center gap-x-2">
                                         <span className="text-muted-foreground line-through decoration-muted-foreground/50">{r.fromLabel}</span>
                                         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
