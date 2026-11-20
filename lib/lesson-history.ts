@@ -1,5 +1,6 @@
 import { studioWallClockToISO } from '@/lib/studio-timezone'
 import { familyLocalTime, formatStudioTime } from '@/lib/family-time'
+import { isClassroomVideoUrl } from '@/lib/classroom-video-url'
 
 /**
  * The family's "Lesson history" tab (#737): every lesson on their account,
@@ -104,10 +105,6 @@ type SourceLesson = {
     completed_source?: string | null
 }
 
-/** Classroom recordings live on Cloudflare R2; Zoom ones in Dropbox. */
-function classroomVideo(url: string | null | undefined): boolean {
-    return !!url && /r2\.dev|r2\.cloudflarestorage/i.test(url)
-}
 
 /**
  * One line for a family on how a held lesson was counted (#1065), from
@@ -126,7 +123,7 @@ export function countedByLine(lesson: SourceLesson, attendance?: LessonAttendanc
             case 'zoom_webhook': how = 'Counted automatically when Zoom saved the recording'; break
             case 'classroom_attendance': how = 'Counted automatically: you and Lionel were in the classroom together 20+ minutes'; break
             case 'system':
-                how = classroomVideo(lesson.video_url) ? 'Counted automatically from the classroom recording' : 'Logged by the studio'
+                how = isClassroomVideoUrl(lesson.video_url) ? 'Counted automatically from the classroom recording' : 'Logged by the studio'
                 break
             case 'admin_ui': how = 'Logged by Lionel'; break
             default: how = 'Logged by the studio'
