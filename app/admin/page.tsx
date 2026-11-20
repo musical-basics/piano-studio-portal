@@ -9,6 +9,7 @@ import { getResources } from "@/app/actions/resources"
 import { findUnloggedForAdmin, type AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { findWaitingMessages, type WaitingThread } from "@/lib/waiting-messages"
 import { listPendingMoveRequestsCore, type PendingMoveRequest } from "@/lib/core/move-requests"
+import { listOwedMakeupsCore, type OwedMakeup } from "@/lib/core/owed-makeups"
 import { homeworkStatusByStudent } from "@/lib/core/homework"
 import type { HomeworkStatus } from "@/lib/homework"
 
@@ -169,6 +170,14 @@ export default async function AdminPage() {
     console.error("Move requests fetch error:", e)
   }
 
+  // Families owed a make-up (#1092). The read also adds new misses and cancels.
+  let owedMakeups: OwedMakeup[] = []
+  try {
+    owedMakeups = await listOwedMakeupsCore(createAdminClient())
+  } catch (e) {
+    console.error("Owed make-ups fetch error:", e)
+  }
+
   // Each student's current homework and what they ticked (#945), shown on
   // their next lesson in the day schedule.
   let homeworkByStudent: Record<string, HomeworkStatus> = {}
@@ -207,6 +216,7 @@ export default async function AdminPage() {
       unloggedLessons={unloggedLessons}
       waitingMessages={waitingMessages}
       moveRequests={moveRequests}
+      owedMakeups={owedMakeups}
       homeworkByStudent={homeworkByStudent}
     />
   )

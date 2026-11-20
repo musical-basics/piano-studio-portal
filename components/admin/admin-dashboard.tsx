@@ -53,6 +53,8 @@ import type { AdminUnloggedLesson } from "@/lib/admin-unlogged-lessons"
 import { MoveRequestsCard } from "@/components/admin/move-requests-card"
 import { RecentUndoBar } from "@/components/admin/recent-undo-bar"
 import type { PendingMoveRequest } from "@/lib/core/move-requests"
+import { OwedMakeupsCard } from "@/components/admin/owed-makeups-card"
+import type { OwedMakeup } from "@/lib/core/owed-makeups"
 import { FreeReasonChips, NotePhraseChips, shortLessonDate } from "@/components/admin/note-phrase-chips"
 import { isFreeTrialLesson } from "@/app/actions/free-trial"
 import { appendNotePhrase } from "@/lib/lesson-note-phrases"
@@ -91,11 +93,13 @@ export interface AdminDashboardProps {
     waitingMessages?: WaitingThread[]
     /** Families asking to move a lesson, waiting for Approve or Decline (#878). */
     moveRequests?: PendingMoveRequest[]
+    /** Families owed a make-up lesson (#1092). */
+    owedMakeups?: OwedMakeup[]
     /** Each student's current homework and what they ticked (#945), by student id. */
     homeworkByStudent?: Record<string, HomeworkStatus>
 }
 
-export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [], homeworkByStudent = {}, waitingMessages = [] }: AdminDashboardProps) {
+export function AdminDashboard({ admin, scheduledLessons, completedLessons, students, recurringSlots, todayEvents, totalUnread, inquiries, inquiriesError, resources, pricingPlans, unloggedLessons = [], moveRequests = [], owedMakeups = [], homeworkByStudent = {}, waitingMessages = [] }: AdminDashboardProps) {
     const { toast } = useToast()
 
     const [isMounted, setIsMounted] = useState(false)
@@ -1001,6 +1005,12 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         {/* Families asking to move a lesson (#878): Approve / Decline */}
                         <MoveRequestsCard
                             requests={moveRequests}
+                            onChanged={() => setCalendarVersion(v => v + 1)}
+                        />
+
+                        {/* Families owed a make-up (#1092): Book a make-up, Settled, Owed / Not owed */}
+                        <OwedMakeupsCard
+                            makeups={owedMakeups}
                             onChanged={() => setCalendarVersion(v => v + 1)}
                         />
 
