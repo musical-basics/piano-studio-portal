@@ -53,6 +53,13 @@ export type JobInfo = {
     /** One line from a successful run's JSON answer, e.g. "3 reminders sent". */
     summarize?: (body: Body) => string | undefined
     /**
+     * A successful run that did nothing ("no reminders due"), for jobs that run
+     * more often than hourly: cron_runs keeps those at most once an hour
+     * (migration 20261120150000). Left out, a run is quiet when its summary is
+     * the same as the run before.
+     */
+    quiet?: (body: Body) => boolean
+    /**
      * "Run now" (#1076). Left out: it runs straight away (it only reads, fixes
      * or emails you). `confirm`: it can email families, so the page asks first
      * with this text, which says plainly who would get an email. `preview`: a
@@ -80,6 +87,7 @@ export const PORTAL_JOBS: JobInfo[] = [
             if (b?.unnotified) parts.push(`${plural(b.unnotified, 'lesson')} started with no reminder`)
             return parts.join(', ')
         },
+        quiet: b => !Object.values((b?.stats ?? {}) as Record<string, number>).some(n => Number(n) > 0) && !b?.failed && !b?.unnotified && !b?.recovered,
         runNow: {
             confirm: "This sends any lesson reminder that is due right now and not sent yet, to that lesson's family: the same reminders its next run (within 10 minutes) would send. A reminder is never sent twice.",
         },
@@ -199,6 +207,7 @@ export const PORTAL_JOBS: JobInfo[] = [
             const errors = len(b?.stats?.errors)
             return `${n ? `${plural(n, 'family', 'families')} told` : 'No new recordings'}${errors ? `, ${plural(errors, 'problem')}` : ''}`
         },
+        quiet: b => !len(b?.stats?.notified ?? b?.notified) && !len(b?.stats?.errors),
         runNow: {
             confirm: 'This emails each family that has a new lesson recording in their Dropbox folder since their last recording email: the same emails its next run (within 30 minutes) would send. Nobody is told about the same recording twice.',
         },
@@ -213,6 +222,7 @@ export const PORTAL_JOBS: JobInfo[] = [
             const errors = len(b?.result?.errors)
             return `${moved ? `${plural(moved, 'recording')} filed` : 'Nothing new'}${errors ? `, ${plural(errors, 'problem')}` : ''}`
         },
+        quiet: b => !len(b?.result?.moved) && !len(b?.result?.errors),
     },
     {
         job: 'backfill-recordings',
@@ -230,6 +240,7 @@ export const PORTAL_JOBS: JobInfo[] = [
                 b?.attendance?.error ? `attendance failed: ${b.attendance.error}` : '',
             ].filter(Boolean).join(', ')
         },
+        quiet: b => !len(b?.result?.recovered) && !len(b?.result?.errors) && !len(b?.attendance?.saved) && !b?.attendance?.error,
     },
     {
         job: 'classroom-recordings',
@@ -241,6 +252,8 @@ export const PORTAL_JOBS: JobInfo[] = [
             len(b?.result?.logged) ? `${plural(len(b.result.logged), 'lesson')} logged` : '',
             b?.dropbox?.error ? `Dropbox copies failed: ${b.dropbox.error}` : '',
         ].filter(Boolean).join(', '),
+        quiet: b => !len(b?.result?.attached) && !len(b?.result?.logged) && !b?.dropbox?.error && !len(b?.dropbox?.started)
+            && !(Array.isArray(b?.attendance?.lessons) && b.attendance.lessons.some((l: Body) => l?.action === 'logged')),
         runNow: {
             confirm: 'This attaches new classroom recordings to their lessons (the family gets a "recording ready" email when the lesson was in the last 2 days) and logs a lesson with a 20+ minute video or 20+ minutes in the classroom together (one credit, and the family gets the usual lesson email), the same as its next run (within 30 minutes). Nothing is attached, logged or emailed twice.',
             preview: b => {
@@ -391,6 +404,17 @@ export function jobForPath(path: string): string {
 export function summarizeJobRun(job: string, body: Body): string | null {
     try {
         return BY_JOB.get(job)?.summarize?.(body)?.slice(0, 300) || null
+    } catch {
+        return null
+    }
+}
+
+/** Did a successful run do nothing? null when the job has no rule (the database then compares summaries). Never throws. */
+export function quietJobRun(job: string, body: Body): boolean | null {
+    const rule = BY_JOB.get(job)?.quiet
+    if (!rule) return null
+    try {
+        return !!rule(body)
     } catch {
         return null
     }
@@ -633,11 +657,12 @@ export function describeDay(date: string, row: RunDayRow | undefined): DayMark {
             ? { date, state: 'failed', text: `${day}, ${clock(row.last_at)}: failed.${sentence(row.failed_detail ?? row.last_detail)}` }
             : { date, state: 'ok', text: `${day}, ${clock(row.last_at)}: worked.${sentence(row.last_detail)}${took(row.last_duration_ms)}` }
     }
+    // Frequent jobs keep a quiet run once an hour, so "on record", not "ran".
     if (!row.failed) {
-        return { date, state: 'ok', text: `${day}: ${row.runs} runs, all worked. Last at ${clock(row.last_at)}:${sentence(row.last_detail) || ' no detail.'}` }
+        return { date, state: 'ok', text: `${day}: all worked (${row.runs} runs on record). Last at ${clock(row.last_at)}:${sentence(row.last_detail) || ' no detail.'}` }
     }
     const at = row.failed_at ? ` Last failure at ${clock(row.failed_at)}:` : ' Last failure:'
-    return { date, state: 'failed', text: `${day}: ${row.failed} of ${row.runs} runs failed.${at}${sentence(row.failed_detail) || ' no error text.'}` }
+    return { date, state: 'failed', text: `${day}: ${row.failed === 1 ? '1 run' : `${row.failed} runs`} failed (of ${row.runs} on record).${at}${sentence(row.failed_detail) || ' no error text.'}` }
 }
 
 /** One mark per studio day, oldest first, ending today. */

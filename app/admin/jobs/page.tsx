@@ -144,7 +144,8 @@ export default async function ScheduledJobsPage() {
             <p className="text-sm text-muted-foreground">
                 Everything the portal and the Mac do on their own: when each last ran and whether it worked.
                 Times are Eastern. Late means no run in about twice its usual gap. The marks under each job are its last
-                30 days: green worked, red at least one run failed, grey no run that day. Run now starts a job straight
+                30 days: green worked, red at least one run failed, grey no run that day (a job that runs every few minutes
+                keeps its quiet runs once an hour). Run now starts a job straight
                 away; one that can email families asks first.
             </p>
 

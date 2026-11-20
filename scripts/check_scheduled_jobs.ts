@@ -107,6 +107,11 @@ async function main() {
     assert.equal(row.last_detail, '2 reminders sent')
     assert.ok(row.last_run_at && row.last_finished_at)
     assert.equal(typeof row.last_duration_ms, 'number', 'the run time is recorded (#1077)')
+    assert.equal(row.last_quiet, false, 'it sent reminders: not quiet')
+    await wrapped('reminders', async () => Response.json({ success: true, stats: { '24h': 0 }, failed: 0, unnotified: 0 }))(new Request(url + 'reminders'))
+    assert.equal(rows.get('reminders')!.last_quiet, true, 'no reminders due: quiet')
+    await wrapped('classroom-server-watch', async () => Response.json({ configured: false }))(new Request(url + 'classroom-server-watch'))
+    assert.equal(rows.get('classroom-server-watch')!.last_quiet, null, 'no rule: the database compares details')
 
     await wrapped('reminders', async () => Response.json({ error: 'database timed out' }, { status: 500 }))(new Request(url + 'reminders'))
     row = rows.get('reminders')!
@@ -138,8 +143,8 @@ async function main() {
     assert.equal(marks[29].state, 'ok')
     assert.equal(marks[29].text, 'Fri, Nov 20, 9:15am EST: worked. Nothing new. Took 2 seconds.')
     assert.equal(marks[28].state, 'failed')
-    assert.equal(marks[28].text, 'Thu, Nov 19: 2 of 144 runs failed. Last failure at 10:10am EST: Dropbox said no.')
-    assert.equal(marks[27].text, 'Wed, Nov 18: 3 runs, all worked. Last at 9:15am EST: Nothing new.')
+    assert.equal(marks[28].text, 'Thu, Nov 19: 2 runs failed (of 144 on record). Last failure at 10:10am EST: Dropbox said no.')
+    assert.equal(marks[27].text, 'Wed, Nov 18: all worked (3 runs on record). Last at 9:15am EST: Nothing new.')
     assert.equal(marks[26].state, 'none')
     assert.equal(marks[26].text, 'Tue, Nov 17: no run.')
     assert.ok(!marks.some(m => m.date === '2026-10-01'), 'older days fall off')

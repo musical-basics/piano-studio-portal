@@ -1,5 +1,5 @@
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
-import { summarizeJobRun } from '@/lib/scheduled-jobs'
+import { quietJobRun, summarizeJobRun } from '@/lib/scheduled-jobs'
 import { isManualRun } from '@/lib/cron-auth'
 
 /**
@@ -16,16 +16,24 @@ import { isManualRun } from '@/lib/cron-auth'
  * Since #1077 each run also lands in cron_runs (30 days of history, the marks
  * on the jobs page). A trigger on cron_heartbeats writes it whenever
  * last_finished_at moves, so this file and the Mac's scripts feed it without
- * writing it themselves; last_duration_ms carries how long the run took.
+ * writing it themselves; last_duration_ms carries how long the run took, and
+ * last_quiet whether it worked and did nothing (a job running every few
+ * minutes keeps those quiet runs at most once an hour).
  *
  * Best-effort: a failed write is logged and never fails the run itself.
  */
 
 const DETAIL_MAX = 500
 
-export type CronRun = { ok: boolean; detail?: string | null; durationMs?: number | null }
+export type CronRun = {
+    ok: boolean
+    detail?: string | null
+    durationMs?: number | null
+    /** Worked and did nothing (kept in cron_runs at most once an hour); null = let the database compare details. */
+    quiet?: boolean | null
+}
 
-export async function recordCronRun(client: DbClient, job: string, { ok, detail, durationMs }: CronRun): Promise<void> {
+export async function recordCronRun(client: DbClient, job: string, { ok, detail, durationMs, quiet }: CronRun): Promise<void> {
     try {
         const now = new Date().toISOString()
         const row: Record<string, unknown> = {
@@ -34,6 +42,7 @@ export async function recordCronRun(client: DbClient, job: string, { ok, detail,
             last_ok: ok,
             last_detail: detail ? detail.replace(/\s+/g, ' ').trim().slice(0, DETAIL_MAX) : null,
             last_duration_ms: durationMs != null && Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
+            last_quiet: ok ? quiet ?? null : false,
         }
         if (ok) row.last_run_at = now
         const { error } = await client.from('cron_heartbeats').upsert(row, { onConflict: 'job' })
@@ -86,7 +95,7 @@ export function withCronRun(job: string, handler: Handler, opts: { client?: () =
         const detail = ok
             ? summarizeJobRun(job, body)
             : (typeof body?.error === 'string' && body.error) || `answered HTTP ${res.status}`
-        await record({ ok, detail })
+        await record({ ok, detail, quiet: ok ? quietJobRun(job, body) : false })
         return res
     }
 }
