@@ -33,6 +33,10 @@
             "schedule": "*/5 * * * *"
         },
         {
+            "path": "/api/cron/classroom-alone",
+            "schedule": "* * * * *"
+        },
+        {
             "path": "/api/cron/unlogged-lessons",
             "schedule": "30 13 * * *"
         },

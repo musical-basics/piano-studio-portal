@@ -256,6 +256,13 @@ export const PORTAL_JOBS: JobInfo[] = [
         summarize: b => (b?.configured === false ? "Off until the classroom moves to the studio's own server" : b?.message),
     },
     {
+        job: 'classroom-alone',
+        name: 'Student waiting alone',
+        what: "Emails you once when a student has waited alone in the classroom 5 minutes past their lesson's start (or their arrival, if later) and you are not in the room. Nothing to do until the classroom records attendance (its own server).",
+        group: 'watch',
+        summarize: b => b?.message,
+    },
+    {
         job: 'backup-watchdog',
         name: 'Backup check',
         what: "Emails you if the Mac's nightly backup or family message watcher hasn't checked in for 36 hours.",
@@ -362,6 +369,7 @@ export function describeCron(expr: string, now: Date = new Date()): { words: str
     if (mon !== '*') return { words: expr, intervalMinutes: 24 * 60 }
 
     if (hour === '*' && dom === '*' && dow === '*') {
+        if (min === '*') return { words: 'Every minute', intervalMinutes: 1 }
         const every = /^\*\/(\d+)$/.exec(min)
         if (every) return { words: `Every ${every[1]} minutes`, intervalMinutes: Number(every[1]) }
         const minutes = min.split(',')
