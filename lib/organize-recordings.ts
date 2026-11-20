@@ -17,6 +17,7 @@ import {
     getOrCreateSharedLink,
     MIN_LESSON_AUDIO_BYTES,
     MIN_LESSON_RECORDING_MINUTES,
+    recordingStudioDate,
 } from '@/lib/zoom-recordings'
 import { isClassroomCopyName } from '@/lib/classroom-dropbox-copies'
 
@@ -56,6 +57,17 @@ export type OrganizeOptions = {
     // per item adds up, so bound it and let the next run continue.
     limit?: number
     log?: (msg: string) => void
+}
+
+/**
+ * Studio date of a ZBackup file from the UTC start at the front of its name,
+ * e.g. "2026_06_19_01:02:02 ... .mp4" is a lesson on 2026-06-18 (Eastern).
+ * The folder name can't be used: its time is on a 12-hour clock with no AM/PM.
+ */
+export function studioDateOfZBackupFile(name: string): string | null {
+    const m = name.match(/^(\d{4})_(\d{2})_(\d{2})_(\d{2}):(\d{2}):(\d{2})/)
+    if (!m) return null
+    return recordingStudioDate(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`)
 }
 
 function pickPrimaryMp4(entries: any[]): any | null {
@@ -191,13 +203,17 @@ export async function organizeZBackupRecordings(opts: OrganizeOptions = {}): Pro
             // deduct credits, auto-create "next week" lessons, and email students
             // about months-old lessons. Credit/billing is owned by the original
             // completion flow, not by attaching a recording after the fact.
+            // The folder and file dates are UTC, so a lesson from 8pm EDT / 7pm EST
+            // on is filed under the next day. Match the lesson on its studio date,
+            // read from the recording's own UTC start in its name (#1019).
+            const lessonDate = studioDateOfZBackupFile(primary.name) || formattedDate
             let lessonId: string | null = null
             if (mapping.studentId) {
                 const { data: lessons } = await supabase
                     .from('lessons')
                     .select('id, video_url')
                     .eq('student_id', mapping.studentId)
-                    .eq('date', formattedDate)
+                    .eq('date', lessonDate)
                     .neq('status', 'cancelled')
                 if (lessons && lessons.length === 1) {
                     lessonId = (lessons[0] as any).id
@@ -209,7 +225,7 @@ export async function organizeZBackupRecordings(opts: OrganizeOptions = {}): Pro
                         if (attachErr) log(`attach warning for lesson ${lessonId}: ${attachErr.message} (recording placed)`)
                     }
                 } else {
-                    log(`No unambiguous lesson for ${mapping.matched} on ${formattedDate} (${lessons?.length ?? 0} matches); file placed, not linked.`)
+                    log(`No unambiguous lesson for ${mapping.matched} on ${lessonDate} (${lessons?.length ?? 0} matches); file placed, not linked.`)
                 }
             }
 

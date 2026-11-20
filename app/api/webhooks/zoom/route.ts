@@ -10,7 +10,9 @@ import {
     isTooShortForLesson,
     MIN_LESSON_RECORDING_MINUTES,
     pickPrimaryRecordingFile,
+    recordingIsFromAnotherDay,
     recordingMinutes,
+    recordingStudioDate,
     uploadBufferToDropbox,
     type ZoomRecordingFile,
 } from '@/lib/zoom-recordings'
@@ -115,7 +117,7 @@ export async function POST(req: Request) {
     // Look up the lesson by zoom_meeting_id, joined to the student's profile.
     const { data: lesson, error: lessonErr } = await supabase
         .from('lessons')
-        .select('id, student_id, video_url, status')
+        .select('id, student_id, video_url, status, date')
         .eq('zoom_meeting_id', meetingId)
         .maybeSingle()
 
@@ -128,6 +130,17 @@ export async function POST(req: Request) {
         // Return 200 so Zoom doesn't keep retrying for unmapped meetings
         // (e.g. ad hoc meetings outside the lesson booking flow).
         return NextResponse.json({ ok: true, skipped: 'no matching lesson', logs })
+    }
+
+    // A weekly lesson booked by logLessonCore reuses the last lesson's Zoom link
+    // without its meeting id, so a later week's recording arrives under the
+    // older lesson's id. Logging it there would charge the wrong lesson and hang
+    // this week's video on it (#1019). Leave it: ZBackup's copy is linked to the
+    // lesson on its own date by the organize-recordings cron.
+    const recordedOn = recordingStudioDate(startTime || recordingFiles.find(f => f.recording_start)?.recording_start)
+    if (recordingIsFromAnotherDay(recordedOn, lesson.date)) {
+        log(`Recording is from ${recordedOn} but lesson ${lesson.id} is on ${lesson.date} (meeting id reused); not logging or linking it.`)
+        return NextResponse.json({ ok: true, skipped: 'recording is from another day than the lesson', lesson_id: lesson.id, recorded_on: recordedOn, logs })
     }
 
     if (lesson.video_url) {

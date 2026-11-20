@@ -20,6 +20,8 @@ import {
     isTooShortForLesson,
     MIN_LESSON_RECORDING_MINUTES,
     pickPrimaryRecordingFile,
+    recordingIsFromAnotherDay,
+    recordingStudioDate,
     uploadBufferToDropbox,
     type ZoomRecordingFile,
 } from '@/lib/zoom-recordings'
@@ -132,6 +134,12 @@ export async function backfillMissingRecordings(opts: BackfillOptions = {}): Pro
         if (!meeting) {
             // No cloud recording (never recorded, or retention-expired). Not an error.
             result.skipped.push({ lessonId: lesson.id, meetingId, reason: 'no cloud recording on Zoom' })
+            continue
+        }
+        // A reused meeting id (#1019) can point at another week's recording.
+        const recordedOn = recordingStudioDate(meeting.start_time)
+        if (recordingIsFromAnotherDay(recordedOn, lesson.date)) {
+            result.skipped.push({ lessonId: lesson.id, meetingId, reason: `recording is from ${recordedOn}, not the lesson's day` })
             continue
         }
         if (isTooShortForLesson(meeting.recording_files || [], meeting.duration)) {

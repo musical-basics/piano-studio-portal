@@ -1,4 +1,5 @@
 import { Dropbox } from 'dropbox'
+import { isoToStudioWallClock } from '@/lib/studio-timezone'
 
 export type ZoomRecordingFile = {
     id?: string
@@ -72,6 +73,29 @@ export function recordingMinutes(files: ZoomRecordingFile[], fallbackMinutes?: n
 export function isTooShortForLesson(files: ZoomRecordingFile[], fallbackMinutes?: number | null): boolean {
     const minutes = recordingMinutes(files, fallbackMinutes)
     return minutes !== null && minutes < MIN_LESSON_RECORDING_MINUTES
+}
+
+/**
+ * The studio (Eastern) date of a recording's UTC start. Zoom and ZBackup name
+ * recordings by UTC, so a lesson from 8pm EDT / 7pm EST on carries the next
+ * day's date until it is converted. Null when the time can't be read.
+ */
+export function recordingStudioDate(startIso: string | null | undefined): string | null {
+    if (!startIso) return null
+    return isoToStudioWallClock(startIso).localDate || null
+}
+
+/**
+ * True when a recording made on `recordedOn` can't be the lesson on
+ * `lessonDate` (more than a day apart). Weekly lessons that logLessonCore books
+ * on its own reuse the previous lesson's Zoom link without its meeting id, so
+ * Zoom files a later week's recording under the older lesson's id (#1019).
+ * Unknown dates never block.
+ */
+export function recordingIsFromAnotherDay(recordedOn: string | null, lessonDate: string | null | undefined): boolean {
+    if (!recordedOn || !lessonDate) return false
+    const days = Math.abs(Date.parse(`${recordedOn}T00:00:00Z`) - Date.parse(`${lessonDate.slice(0, 10)}T00:00:00Z`)) / 86_400_000
+    return Number.isFinite(days) && days > 1
 }
 
 export async function downloadFromZoom(downloadUrl: string, downloadToken: string): Promise<Buffer> {
