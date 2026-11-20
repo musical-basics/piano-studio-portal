@@ -9,6 +9,7 @@ import type { TodayLesson, LessonWithStudent, AdminTodayEvent } from "@/types/ad
 import type { HomeworkStatus } from "@/lib/homework"
 import { isoToStudioWallClock, shiftDateStr, studioToday } from "@/lib/studio-timezone"
 import { ZoomAttendanceLine, useLessonAttendance } from "@/components/admin/zoom-attendance-line"
+import { ClassroomAttendanceLine, useClassroomAttendance } from "@/components/admin/classroom-attendance-line"
 import { StudentLink } from "@/components/admin/student-panel"
 
 const CLASSROOM_URL = process.env.NEXT_PUBLIC_CLASSROOM_URL || "https://classroom.musicalbasics.com"
@@ -96,6 +97,8 @@ export function DashboardTab({
 }: DashboardTabProps) {
     // #964: who joined each Zoom lesson, from the saved attendance
     const attendance = useLessonAttendance(lessons.map(l => l.id))
+    // #1103: who was in the classroom room, from the classroom's attendance record
+    const classroomAttendance = useClassroomAttendance(lessons.map(l => l.id))
 
     const getClassroomLink =(studentId: string, name?: string | null, email?: string | null) => {
         const params = new URLSearchParams({
@@ -277,6 +280,7 @@ export function DashboardTab({
                                                 return hw && hw.lessonId !== lesson.id && hw.lessonDate <= lesson.date ? <HomeworkTicks status={hw} /> : null
                                             })()}
                                             <ZoomAttendanceLine lesson={lesson} views={attendance} />
+                                            <ClassroomAttendanceLine lesson={lesson} views={classroomAttendance} />
                                         </div>
                                     </div>
                                     {lesson.status === 'completed' ? (

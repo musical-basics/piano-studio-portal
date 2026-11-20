@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Music, Video, FileText, Pencil, Undo2 } from "lucide-react"
 import type { LessonWithStudent } from "@/types/admin"
 import { ZoomAttendanceLine, useLessonAttendance } from "@/components/admin/zoom-attendance-line"
+import { ClassroomAttendanceLine, useClassroomAttendance } from "@/components/admin/classroom-attendance-line"
 import { StudentLink } from "@/components/admin/student-panel"
 
 interface CompletedTabProps {
@@ -19,6 +20,8 @@ interface CompletedTabProps {
 export function CompletedTab({ lessons, onEdit, onUndoLog }: CompletedTabProps) {
     // #964: who joined each Zoom lesson, from the saved attendance
     const attendance = useLessonAttendance(lessons.map(l => l.id))
+    // #1103: who was in the classroom room, from the classroom's attendance record
+    const classroomAttendance = useClassroomAttendance(lessons.map(l => l.id))
 
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr + 'T00:00:00')
@@ -76,6 +79,7 @@ export function CompletedTab({ lessons, onEdit, onUndoLog }: CompletedTabProps) 
                                                     </div>
                                                 </div>
                                                 <ZoomAttendanceLine lesson={lesson} views={attendance} />
+                                                <ClassroomAttendanceLine lesson={lesson} views={classroomAttendance} />
                                                 {lesson.notes && (
                                                     <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
                                                         {lesson.notes}
