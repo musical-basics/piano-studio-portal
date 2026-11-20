@@ -57,7 +57,7 @@ export function CancellationModal({
                 <DialogTitle className="text-xl font-serif">Cancel Lesson</DialogTitle>
               </div>
               <DialogDescription className="text-base leading-relaxed pt-2">
-                You are cancelling with more than 24 hours notice. Your lesson credit will be fully refunded.
+                You are cancelling with more than 24 hours notice. No lesson will be taken from your balance.
               </DialogDescription>
             </>
           )}

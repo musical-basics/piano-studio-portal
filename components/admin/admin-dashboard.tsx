@@ -497,7 +497,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
     }
 
     const handleCancelLesson = async (lessonId: string, studentName: string) => {
-        if (confirm(`Are you sure you want to cancel the lesson for ${studentName}? The student will be fully refunded.`)) {
+        if (confirm(`Are you sure you want to cancel the lesson for ${studentName}? No lesson is taken from their balance.`)) {
             setIsLoading(true)
             // Import dynamically or pass as prop if import fails, but since this is client component in app router we can use server actions directly
             let result: { error?: string; message?: string }
