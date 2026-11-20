@@ -105,6 +105,18 @@ export function summarizeAttendance(participants: ZoomParticipant[], lessonStart
     }
 }
 
+/** #1070: Zoom's recording webhook logs a lesson on its own only when the student was in the meeting this long. */
+export const AUTO_LOG_MIN_STUDENT_SECONDS = 10 * 60
+
+/**
+ * Seconds the student was in the meeting itself around the lesson (#1070).
+ * Unlike summarizeAttendance's studentSeconds, the waiting room does not count
+ * here: a student never let in was not taught, so no credit is taken for it.
+ */
+export function studentSecondsInMeeting(participants: ZoomParticipant[], lessonStartMs: number, lessonEndMs: number): number {
+    return summarizeAttendance(participants.filter(p => p.status !== 'in_waiting_room'), lessonStartMs, lessonEndMs).studentSeconds
+}
+
 // --------------------------------------------------------- the line ---
 
 /** What the admin line needs from a saved row. */

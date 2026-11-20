@@ -2,7 +2,7 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { isoToStudioWallClock, shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { WINDOW_MS, fetchPastInstances, fetchPastParticipants, type ZoomParticipant } from '@/lib/zoom-attendance'
-import { keepParticipant, summarizeAttendance, type AttendanceView } from '@/lib/zoom-lesson-attendance'
+import { keepParticipant, studentSecondsInMeeting, summarizeAttendance, type AttendanceView } from '@/lib/zoom-lesson-attendance'
 
 /**
  * Saving each Zoom lesson's attendance for good (#965), since Zoom keeps it
@@ -198,6 +198,27 @@ export async function zoomParticipantsFetcher(): Promise<FetchParticipants | nul
     const { getZoomAccessToken } = await import('@/lib/zoom')
     const token = await getZoomAccessToken()
     return token ? lessonParticipantsFetcher(token) : null
+}
+
+/**
+ * #1070: how long the student was in a lesson's meeting (waiting room not
+ * counted), asked of Zoom as soon as the recording is ready. Not ok when Zoom
+ * can't say (no token, no answer, or no report for the meeting yet).
+ */
+export async function studentTimeInLesson(
+    lesson: AttendanceLesson,
+    fetchParticipants?: FetchParticipants | null,
+): Promise<{ ok: true; seconds: number } | { ok: false; reason: string }> {
+    const fetch = fetchParticipants ?? await zoomParticipantsFetcher()
+    if (!fetch) return { ok: false, reason: 'no Zoom token' }
+    let got: ParticipantsResult
+    try {
+        got = await fetch(lesson)
+    } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+    }
+    if (!got.ok) return { ok: false, reason: got.neverStarted ? 'Zoom has no participants report for the meeting' : got.reason }
+    return { ok: true, seconds: studentSecondsInMeeting(got.participants, startMs(lesson), endMs(lesson)) }
 }
 
 /** The cron's step: save attendance for recent Zoom lessons that are due. */

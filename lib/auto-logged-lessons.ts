@@ -12,7 +12,8 @@ import { appBaseUrl } from '@/lib/lesson-action-links'
  *
  * "Automatically" means a log nobody pressed a button for, told apart by
  * lessons.completed_source:
- *   - zoom_webhook: Zoom's recording webhook (5+ minute recording);
+ *   - zoom_webhook: Zoom's recording webhook (5+ minute recording and,
+ *                   since #1070, the student 10+ minutes in the meeting);
  *   - system:       the classroom hand-off (#537, a 20+ minute classroom
  *                   video), or the old credit-repair route;
  *   - agent_log:    an assistant through the agent API (Elephant logs as

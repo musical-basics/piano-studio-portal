@@ -3,6 +3,8 @@ import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logLessonCore } from '@/lib/core/lessons'
 import { getSingleAdmin } from '@/lib/core/admin'
+import { studentTimeInLesson } from '@/lib/core/zoom-lesson-attendance'
+import { AUTO_LOG_MIN_STUDENT_SECONDS } from '@/lib/zoom-lesson-attendance'
 import {
     downloadFromZoom,
     getDropboxClient,
@@ -30,6 +32,31 @@ function verifyZoomSignature(rawBody: string, signature: string, timestamp: stri
     } catch {
         return false
     }
+}
+
+/**
+ * #1070: Zoom logs a lesson (and takes the credit) on its own only when the
+ * student was in the meeting 10+ minutes; a recording alone no longer charges.
+ * Otherwise, or when Zoom can't say, the lesson stays unlogged for Lionel (the
+ * morning email lists it) and only its video is linked.
+ */
+async function attendanceAllowsLog(
+    lesson: { id: string; date: string; time: string; duration: number | null },
+    meetingId: string,
+): Promise<{ ok: boolean; why: string }> {
+    const got = await studentTimeInLesson({
+        id: lesson.id,
+        date: lesson.date,
+        time: String(lesson.time).slice(0, 5),
+        duration: Number(lesson.duration) || 60,
+        zoomMeetingId: meetingId,
+    })
+    if (!got.ok) return { ok: false, why: `Zoom could not say who joined (${got.reason})` }
+    const minutes = Math.round(got.seconds / 60)
+    if (got.seconds < AUTO_LOG_MIN_STUDENT_SECONDS) {
+        return { ok: false, why: `student was in the meeting ${minutes} min (under ${AUTO_LOG_MIN_STUDENT_SECONDS / 60})` }
+    }
+    return { ok: true, why: `student was in the meeting ${minutes} min` }
 }
 
 function fileNameForRecording(meetingId: string, startIso: string | undefined): string {
@@ -117,7 +144,7 @@ export async function POST(req: Request) {
     // Look up the lesson by zoom_meeting_id, joined to the student's profile.
     const { data: lesson, error: lessonErr } = await supabase
         .from('lessons')
-        .select('id, student_id, video_url, status, date')
+        .select('id, student_id, video_url, status, date, time, duration')
         .eq('zoom_meeting_id', meetingId)
         .maybeSingle()
 
@@ -151,7 +178,12 @@ export async function POST(req: Request) {
             log(`Lesson ${lesson.id} already has video_url and is completed; skipping.`)
             return NextResponse.json({ ok: true, skipped: 'already processed', logs })
         }
-        log(`Lesson ${lesson.id} already has video_url but is ${lesson.status}; completing it.`)
+        const attended = await attendanceAllowsLog(lesson as any, meetingId)
+        if (!attended.ok) {
+            log(`Lesson ${lesson.id} has its video but is not logged: ${attended.why}.`)
+            return NextResponse.json({ ok: true, lesson_id: lesson.id, skipped: `not logged: ${attended.why}`, logs })
+        }
+        log(`Lesson ${lesson.id} already has video_url but is ${lesson.status}; completing it (${attended.why}).`)
         const logResult = await logLessonCore({
             client: supabase as any,
             // The teacher's profile: logLessonCore emails the "lesson scheduled"
@@ -218,8 +250,21 @@ export async function POST(req: Request) {
         }
         log(`video_url saved for lesson ${lesson.id}`)
 
+        // Already logged by hand: only the video was missing. Logging again
+        // would blank the notes Lionel wrote.
+        if (lesson.status === 'completed') {
+            log(`Lesson ${lesson.id} was already logged; video linked only.`)
+            return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, skipped: 'already logged', logs })
+        }
+        const attended = await attendanceAllowsLog(lesson as any, meetingId)
+        if (!attended.ok) {
+            log(`Lesson ${lesson.id} not logged: ${attended.why}. Video linked; it waits for Lionel.`)
+            return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, skipped: `not logged: ${attended.why}`, logs })
+        }
+        log(`Logging lesson ${lesson.id}: ${attended.why}.`)
+
         // Route through logLessonCore so credit deduction + snapshots always happen
-        // (notes left empty — the teacher will fill them in later via the agent)
+        // (notes left empty: the teacher fills them in later)
         const logResult = await logLessonCore({
             client: supabase as any,
             // The teacher's profile: logLessonCore emails the "lesson scheduled"
@@ -234,7 +279,7 @@ export async function POST(req: Request) {
 
         if ('error' in logResult) {
             log(`logLessonCore error after Zoom webhook: ${logResult.error}`)
-            // Don't return 500 — video_url is already saved, credit repair can happen on note-log
+            // Don't return 500: video_url is already saved, credit repair can happen on note-log
             return NextResponse.json({ ok: true, lesson_id: lesson.id, path: uploaded.path, video_url: sharedUrl, credit_warning: logResult.error, logs })
         }
 
