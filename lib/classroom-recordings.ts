@@ -5,6 +5,7 @@ import { notifyRecordingReady } from '@/lib/recording-ready-email'
 import { autoLogClassroomLesson, studioAdminId } from '@/lib/classroom-auto-log'
 import { liveR2, r2KeyFromUrl, RECORDINGS_BUCKET, type R2Api } from '@/lib/classroom-r2'
 import { isR2VideoUrl } from '@/lib/classroom-video-url'
+import { getMarkersForKeys, recordingKeyOf, type RecordingMarker } from '@/lib/recording-markers'
 
 /**
  * Hand-off from the classroom app (classroom.musicalbasics.com, same Supabase
@@ -343,6 +344,8 @@ export type AdminRecordingRow = {
     status: AdminRecordingStatus
     /** A test or no-show (under 5 minutes, on no lesson, still on R2): the tab offers Delete (#1096). */
     canDelete: boolean
+    /** Moments marked during the lesson (#874), shown on the tab's player as tap-to-jump dots (#1321). */
+    markers: RecordingMarker[]
 }
 
 const NEAREST_WITHIN_DAYS = 7
@@ -379,6 +382,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
         const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', studentIds)
         for (const p of profiles || []) names.set(p.id, p.name)
     }
+    const markersByKey = await getMarkersForKeys(recordings.map(r => recordingKeyOf(r) || ''))
 
     return Promise.all(recordings.map(async (rec): Promise<AdminRecordingRow> => {
         const startMs = recordingStampMs(rec)
@@ -393,6 +397,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
             hasStartStamp: startMs !== null,
             minutes,
             canDelete: false,
+            markers: markersByKey[recordingKeyOf(rec) || ''] ?? [],
         }
 
         const on = lessonByUrl.get(rec.url)

@@ -8,8 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ExternalLink, Loader2, PlayCircle, RefreshCw, Trash2, X } from "lucide-react"
 import { attachClassroomRecording, deleteClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
-import { playableVideoUrl } from "@/lib/classroom-video-url"
 import { StudentLink } from "@/components/admin/student-panel"
+import { VideoPlayer } from "@/components/video-player"
 
 interface ClassroomRecordingsTabProps {
     /** Open the admin day schedule on this studio date (where the lesson is). */
@@ -244,7 +244,14 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                             <div className="text-xs text-muted-foreground">when it stopped (no start time on file)</div>
                                         )}
                                     </TableCell>
-                                    <TableCell className="whitespace-nowrap">{lengthLabel(row.minutes)}</TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                                        {lengthLabel(row.minutes)}
+                                        {row.markers.length > 0 && (
+                                            <div className="text-xs text-muted-foreground">
+                                                {row.markers.length} marked moment{row.markers.length === 1 ? "" : "s"}
+                                            </div>
+                                        )}
+                                    </TableCell>
                                     <TableCell className="whitespace-normal">{statusCell(row)}</TableCell>
                                 </TableRow>
                                 {playingId === row.id && (
@@ -252,14 +259,11 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                         <TableCell colSpan={5} className="whitespace-normal p-2">
                                             <div className="sticky left-0 w-[calc(100cqw-1rem)] max-w-3xl space-y-2">
                                                 {/* Mounted only once Play is pressed; nothing loads before that. */}
-                                                <video
+                                                <VideoPlayer
                                                     key={row.id}
-                                                    src={playableVideoUrl(row.url)}
-                                                    controls
+                                                    url={row.url}
+                                                    markers={row.markers}
                                                     autoPlay
-                                                    playsInline
-                                                    preload="none"
-                                                    className="block w-full max-h-[70vh] rounded-md bg-black"
                                                     onError={() => setPlayError("This video can't play here. Open it in a new tab instead.")}
                                                 />
                                                 {playError && <p className="text-sm text-destructive">{playError}</p>}

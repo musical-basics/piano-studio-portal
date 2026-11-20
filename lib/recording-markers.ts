@@ -20,6 +20,30 @@ export type RecordingMarker = {
 /** Classroom egress file names; Zoom (Dropbox) links never match. */
 const CLASSROOM_KEY_RE = /^[^/]+_\d{13}\.mp4$/i
 
+/** The marker key of a library row: its R2 file name, kept in r2_key once the video moved to Dropbox (#1020). */
+export function recordingKeyOf(rec: { url: string; r2_key?: string | null }): string | null {
+    if (rec.r2_key) return CLASSROOM_KEY_RE.test(rec.r2_key) ? rec.r2_key : null
+    return recordingKeyFromUrl(rec.url)
+}
+
+/** Markers by recording key, in video order (the admin Classroom recordings tab, #1321). Service role. */
+export async function getMarkersForKeys(keys: string[]): Promise<Record<string, RecordingMarker[]>> {
+    const unique = [...new Set(keys.filter(Boolean))]
+    if (unique.length === 0) return {}
+    const { data, error } = await createAdminClient()
+        .from('classroom_recording_markers')
+        .select('id, recording_key, offset_seconds, label')
+        .in('recording_key', unique)
+        .order('offset_seconds', { ascending: true })
+    if (error) {
+        console.error('[recording-markers] could not read markers:', error.message)
+        return {}
+    }
+    const byKey: Record<string, RecordingMarker[]> = {}
+    for (const m of data || []) (byKey[m.recording_key] ||= []).push({ id: m.id, offset_seconds: m.offset_seconds, label: m.label })
+    return byKey
+}
+
 /** The classroom recording's file name in a lesson's video_url, or null. */
 export function recordingKeyFromUrl(url: string | null | undefined): string | null {
     if (!url) return null

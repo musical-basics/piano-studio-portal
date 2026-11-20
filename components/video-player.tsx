@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type MutableRefObject } from "react"
 import { Play, Pause, Bookmark } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { RecordingMarker } from "@/lib/recording-markers"
@@ -15,6 +15,10 @@ interface VideoPlayerProps {
    * key jumps again, even to the same time.
    */
   seekTo?: { seconds: number; key: number }
+  autoPlay?: boolean
+  onError?: () => void
+  /** The <video> element, for callers that read the playing position (the admin clip maker, #1094). */
+  videoRef?: MutableRefObject<HTMLVideoElement | null>
 }
 
 /** Seconds of lead-in before a marked moment: he taps just after it happens. */
@@ -49,10 +53,11 @@ function toDirectUrl(url: string): string {
   return url
 }
 
-export function VideoPlayer({ url, title, markers = [], seekTo }: VideoPlayerProps) {
+export function VideoPlayer({ url, title, markers = [], seekTo, autoPlay, onError, videoRef: outerRef }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const innerRef = useRef<HTMLVideoElement | null>(null)
+  const videoRef = outerRef ?? innerRef
   // A jump asked for before the video knows its length waits for it.
   const pendingSeek = useRef<number | null>(null)
 
@@ -87,6 +92,9 @@ export function VideoPlayer({ url, title, markers = [], seekTo }: VideoPlayerPro
           className="w-full h-full"
           src={videoSrc}
           controls
+          autoPlay={autoPlay}
+          playsInline
+          onError={onError}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onLoadedMetadata={(e) => {
