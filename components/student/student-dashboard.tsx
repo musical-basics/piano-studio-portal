@@ -19,7 +19,6 @@ import {
     CalendarX,
     CalendarClock,
     Users,
-    FileText,
     PlayCircle,
     MessageCircle,
     Plus,
@@ -46,6 +45,8 @@ import { studioStartMs } from "@/lib/move-requests"
 import { LATE_CANCEL_WINDOW_HOURS } from "@/lib/billing-policy"
 import { RecordingConsentDialog } from "./recording-consent-dialog"
 import { PracticeTab } from "./practice-tab"
+import { MyMusicTab } from "./my-music-tab"
+import { FileMusic } from "lucide-react"
 import { CancellationModal } from "./cancellation-modal"
 import { MoveRequestDialog, MoveRequestStatus } from "./move-request"
 import type { FamilyMoveState } from "@/lib/core/move-requests"
@@ -70,7 +71,6 @@ import { notifyStudentJoined } from "@/app/actions/notifications"
 import { useToast } from "@/hooks/use-toast"
 import type { Profile, Lesson } from "@/lib/supabase/database.types"
 import type { StudentEvent } from "@/app/actions/events"
-import type { Resource } from "@/app/actions/resources"
 import { EventSignupModal } from "./event-signup-modal"
 import { LocalTimeDisplay } from "@/components/ui/local-time-display"
 import {
@@ -111,7 +111,6 @@ export interface StudentDashboardProps {
     studioName?: string
     teacherName?: string
     events?: StudentEvent[]
-    resources?: Resource[]
     latestAnnouncement?: { id: string; subject: string; body: string; created_at: string } | null
     /** Unread messages from the teacher, counted on the server at render time. */
     unreadCount?: number
@@ -127,20 +126,11 @@ export interface StudentDashboardProps {
     moveStates?: Record<string, FamilyMoveState>
     /** An admin is previewing this student: a request can't be sent as them. */
     isAdminPreview?: boolean
-    /** The tab to open on, from ?tab= (only "history" for now, #936). */
-    initialTab?: "history"
+    /** The tab to open on, from ?tab= ("history" #936, "music" #1083). */
+    initialTab?: "history" | "music"
 }
 
-// Category badge colors
-const categoryColors: Record<string, string> = {
-    'Sheet Music': 'bg-blue-100 text-blue-800',
-    'Theory': 'bg-purple-100 text-purple-800',
-    'Scales': 'bg-green-100 text-green-800',
-    'Exercises': 'bg-orange-100 text-orange-800',
-    'Recording': 'bg-pink-100 text-pink-800',
-}
-
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], resources = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom link. A classroom student (#980, profiles.lesson_venue) gets it
@@ -164,7 +154,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
     // Real unread count, seeded from the server render. The badge used to be
     // hardcoded to 1, so the portal claimed a new message forever.
-    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : "lessons")
+    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : initialTab === "music" ? "music" : "lessons")
     const [unreadMessages, setUnreadMessages] = useState(unreadCount)
 
     // Subscription state drives the renewal banner. `undefined` means "not looked
@@ -445,10 +435,6 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         }
     }
 
-    const handleDownload = (resource: Resource) => {
-        // Open file in new tab for download
-        window.open(resource.file_url, '_blank')
-    }
 
     // Credits alone do not mean the student needs to buy anything. On an installment
     // plan they routinely sit at zero (or below) for a few days before the next
@@ -1019,9 +1005,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     <Video className="h-4 w-4" />
                                     <span className="hidden sm:inline">Practice</span>
                                 </TabsTrigger>
-                                <TabsTrigger value="downloads" className="gap-2">
-                                    <FileText className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Downloads</span>
+                                <TabsTrigger value="music" className="gap-2">
+                                    <FileMusic className="h-4 w-4" />
+                                    <span className="hidden sm:inline">My music</span>
                                 </TabsTrigger>
                                 <TabsTrigger value="tutorials" className="gap-2">
                                     <PlayCircle className="h-4 w-4" />
@@ -1284,62 +1270,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 {activeTab === "practice" && <PracticeTab />}
                             </TabsContent>
 
-                            <TabsContent value="downloads" className="space-y-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-2xl font-serif font-semibold">Practice Materials</h2>
-                                    <Badge variant="secondary">{resources.length} files</Badge>
-                                </div>
-                                {resources.length === 0 ? (
-                                    <Card className="border-2">
-                                        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                                            <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                                            <h3 className="font-semibold text-lg mb-2">No Practice Materials Yet</h3>
-                                            <p className="text-muted-foreground max-w-sm">
-                                                Your teacher will add practice materials here for you to download.
-                                            </p>
-                                        </CardContent>
-                                    </Card>
-                                ) : (
-                                    <div className="grid gap-4">
-                                        {resources.map((resource) => (
-                                            <Card key={resource.id} className="border-2 hover:shadow-md transition-shadow">
-                                                <CardContent className="flex items-center justify-between p-6">
-                                                    <div className="flex items-center gap-4 flex-1">
-                                                        <div className="h-14 w-14 bg-primary/10 rounded-lg flex items-center justify-center">
-                                                            {resource.file_type === 'mp3' || resource.file_type === 'wav' ? (
-                                                                <Music className="h-6 w-6 text-primary" />
-                                                            ) : (
-                                                                <FileText className="h-6 w-6 text-primary" />
-                                                            )}
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <h3 className="font-semibold mb-1">{resource.title}</h3>
-                                                            {resource.description && (
-                                                                <p className="text-sm text-muted-foreground mb-2">{resource.description}</p>
-                                                            )}
-                                                            {resource.student_note && (
-                                                                <div className="mt-2 mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-100 dark:border-blue-800">
-                                                                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300 mb-1">Teacher&apos;s Instructions</p>
-                                                                    <p className="text-sm text-blue-900 dark:text-blue-100 whitespace-pre-wrap">{resource.student_note}</p>
-                                                                </div>
-                                                            )}
-                                                            <Badge
-                                                                variant="secondary"
-                                                                className={`text-xs ${categoryColors[resource.category] || ''}`}
-                                                            >
-                                                                {resource.category}
-                                                            </Badge>
-                                                        </div>
-                                                    </div>
-                                                    <Button size="sm" onClick={() => handleDownload(resource)}>
-                                                        <Download className="h-4 w-4 mr-2" />
-                                                        Download
-                                                    </Button>
-                                                </CardContent>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                )}
+                            {/* #1083: every piece of sheet music sent to the family (replaced Downloads) */}
+                            <TabsContent value="music" className="space-y-4">
+                                {activeTab === "music" && <MyMusicTab teacherName={teacherName} />}
                             </TabsContent>
 
                             <TabsContent value="tutorials" className="space-y-4">

@@ -2,7 +2,6 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { StudentDashboard } from "@/components/student/student-dashboard"
 import { getStudentEvents } from "@/app/actions/events"
-import { getStudentResources } from "@/app/actions/resources"
 import { getLatestAnnouncement } from "@/app/actions/announcements"
 import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
@@ -19,9 +18,10 @@ export default async function StudentPage({
 }: {
   searchParams?: Promise<{ tab?: string | string[] }>
 }) {
-  // ?tab=history opens the History tab (the monthly statement email links there, #936).
+  // ?tab=history opens the History tab (the monthly statement email links there, #936);
+  // ?tab=music opens My music (#1083).
   const askedTab = (await searchParams)?.tab
-  const initialTab = askedTab === "history" ? "history" : undefined
+  const initialTab = askedTab === "history" || askedTab === "music" ? askedTab : undefined
 
   const supabase = await createClient()
 
@@ -174,9 +174,9 @@ export default async function StudentPage({
     .eq("is_read", false)
     .is("deleted_at", null)
 
-  // Fetch events & resources scoped to the effective user
+  // Fetch events scoped to the effective user. Library files load in the My
+  // music tab when it opens (#1083).
   const { upcoming: upcomingEvents } = await getStudentEvents()
-  const { resources } = await getStudentResources()
   const latestAnnouncement = await getLatestAnnouncement(effectiveUserId)
 
   return (
@@ -193,7 +193,6 @@ export default async function StudentPage({
         studioName={teacher?.studio_name || "Piano Studio"}
         teacherName={teacher?.name || "Professor"}
         events={upcomingEvents}
-        resources={resources}
         latestAnnouncement={latestAnnouncement}
         unreadCount={unreadCount || 0}
         history={history}

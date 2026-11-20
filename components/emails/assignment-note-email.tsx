@@ -39,8 +39,8 @@ export function AssignmentNoteEmail({
                             Log in to your portal to download the material and view your full assignment.
                         </Text>
 
-                        <Button style={button} href={`${loginUrl}/student`}>
-                            View Practice Materials
+                        <Button style={button} href={`${loginUrl}/student?tab=music`}>
+                            Open My music
                         </Button>
                     </Section>
 
