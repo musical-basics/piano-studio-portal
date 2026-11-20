@@ -2,7 +2,8 @@
  * Renders every sample on /admin/emails (#1003) through the same code the page
  * uses (lib/family-email-samples.ts) and checks each one: a full HTML email, the
  * subject families get, the family's own time where a lesson time is shown, and
- * no "undefined", "NaN" or "Invalid Date" anywhere. Sends nothing, reads no data.
+ * no "undefined", "NaN", "Invalid Date" or em dash anywhere. Sends nothing, reads
+ * no data.
  *
  *   npx tsx scripts/check_family_email_samples.ts
  */
@@ -14,7 +15,10 @@ const EM_DASH = String.fromCharCode(0x2014)
 const EXPECTED: Record<string, string[]> = {
     'reminder-2-days': [`Please confirm your lesson on Thursday, December 3 at ${TIME}`],
     'reminder-day-before': [`Reminder: your lesson tomorrow at ${TIME}`, `Please confirm your lesson tomorrow at ${TIME}`],
-    'reminder-12-hours': [`Please confirm your lesson today at ${TIME}`],
+    'reminder-12-hours': [
+        `Please confirm your lesson today at ${TIME}`,
+        'Please confirm your lesson tomorrow at 9:30am EST (6:30am your time)',
+    ],
     'reminder-starting-soon': ['Lesson Starting Soon!', 'Lesson Starting Soon!', 'Lesson Starting Soon!'],
     'reminder-by-hand': [
         'Lesson coming up in exactly 2 hours and 15 minutes',
@@ -34,7 +38,7 @@ const EXPECTED: Record<string, string[]> = {
     'practice-instructions': ['New practice instructions: Clementi Sonatina Op. 36 No. 1'],
     'new-message': ['New message from Professor Lionel Yu'],
     'announcement': ['📢 Winter recital on December 19'],
-    'renewal-receipt': [`Your subscription renewed ${EM_DASH} 4 credits added!`],
+    'renewal-receipt': ['Your subscription renewed: 4 credits added!'],
     'monthly-statement': ['Your November lesson summary'],
     'trial-reply': ["Got it. I'll be in touch within 48 hours."],
     'audition-account': ['Your audition account is ready'],
@@ -76,8 +80,9 @@ async function main() {
             // The "exact time remaining" reminder says how long until the lesson, not when.
             const showsTime = SHOWS_FAMILY_TIME.has(email.id) && s.label !== 'Exact time remaining'
             if (showsTime && !s.html.includes('your time')) problems.push(`${where}: no family time in the body`)
-            if (s.html.includes(EM_DASH)) console.log(`note: ${where} has an em dash in its body`)
-            if (s.subject.includes(EM_DASH)) console.log(`note: ${where} has an em dash in its subject`)
+            // Families never get an em dash (Lionel's writing rule).
+            if (s.html.includes(EM_DASH) || /&mdash;|&#8212;|&#x2014;/i.test(s.html)) problems.push(`${where}: em dash in the body`)
+            if (s.subject.includes(EM_DASH) || (s.preview ?? '').includes(EM_DASH)) problems.push(`${where}: em dash in the subject or preview`)
         })
     }
     for (const id of Object.keys(EXPECTED)) if (!seen.has(id)) problems.push(`${id}: expected but not on the page`)

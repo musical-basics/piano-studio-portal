@@ -153,10 +153,11 @@ export async function logPastLesson(
         .select('role')
         .eq('id', user.id)
         .single()
-    // Verify student exists and get credits
+    // Verify student exists and get credits. `*` so the notification-email
+    // override comes along for the notes email (a schema without it can't break this).
     const { data: student, error: studentError } = await supabase
         .from('profiles')
-        .select('name, credits, email, timezone')
+        .select('*')
         .eq('id', studentId)
         .eq('role', 'student')
         .single()
@@ -289,6 +290,13 @@ export async function logPastLesson(
     if (resend) {
         (async () => {
             try {
+                // The family's notification email, like every other lesson email.
+                const studentEmail = resolveNotificationEmail(student)
+                if (!studentEmail) {
+                    console.log('logPastLesson: No student email, skipping notification')
+                    return
+                }
+
                 // Dynamic import to avoid client bundler issues. Subject and body
                 // from lib/family-emails.ts (shared with /admin/emails).
                 const { lessonNotesEmail } = await import('@/lib/family-emails')
@@ -302,11 +310,11 @@ export async function logPastLesson(
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
-                    to: student.email,
+                    to: studentEmail,
                     subject: email.subject,
                     react: email.react,
                 })
-                console.log('logPastLesson: Email sent to', student.email)
+                console.log('logPastLesson: Email sent to', studentEmail)
             } catch (emailError) {
                 console.error('logPastLesson: Email failed (non-blocking):', emailError)
             }

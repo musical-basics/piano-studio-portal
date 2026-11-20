@@ -98,6 +98,8 @@ const TEACHER = 'Professor Lionel Yu'
 /** A Thursday lesson at 5:30pm Eastern. */
 const LESSON_DATE = '2026-12-03'
 const LESSON_TIME = '17:30'
+/** The same day at 9:30am Eastern, for the 12-hour reminder that goes out the evening before. */
+const MORNING_TIME = '09:30'
 /** Where it moves to: Saturday at 11am Eastern. */
 const MOVED_DATE = '2026-12-05'
 const MOVED_TIME = '11:00'
@@ -172,9 +174,21 @@ export async function buildFamilyEmailSamples(): Promise<FamilyEmail[]> {
     const zoomLinks = familyLessonLinks(ZOOM_STUDENT, ZOOM_LINK)
     const classroomLinks = familyLessonLinks(CLASSROOM_STUDENT, ZOOM_LINK)
     const familyTime = formatLessonTimeForFamily(LESSON_DATE, LESSON_TIME, FAMILY_TZ)
-    const dayLabel = reminderDayLabel(LESSON_DATE)
-    const reminder = (diffMinutes: number, confirmNudge: boolean, links = zoomLinks) =>
-        lessonReminderEmail({ diffMinutes, timeLabel: familyTime, dayLabel, studentName: STUDENT, links, confirmNudge })
+    /** A reminder sent `diffMinutes` before a lesson (the 5:30pm one unless another time is given). */
+    const reminder = (diffMinutes: number, confirmNudge: boolean, links = zoomLinks, time = LESSON_TIME) => {
+        // The Eastern date it goes out: the lesson's wall clock minus the lead time.
+        const sendDate = new Date(Date.parse(`${LESSON_DATE}T${time}:00Z`) - diffMinutes * 60_000).toISOString().slice(0, 10)
+        return lessonReminderEmail({
+            diffMinutes,
+            timeLabel: formatLessonTimeForFamily(LESSON_DATE, time, FAMILY_TZ),
+            dayLabel: reminderDayLabel(LESSON_DATE),
+            lessonDate: LESSON_DATE,
+            sendDate,
+            studentName: STUDENT,
+            links,
+            confirmNudge,
+        })
+    }
     const manual = (variant: ManualReminderVariant) =>
         manualReminderEmail({ variant, durationString: describeTimeRemaining(135), studentName: STUDENT, timeLabel: familyTime, links: zoomLinks })
 
@@ -224,8 +238,11 @@ export async function buildFamilyEmailSamples(): Promise<FamilyEmail[]> {
             name: 'Lesson reminder, 12 hours before',
             when: '12 hours before the lesson, only while the lesson is not confirmed yet.',
             who: 'The family.',
-            note: 'It says "today at" whenever the lesson is 12 hours away or less, so for a lesson before noon Eastern it goes out the evening before and still says "today".',
-            samples: [await fromReact(reminder(720, true))],
+            note: 'For a lesson before noon Eastern it goes out the evening before, so it says "tomorrow".',
+            samples: [
+                await fromReact(reminder(720, true), 'Afternoon lesson'),
+                await fromReact(reminder(720, true, zoomLinks, MORNING_TIME), 'Morning lesson (sent the evening before)'),
+            ],
         },
         {
             id: 'reminder-starting-soon',
@@ -378,7 +395,7 @@ export async function buildFamilyEmailSamples(): Promise<FamilyEmail[]> {
             group: 'Messages and announcements',
             name: 'Announcement',
             when: 'When you send one from the Announcements tab. Your subject and text go inside this frame.',
-            who: 'Each student you pick, one email each.',
+            who: 'Each student you pick, one email each, to their notification email. Families who turned announcement emails off are skipped (they still see it in the portal).',
             samples: [fromHtml(announcementEmail({ ...SAMPLE_ANNOUNCEMENT, portalUrl: appUrl }))],
         },
 

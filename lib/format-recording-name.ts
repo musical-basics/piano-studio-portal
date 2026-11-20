@@ -1,6 +1,6 @@
 /**
  * Shared utility for formatting Dropbox/Zoom recording filenames.
- * Safe to import on both client and server — no 'use server' directive.
+ * Safe to import on both client and server: no 'use server' directive.
  */
 
 /**
@@ -66,13 +66,14 @@ export function formatRecordingName(filename: string): string {
         .replace(/\s{2,}/g, ' ')            // collapse multiple spaces
         .trim()
 
-    // If we got a date, build a clean "Lesson – Month D, YYYY" label
+    // If we got a date, build a clean "Lesson - Month D, YYYY" label (a plain
+    // hyphen: families see this in emails and on their dashboard, #1003)
     if (formattedDate) {
         // Check if remaining name has meaningful student/lesson context beyond just "Piano Lesson"
         const hasContent = name.length > 2 && !/^(piano\s+lesson|lesson)$/i.test(name.trim())
         return hasContent
-            ? `${name.trim()} — ${formattedDate}`
-            : `Lesson — ${formattedDate}`
+            ? `${name.trim()} - ${formattedDate}`
+            : `Lesson - ${formattedDate}`
     }
 
     // Fallback: clean up underscores/dashes and return what we have

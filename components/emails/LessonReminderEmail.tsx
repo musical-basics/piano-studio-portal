@@ -15,7 +15,7 @@ interface LessonReminderEmailProps {
     venue?: 'zoom' | 'classroom'
     variant: '48h' | '24h' | '12h' | '2h' | '15m' | 'exact'
     exactDuration?: string
-    /** e.g. "Saturday, August 8" — used by the 48h notice. */
+    /** e.g. "Saturday, August 8": used by the 48h notice. */
     dayLabel?: string
     /** Student has not confirmed attendance: show the confirm warning + button. */
     confirmNudge?: boolean

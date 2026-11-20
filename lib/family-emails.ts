@@ -9,6 +9,7 @@ import RecordingReadyEmail from '@/components/emails/recording-ready-email'
 import NewRecordingEmail from '@/components/emails/new-recording-email'
 import { TrialInquiryAutoResponse } from '@/components/emails/trial-inquiry-autoresponse'
 import { formatRecordingName } from '@/lib/format-recording-name'
+import { resolveNotificationEmail } from '@/lib/notification-email'
 import type { familyLessonLinks } from '@/lib/lesson-venue'
 
 /**
@@ -39,12 +40,33 @@ export function reminderDayLabel(date: string): string {
 
 export type ReminderWhenVariant = '15m' | '12h' | '24h' | '48h'
 
-/** How to describe the lesson's timing, from the ACTUAL minutes remaining. */
-export function describeReminderWhen(diffMinutes: number, timeLabel: string, dayLabel: string): { phrase: string; variant: ReminderWhenVariant } {
+/** Whole calendar days from `fromDate` to `toDate` (both "YYYY-MM-DD"): 0 = same day, 1 = the next day. */
+export function calendarDaysBetween(fromDate: string, toDate: string): number {
+    return Math.round((Date.parse(`${toDate.slice(0, 10)}T00:00:00Z`) - Date.parse(`${fromDate.slice(0, 10)}T00:00:00Z`)) / 86_400_000)
+}
+
+/**
+ * How to describe the lesson's timing, from the ACTUAL minutes remaining.
+ *
+ * The minutes pick the wording, but "today" and "tomorrow" must match the
+ * calendar (#1003): a 12-hour notice for a 9:30am lesson goes out at 9:30pm the
+ * evening before, and must say "tomorrow at 9:30am", not "today". `daysAway`
+ * is the lesson's date minus the studio (Eastern) date when the email goes out.
+ * When the minutes' day word and the calendar disagree, the calendar wins (and
+ * the email's heading follows it); otherwise nothing changes.
+ */
+export function describeReminderWhen(diffMinutes: number, timeLabel: string, dayLabel: string, daysAway?: number): { phrase: string; variant: ReminderWhenVariant } {
+    const today = { phrase: `today at ${timeLabel}`, variant: '12h' as const }
+    const tomorrow = { phrase: `tomorrow at ${timeLabel}`, variant: '24h' as const }
+    const onDay = { phrase: `on ${dayLabel} at ${timeLabel}`, variant: '48h' as const }
+
     if (diffMinutes <= 25) return { phrase: 'about to begin', variant: '15m' as const }
-    if (diffMinutes <= 720) return { phrase: `today at ${timeLabel}`, variant: '12h' as const }
-    if (diffMinutes <= 1500) return { phrase: `tomorrow at ${timeLabel}`, variant: '24h' as const }
-    return { phrase: `on ${dayLabel} at ${timeLabel}`, variant: '48h' as const }
+    // Names the date itself, so it is right whatever the calendar says.
+    if (diffMinutes > 1500) return onDay
+    const byMinutes = diffMinutes <= 720 ? today : tomorrow
+    if (daysAway === undefined || !Number.isFinite(daysAway)) return byMinutes
+    const byCalendar = daysAway <= 0 ? today : daysAway === 1 ? tomorrow : onDay
+    return byCalendar.variant === byMinutes.variant ? byMinutes : byCalendar
 }
 
 /**
@@ -52,19 +74,24 @@ export function describeReminderWhen(diffMinutes: number, timeLabel: string, day
  * the real time remaining, not the notice key: a recovered 24h notice must not
  * tell someone "see you tomorrow" about a lesson starting in an hour.
  */
-export function lessonReminderEmail({ diffMinutes, timeLabel, dayLabel, studentName, links, confirmNudge }: {
+export function lessonReminderEmail({ diffMinutes, timeLabel, dayLabel, lessonDate, sendDate, studentName, links, confirmNudge }: {
     /** Minutes from now until the lesson starts. */
     diffMinutes: number
     /** The family's lesson time, "5:30pm EST (2:30pm your time)". */
     timeLabel: string
     /** "Thursday, December 3". */
     dayLabel: string
+    /** The lesson's date, "YYYY-MM-DD" (studio calendar). */
+    lessonDate: string
+    /** The studio (Eastern) date the email goes out, "YYYY-MM-DD". */
+    sendDate: string
     studentName: string | null | undefined
     links: LessonLinks
     /** Not confirmed yet: ask them to confirm. */
     confirmNudge: boolean
 }) {
-    const { phrase, variant } = describeReminderWhen(diffMinutes, timeLabel, dayLabel)
+    const daysAway = calendarDaysBetween(sendDate, lessonDate)
+    const { phrase, variant } = describeReminderWhen(diffMinutes, timeLabel, dayLabel, daysAway)
     const subject = diffMinutes <= 25
         ? 'Lesson Starting Soon!'
         : confirmNudge
@@ -384,7 +411,7 @@ export function renewalReceiptEmail({ studentName, creditsAdded, newTotal, amoun
 }) {
     // The HTML keeps its original indentation: it is sent exactly as written.
     return {
-        subject: `Your subscription renewed \u2014 ${creditsAdded} credits added!`,
+        subject: `Your subscription renewed: ${creditsAdded} credits added!`,
         html: `
                     <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
                         <h2 style="font-size: 20px; margin: 0 0 16px; color: #1a1a1a;">
@@ -410,6 +437,33 @@ export function renewalReceiptEmail({ studentName, creditsAdded, newTotal, amoun
 }
 
 // --------------------------------------------------------- announcements ---
+
+type AnnouncementProfile = {
+    email?: string | null
+    notification_email?: string | null
+    /** Set from the /unsubscribe page; covers announcement emails only. */
+    announcement_emails_opt_out?: boolean | null
+}
+
+/**
+ * Where an announcement goes (#1003): each picked student's notification email,
+ * the same address every other family email uses (resolveNotificationEmail),
+ * one email each. Families who turned announcement emails off
+ * (profiles.announcement_emails_opt_out) are skipped; they still see the
+ * announcement in the portal.
+ */
+export function announcementRecipients(students: AnnouncementProfile[]): { to: string[]; optedOut: number; noAddress: number } {
+    const to: string[] = []
+    let optedOut = 0
+    let noAddress = 0
+    for (const s of students) {
+        if (s.announcement_emails_opt_out) { optedOut++; continue }
+        const address = resolveNotificationEmail(s)
+        if (address) to.push(address)
+        else noAddress++
+    }
+    return { to, optedOut, noAddress }
+}
 
 /** An announcement Lionel writes in the admin Announcements tab: his subject and text in this frame. */
 export function announcementEmail({ subject, body, portalUrl }: { subject: string; body: string; portalUrl: string }) {

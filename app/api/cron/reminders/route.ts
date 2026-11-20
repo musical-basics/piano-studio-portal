@@ -155,6 +155,9 @@ async function handle(request: Request) {
                 diffMinutes,
                 timeLabel: familyTimeLabel,
                 dayLabel,
+                // "today" / "tomorrow" follow the calendar, not just the minutes.
+                lessonDate: lesson.date,
+                sendDate: todayStr,
                 studentName: lesson.profiles.name,
                 links,
                 confirmNudge,

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { announcementEmail } from '@/lib/family-emails'
+import { announcementEmail, announcementRecipients } from '@/lib/family-emails'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -148,13 +148,16 @@ export async function sendAnnouncement(
     }
 
     // Send individual emails per student (AWAITED, not fire-and-forget)
+    let optedOut = 0
     if (resend && studentIds.length > 0) {
         try {
             console.log(`[Announcement] Starting email send for ${studentIds.length} students`)
 
+            // `*` so the notification-email override and the announcement
+            // opt-out come along (and an older schema can't fail the read).
             const { data: students } = await adminDb
                 .from('profiles')
-                .select('email, name')
+                .select('*')
                 .in('id', studentIds)
 
             console.log(`[Announcement] Fetched ${students?.length || 0} student profiles`)
@@ -164,20 +167,23 @@ export async function sendAnnouncement(
                 const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
                 // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                // Each family's notification email; opted-out families are skipped.
                 const email = announcementEmail({ subject, body, portalUrl })
-                const emailPayloads = students
-                    .filter(s => s.email)
-                    .map(s => ({
-                        from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                        to: s.email,
-                        subject: email.subject,
-                        html: email.html
-                    }))
+                const recipients = announcementRecipients(students)
+                optedOut = recipients.optedOut
+                const emailPayloads = recipients.to.map(to => ({
+                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
+                    to,
+                    subject: email.subject,
+                    html: email.html
+                }))
 
-                console.log(`[Announcement] Sending ${emailPayloads.length} individual emails to:`, emailPayloads.map(e => e.to))
+                console.log(`[Announcement] Sending ${emailPayloads.length} individual emails (${recipients.optedOut} opted out, ${recipients.noAddress} without an address) to:`, emailPayloads.map(e => e.to))
 
-                const batchResult = await resend.batch.send(emailPayloads)
-                console.log(`[Announcement] Batch result:`, JSON.stringify(batchResult))
+                if (emailPayloads.length > 0) {
+                    const batchResult = await resend.batch.send(emailPayloads)
+                    console.log(`[Announcement] Batch result:`, JSON.stringify(batchResult))
+                }
             }
         } catch (emailError) {
             console.error('[Announcement] Email send failed:', emailError)
@@ -191,7 +197,8 @@ export async function sendAnnouncement(
 
     return {
         success: true,
-        message: `Announcement sent to ${studentIds.length} student${studentIds.length === 1 ? '' : 's'}.`
+        message: `Announcement sent to ${studentIds.length} student${studentIds.length === 1 ? '' : 's'}.` +
+            (optedOut > 0 ? ` ${optedOut} turned off announcement emails, so they see it in the portal only.` : '')
     }
 }
 

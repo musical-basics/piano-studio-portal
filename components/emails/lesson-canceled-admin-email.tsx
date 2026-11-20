@@ -55,7 +55,7 @@ export function LessonCanceledAdminEmail({
                             {wasLate ? (
                                 <Text style={detailsRow}>
                                     Late cancellation (under 24h)
-                                    {feeCharged > 0 ? ` — $${feeCharged.toFixed(2)} fee added` : ''}
+                                    {feeCharged > 0 ? `, $${feeCharged.toFixed(2)} fee added` : ''}
                                 </Text>
                             ) : (
                                 <Text style={detailsRow}>Cancelled with more than 24h notice</Text>
