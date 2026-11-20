@@ -21,6 +21,10 @@
             "schedule": "5,35 * * * *"
         },
         {
+            "path": "/api/cron/classroom-r2-move",
+            "schedule": "50 13 * * *"
+        },
+        {
             "path": "/api/cron/classroom-server-watch",
             "schedule": "*/5 * * * *"
         },

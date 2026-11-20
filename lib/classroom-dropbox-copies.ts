@@ -3,7 +3,7 @@ import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendCronAlert } from '@/lib/cron-alerts'
 import { getDropboxClient, MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock } from '@/lib/studio-timezone'
-import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStartMs, UUID_RE } from '@/lib/classroom-recordings'
+import { LESSON_KIND, MIN_BYTES_WITHOUT_START, recordingMinutes, recordingStampMs, UUID_RE } from '@/lib/classroom-recordings'
 
 /**
  * Classroom recordings copied into the student's Dropbox folder (Lionel's #726),
@@ -55,8 +55,8 @@ export function isClassroomCopyName(name: string): boolean {
 }
 
 /** The day the recording started (egress stamp), else the day it was saved, in the studio's zone. */
-export function classroomCopyDate(rec: { url: string; created_at: string }): string {
-    const ms = recordingStartMs(rec.url) ?? Date.parse(rec.created_at)
+export function classroomCopyDate(rec: { url: string; created_at: string; r2_key?: string | null }): string {
+    const ms = recordingStampMs(rec) ?? Date.parse(rec.created_at)
     return isoToStudioWallClock(new Date(ms).toISOString()).localDate
 }
 

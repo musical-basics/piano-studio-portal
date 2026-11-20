@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ExternalLink, Loader2, PlayCircle, RefreshCw, X } from "lucide-react"
 import { attachClassroomRecording, getClassroomRecordings, type AdminRecordingRow } from "@/app/actions/classroom-recordings"
 import { isoToStudioWallClock, studioToday, studioTzAbbr } from "@/lib/studio-timezone"
+import { playableVideoUrl } from "@/lib/classroom-video-url"
 
 interface ClassroomRecordingsTabProps {
     /** Open the admin day schedule on this studio date (where the lesson is). */
@@ -219,7 +220,7 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                                 {/* Mounted only once Play is pressed; nothing loads before that. */}
                                                 <video
                                                     key={row.id}
-                                                    src={row.url}
+                                                    src={playableVideoUrl(row.url)}
                                                     controls
                                                     autoPlay
                                                     playsInline

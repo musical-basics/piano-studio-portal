@@ -203,6 +203,17 @@ export const PORTAL_JOBS: JobInfo[] = [
         ].filter(Boolean).join(', '),
     },
     {
+        job: 'classroom-r2-move',
+        name: 'Old classroom videos to Dropbox',
+        what: "Moves classroom videos older than 60 days from Cloudflare R2 (10 GB free) to their copy in the student's Dropbox folder, once the copy is checked to be complete.",
+        group: 'recordings',
+        summarize: b => [
+            len(b?.moved) ? `${plural(len(b.moved), 'video')} moved (${(Number(b.movedBytes || 0) / 1e9).toFixed(2)} GB)` : 'Nothing to move',
+            len(b?.queued) ? `${plural(len(b.queued), 'copy', 'copies')} queued` : '',
+            len(b?.problems) ? plural(len(b.problems), 'problem') : '',
+        ].filter(Boolean).join(', '),
+    },
+    {
         job: 'capture-payments',
         name: 'Collect held card payments',
         what: 'Collects card payments that are only on hold, 3 days after checkout, before the hold expires.',

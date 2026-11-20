@@ -81,7 +81,9 @@ export type ClassroomAttachOptions = {
     now?: Date
 }
 
-type RecordingRow = { id: string; student_id: string; url: string; created_at: string; size_bytes: number | null }
+type RecordingRow = { id: string; student_id: string; url: string; created_at: string; size_bytes: number | null; r2_key?: string | null }
+/** A recording as the matchers read it: r2_key is the R2 file name kept after the video moved to Dropbox (#1020). */
+type StampedRecording = { url: string; created_at: string; r2_key?: string | null }
 export type LessonRow = { id: string; date: string; time: string; duration: number | null; status: string | null; video_url: string | null }
 
 export function recordingStartMs(url: string): number | null {
@@ -89,9 +91,17 @@ export function recordingStartMs(url: string): number | null {
     return m ? Number(m[1]) : null
 }
 
+/**
+ * The recording's start stamp: from its R2 file name, which a video moved to
+ * Dropbox (#1020) keeps in r2_key once its url is a Dropbox link.
+ */
+export function recordingStampMs(rec: { url: string; r2_key?: string | null }): number | null {
+    return recordingStartMs(rec.r2_key || rec.url)
+}
+
 /** Stop minus start, in minutes; null without a start stamp (length unknown). */
-export function recordingMinutes(rec: { url: string; created_at: string }): number | null {
-    const startMs = recordingStartMs(rec.url)
+export function recordingMinutes(rec: StampedRecording): number | null {
+    const startMs = recordingStampMs(rec)
     const stopMs = Date.parse(rec.created_at)
     if (startMs === null || !(stopMs > startMs)) return null
     return (stopMs - startMs) / MINUTE
@@ -121,10 +131,10 @@ export function lessonStartMs(lesson: { date: string; time: string }): number {
  * shortly after), closest start first. Null when no lesson fits.
  */
 export function matchLesson(
-    rec: { url: string; created_at: string },
+    rec: StampedRecording,
     lessons: LessonRow[]
 ): LessonRow | null {
-    const startMs = recordingStartMs(rec.url)
+    const startMs = recordingStampMs(rec)
     return startMs !== null
         ? matchLessonByStart(startMs, lessons)
         : bestLesson(Date.parse(rec.created_at), lessons, (stopMs, begins, ends) => stopMs >= begins && stopMs <= ends + LATE_STOP_MS)
@@ -178,7 +188,7 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
 
     let query = supabase
         .from('classroom_recordings')
-        .select('id, student_id, url, created_at, size_bytes')
+        .select('id, student_id, url, created_at, size_bytes, r2_key')
         .eq('kind', LESSON_KIND)
         .gte('created_at', new Date(now.getTime() - days * 24 * 60 * MINUTE).toISOString())
         .order('created_at', { ascending: true })
@@ -201,7 +211,7 @@ export async function attachClassroomRecordings(opts: ClassroomAttachOptions = {
     for (const rec of recordings) {
         if (alreadyAttached.has(rec.url)) continue
 
-        const startMs = recordingStartMs(rec.url)
+        const startMs = recordingStampMs(rec)
         const stopMs = Date.parse(rec.created_at)
         if (startMs !== null && stopMs > startMs && stopMs - startMs < MIN_LESSON_RECORDING_MINUTES * MINUTE) {
             result.skipped.push({ recordingId: rec.id, reason: `under ${MIN_LESSON_RECORDING_MINUTES} min` })
@@ -342,7 +352,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
 
     const { data: rows, error } = await supabase
         .from('classroom_recordings')
-        .select('id, student_id, url, created_at, size_bytes')
+        .select('id, student_id, url, created_at, size_bytes, r2_key')
         .eq('kind', LESSON_KIND)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -367,7 +377,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
     }
 
     return Promise.all(recordings.map(async (rec): Promise<AdminRecordingRow> => {
-        const startMs = recordingStartMs(rec.url)
+        const startMs = recordingStampMs(rec)
         const anchorMs = startMs ?? Date.parse(rec.created_at)
         const minutes = recordingMinutes(rec)
         const base = {
