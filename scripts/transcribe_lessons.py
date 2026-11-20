@@ -205,21 +205,34 @@ def record_run(ok, detail):
 
 # ---------------------------------------------------------------- dropbox ---
 
+class DropboxAuthError(RuntimeError):
+    """Dropbox refused our sign-in, not the recording: stops the night's run
+    without counting a try against any recording."""
+
+
 class Dropbox:
     def __init__(self):
-        body = urllib.parse.urlencode({
+        self._refresh_body = urllib.parse.urlencode({
             "grant_type": "refresh_token", "refresh_token": secret("DROPBOX_REFRESH_TOKEN"),
             "client_id": secret("DROPBOX_CLIENT_ID"), "client_secret": secret("DROPBOX_CLIENT_SECRET"),
         }).encode()
+        self._refresh()
+
+    def _refresh(self):
+        """A fresh short-lived access token. Dropbox's last about 4 hours and a
+        night's run is up to 4.5, so _call renews it on a 401 (2026-11-20: the
+        token ran out at 5:36am and the other 354 recordings all failed)."""
         try:
-            self.token = http_json("https://api.dropboxapi.com/oauth2/token", data=body, timeout=30,
+            self.token = http_json("https://api.dropboxapi.com/oauth2/token", data=self._refresh_body, timeout=30,
                                    headers={"Content-Type": "application/x-www-form-urlencoded"})["access_token"]
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Dropbox refused the refresh token (HTTP {e.code})") from None
+            raise DropboxAuthError(f"Dropbox refused the refresh token (HTTP {e.code})") from None
 
     def _call(self, url, data, headers, timeout=300, sink=None):
-        """Retries rate limits (429) and 5xx. With sink (a path), the body is a
-        download written there and the file's metadata is returned."""
+        """Retries rate limits (429) and 5xx, and renews the access token once on
+        a 401. With sink (a path), the body is a download written there and the
+        file's metadata is returned."""
+        renewed = False
         for attempt in range(5):
             req = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {self.token}", **headers})
             try:
@@ -231,6 +244,12 @@ class Dropbox:
                     return json.loads(res.read() or b"null")
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:200]
+                if e.code == 401:
+                    if not renewed:
+                        renewed = True
+                        self._refresh()
+                        continue
+                    raise DropboxAuthError(f"Dropbox: HTTP 401 after a fresh token: {detail}") from None
                 if (e.code == 429 or e.code >= 500) and attempt < 4:
                     time.sleep(min(60, int(float(e.headers.get("Retry-After") or 2 ** (attempt + 1)))))
                     continue
@@ -693,6 +712,7 @@ def main(argv):
 
     lessons = Lessons()
     done = failed = short = 0
+    auth_stop = None
     audio_secs = 0.0
     errors = []
     started = time.time()
@@ -728,6 +748,11 @@ def main(argv):
                     f"(download {fmt_secs(timings['download'])}, convert {fmt_secs(timings['ffmpeg'])}, "
                     f"whisper {fmt_secs(timings['whisper'])}), {len(segments)} lines, "
                     f"{'lesson ' + lesson['date'] if lesson else 'no lesson matched'} -> {u['transcript'][len(RECORDINGS_ROOT) + 1:]}")
+            except DropboxAuthError as e:
+                # Not this recording's fault: no try counted, the rest wait for the next night.
+                auth_stop = str(e)
+                log(f"  STOPPED: {e} (no try counted; the rest wait for the next night)")
+                break
             except Exception as e:
                 failed += 1
                 entry = skips.get(u["lower"], {})
@@ -748,10 +773,13 @@ def main(argv):
         parts.append(f"{failed} failed, first: {errors[0][:120]}")
     if gave_up:
         parts.append(f"{gave_up} given up after {MAX_TRIES} tries (transcribe-skips.json on the Mac)")
+    if auth_stop:
+        parts.append(f"stopped early: {auth_stop[:120]}")
     detail = ", ".join(parts)
     log(detail)
-    record_run(not (failed and not done), detail)
-    return 1 if failed and not done else 0
+    bad = bool(auth_stop) or (failed and not done)
+    record_run(not bad, detail)
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
