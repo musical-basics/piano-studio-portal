@@ -221,16 +221,33 @@ export function ClassroomRecordingsTab({ onOpenDay }: ClassroomRecordingsTabProp
                                 <Fragment key={row.id}>
                                 <TableRow>
                                     <TableCell className="w-10 pr-0">
-                                        <Button
-                                            size="icon"
-                                            variant={playingId === row.id ? "secondary" : "ghost"}
-                                            className="h-8 w-8"
-                                            onClick={() => togglePlay(row.id)}
-                                            aria-label={playingId === row.id ? "Close the player" : "Play here"}
-                                            title={playingId === row.id ? "Close the player" : "Play here"}
-                                        >
-                                            {playingId === row.id ? <X className="h-4 w-4" /> : <PlayCircle className="h-5 w-5" />}
-                                        </Button>
+                                        {row.thumbnailUrl ? (
+                                            // A small picture from the video (#1095); tapping it plays here.
+                                            <button
+                                                type="button"
+                                                onClick={() => togglePlay(row.id)}
+                                                aria-label={playingId === row.id ? "Close the player" : "Play here"}
+                                                title={playingId === row.id ? "Close the player" : "Play here"}
+                                                className="relative block h-[54px] w-24 overflow-hidden rounded-md bg-black ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={row.thumbnailUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                                <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white">
+                                                    {playingId === row.id ? <X className="h-5 w-5" /> : <PlayCircle className="h-6 w-6" />}
+                                                </span>
+                                            </button>
+                                        ) : (
+                                            <Button
+                                                size="icon"
+                                                variant={playingId === row.id ? "secondary" : "ghost"}
+                                                className="h-8 w-8"
+                                                onClick={() => togglePlay(row.id)}
+                                                aria-label={playingId === row.id ? "Close the player" : "Play here"}
+                                                title={playingId === row.id ? "Close the player" : "Play here"}
+                                            >
+                                                {playingId === row.id ? <X className="h-4 w-4" /> : <PlayCircle className="h-5 w-5" />}
+                                            </Button>
+                                        )}
                                     </TableCell>
                                     <TableCell className="font-medium">
                                         {row.studentName ? <StudentLink id={row.studentId} name={row.studentName} /> : <span className="text-muted-foreground">{row.studentId || "Unknown"}</span>}

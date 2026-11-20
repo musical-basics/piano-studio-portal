@@ -3,7 +3,7 @@ import { MIN_LESSON_RECORDING_MINUTES } from '@/lib/zoom-recordings'
 import { isoToStudioWallClock, shiftDateStr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { notifyRecordingReady } from '@/lib/recording-ready-email'
 import { autoLogClassroomLesson, studioAdminId } from '@/lib/classroom-auto-log'
-import { liveR2, r2KeyFromUrl, RECORDINGS_BUCKET, type R2Api } from '@/lib/classroom-r2'
+import { liveR2, PRACTICE_BUCKET, r2KeyFromUrl, r2SignedGetUrl, RECORDINGS_BUCKET, type R2Api } from '@/lib/classroom-r2'
 import { isR2VideoUrl } from '@/lib/classroom-video-url'
 import { getMarkersForKeys, recordingKeyOf, type RecordingMarker } from '@/lib/recording-markers'
 
@@ -84,7 +84,7 @@ export type ClassroomAttachOptions = {
     now?: Date
 }
 
-type RecordingRow = { id: string; student_id: string; url: string; created_at: string; size_bytes: number | null; r2_key?: string | null }
+type RecordingRow = { id: string; student_id: string; url: string; created_at: string; size_bytes: number | null; r2_key?: string | null; thumbnail_key?: string | null }
 /** A recording as the matchers read it: r2_key is the R2 file name kept after the video moved to Dropbox (#1020). */
 type StampedRecording = { url: string; created_at: string; r2_key?: string | null }
 export type LessonRow = { id: string; date: string; time: string; duration: number | null; status: string | null; video_url: string | null }
@@ -346,6 +346,8 @@ export type AdminRecordingRow = {
     canDelete: boolean
     /** Moments marked during the lesson (#874), shown on the tab's player as tap-to-jump dots (#1321). */
     markers: RecordingMarker[]
+    /** A small picture from the video (#1095), an hour-long link; null until the hourly job makes it. */
+    thumbnailUrl: string | null
 }
 
 const NEAREST_WITHIN_DAYS = 7
@@ -359,7 +361,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
 
     const { data: rows, error } = await supabase
         .from('classroom_recordings')
-        .select('id, student_id, url, created_at, size_bytes, r2_key')
+        .select('id, student_id, url, created_at, size_bytes, r2_key, thumbnail_key')
         .eq('kind', LESSON_KIND)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -383,6 +385,16 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
         for (const p of profiles || []) names.set(p.id, p.name)
     }
     const markersByKey = await getMarkersForKeys(recordings.map(r => recordingKeyOf(r) || ''))
+    // Pictures sit in the private bucket: hour-long signed links (signing is local, no request).
+    const thumbs = new Map<string, string>()
+    for (const r of recordings) {
+        if (!r.thumbnail_key) continue
+        try {
+            thumbs.set(r.id, await r2SignedGetUrl(PRACTICE_BUCKET, r.thumbnail_key, 3600))
+        } catch {
+            // R2 not set up here: no picture.
+        }
+    }
 
     return Promise.all(recordings.map(async (rec): Promise<AdminRecordingRow> => {
         const startMs = recordingStampMs(rec)
@@ -398,6 +410,7 @@ export async function listClassroomRecordingsForAdmin(client?: DbClient, limit =
             minutes,
             canDelete: false,
             markers: markersByKey[recordingKeyOf(rec) || ''] ?? [],
+            thumbnailUrl: thumbs.get(rec.id) ?? null,
         }
 
         const on = lessonByUrl.get(rec.url)

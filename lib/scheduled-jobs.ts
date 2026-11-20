@@ -228,6 +228,16 @@ export const PORTAL_JOBS: JobInfo[] = [
         ].filter(Boolean).join(', '),
     },
     {
+        job: 'classroom-thumbnails',
+        name: 'Classroom recording pictures',
+        what: 'Makes a small picture from each new classroom recording for its row in the Classroom recordings tab.',
+        group: 'recordings',
+        summarize: b => [
+            len(b?.made) ? `${plural(len(b.made), 'picture')} made` : 'Nothing new',
+            len(b?.failed) ? `${len(b.failed)} failed` : '',
+        ].filter(Boolean).join(', '),
+    },
+    {
         job: 'capture-payments',
         name: 'Collect held card payments',
         what: 'Collects card payments that are only on hold, 3 days after checkout, before the hold expires.',

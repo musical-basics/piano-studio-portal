@@ -29,6 +29,10 @@
             "schedule": "20 15 * * 1"
         },
         {
+            "path": "/api/cron/classroom-thumbnails",
+            "schedule": "25 * * * *"
+        },
+        {
             "path": "/api/cron/classroom-server-watch",
             "schedule": "*/5 * * * *"
         },
