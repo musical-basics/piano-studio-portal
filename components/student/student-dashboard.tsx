@@ -94,6 +94,7 @@ import { formatRecordingName } from "@/lib/format-recording-name"
 import { studioTzAbbr, studioToday } from "@/lib/studio-timezone"
 import { familyLocalTime, formatLessonTimeForFamily } from "@/lib/family-time"
 import { classroomLinkFor, lessonVenue } from "@/lib/lesson-venue"
+import { InstallAppHint } from "./install-app-hint"
 
 // Extended lesson type for UI compatibility
 type UILesson = Lesson & {
@@ -569,6 +570,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
             </header>
 
             <main className="container mx-auto px-4 py-8 space-y-8">
+
+                {/* #1081: home-screen tip, phones only */}
+                {!isAdminPreview && <InstallAppHint />}
 
                 {/* Confirmation Banner */}
                 {nextLesson?.id && !confirmationStatus && (

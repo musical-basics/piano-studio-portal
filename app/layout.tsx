@@ -1,5 +1,5 @@
 import type React from "react"
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
@@ -12,7 +12,16 @@ export const metadata: Metadata = {
   title: "Lionel Yu Piano Studio",
   description:
     "Master piano with personalized instruction, flexible scheduling, and a proven credit-based system designed for serious students.",
+  // Home-screen app on iPhone (#1081); the manifest (app/manifest.ts) covers Android.
+  appleWebApp: {
+    capable: true,
+    title: "Piano Studio",
+    statusBarStyle: "default",
+  },
+}
 
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
 }
 
 export default function RootLayout({
