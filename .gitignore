@@ -18,3 +18,7 @@ studio-repomix-output.xml
 *.mp4
 *.m4a
 *.mov
+
+# database dumps never go in this public repo
+_backup/
+*.sql.dump
