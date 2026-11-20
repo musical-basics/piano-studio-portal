@@ -3,13 +3,17 @@
  *
  * Reuses the studio's own availability: the hours Lionel set per weekday in
  * Profile Settings (profiles.available_hours on the admin, studio wall-clock),
- * minus every lesson that isn't cancelled (any student) and every event
- * (consultations, recitals, ...). All in studio (Eastern) time, regardless of
- * the server's clock, unlike the older student make-up finder.
+ * minus every lesson that isn't cancelled (any student), every event
+ * (consultations, recitals, ...) and, since #1093, Lionel's own Google Calendar
+ * events (lib/calendar-busy.ts: a personal appointment, an all-day "Off" or
+ * "Thanksgiving"; lesson events are lessons already). All in studio (Eastern)
+ * time, regardless of the server's clock, unlike the older student make-up
+ * finder. A calendar that can't be read is logged and left out.
  */
 
 import type { DbClient } from '@/lib/supabase/admin'
 import { isoToStudioWallClock, shiftDateStr, studioToday, studioTzAbbr, studioWallClockToISO, weekdayOfDateStr } from '@/lib/studio-timezone'
+import { loadCalendarBusy } from '@/lib/calendar-busy'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** Slots start on the hour or half hour. */
@@ -52,6 +56,7 @@ export async function findFreeSlotsCore({
     ignoreLessonIds = [],
     fromDate,
     minNoticeMinutes = MIN_NOTICE_MINUTES,
+    calendar = true,
 }: {
     client: DbClient
     duration: number
@@ -62,6 +67,8 @@ export async function findFreeSlotsCore({
     fromDate?: string
     /** A slot today must start at least this many minutes from now (default 60). */
     minNoticeMinutes?: number
+    /** Also skip Lionel's Google Calendar events (#1093). Default true. */
+    calendar?: boolean
 }): Promise<{ slots: FreeSlot[] } | { error: string }> {
     const { data: admin, error: adminError } = await client
         .from('profiles')
@@ -86,12 +93,16 @@ export async function findFreeSlotsCore({
 
     const { data: lessons, error: lessonsError } = await client
         .from('lessons')
-        .select('id, date, time, duration, status')
+        .select('id, date, time, duration, status, google_event_id')
         .gte('date', start)
         .lte('date', last)
         .neq('status', 'cancelled')
     if (lessonsError) return { error: `Could not read the schedule: ${lessonsError.message}` }
+    // A lesson's own calendar event is never busy time on top of it (nor for
+    // the lesson being moved, which is ignored here).
+    const lessonEventIds = new Set<string>()
     for (const l of lessons || []) {
+        if (l.google_event_id) lessonEventIds.add(String(l.google_event_id))
         if (ignoreLessonIds.includes(l.id)) continue
         const start = toMin(String(l.time))
         addBusy(l.date, start, start + (l.duration || 60))
@@ -111,6 +122,15 @@ export async function findFreeSlotsCore({
         addBusy(localDate, start, start + len)
         // An event running past midnight also blocks the start of the next day.
         if (start + len > 1440) addBusy(shiftDateStr(localDate, 1), 0, start + len - 1440)
+    }
+
+    if (calendar) {
+        const found = await loadCalendarBusy(
+            studioWallClockToISO(start, '00:00'),
+            studioWallClockToISO(shiftDateStr(last, 1), '00:00'),
+            { lessonEventIds },
+        )
+        for (const b of found.blocks) addBusy(b.date, b.start, b.end)
     }
 
     const now = isoToStudioWallClock(new Date().toISOString())

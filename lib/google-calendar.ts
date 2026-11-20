@@ -132,19 +132,26 @@ export async function getCalendarEvent(eventId: string): Promise<GoogleCalendarE
     }
 }
 
-/** Every live event between two instants (recurring ones expanded). Throws Google's error. */
-export async function listCalendarEvents(timeMinIso: string, timeMaxIso: string): Promise<GoogleCalendarEvent[]> {
+/**
+ * Every live event between two instants (recurring ones expanded). Throws Google's error.
+ * Another calendar the service account can read may be named (#1093's busy times).
+ */
+export async function listCalendarEvents(
+    timeMinIso: string,
+    timeMaxIso: string,
+    { calendarId: otherCalendar, timeoutMs }: { calendarId?: string; timeoutMs?: number } = {},
+): Promise<GoogleCalendarEvent[]> {
     const events: GoogleCalendarEvent[] = []
     let pageToken: string | undefined
     do {
         const response = await calendar.events.list({
-            calendarId: calendarId(),
+            calendarId: otherCalendar || calendarId(),
             timeMin: timeMinIso,
             timeMax: timeMaxIso,
             singleEvents: true,
             maxResults: 2500,
             pageToken,
-        })
+        }, timeoutMs ? { timeout: timeoutMs } : {})
         events.push(...(response.data.items ?? []))
         pageToken = response.data.nextPageToken ?? undefined
     } while (pageToken)
