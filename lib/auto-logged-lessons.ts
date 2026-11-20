@@ -2,6 +2,7 @@ import type { DbClient } from '@/lib/supabase/admin'
 import { isoToStudioWallClock, shiftDateStr, studioTzAbbr, studioWallClockToISO } from '@/lib/studio-timezone'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { appBaseUrl } from '@/lib/lesson-action-links'
+import { isClassroomVideoUrl } from '@/lib/classroom-video-url'
 
 /**
  * Lessons the portal logged by itself on a given studio day (Lionel's #793):
@@ -56,9 +57,8 @@ const LOOKBACK_DAYS = 10
 /** A log can come a little before the scheduled start (early lessons). */
 const EARLY_MS = 2 * 60 * 60 * 1000
 
-function classroomVideo(url: string | null | undefined): boolean {
-    return !!url && /r2\.dev|r2\.cloudflarestorage/i.test(url)
-}
+/** On R2 or, after 60 days, moved to its Dropbox copy (#1020). */
+const classroomVideo = isClassroomVideoUrl
 
 export function autoLogSource(completedSource: string | null, videoUrl: string | null): AutoLogSource | null {
     switch (completedSource) {

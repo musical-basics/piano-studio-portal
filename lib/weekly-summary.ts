@@ -4,6 +4,7 @@ import { shiftDateStr, studioToday, studioWallClockToISO, weekdayOfDateStr, STUD
 import { UNLOGGED_STATUSES, formatClock } from '@/lib/unlogged-lessons'
 import { isUntrackedTeacherAccount } from '@/lib/studio-policy'
 import { listClassroomRecordingsForAdmin, UUID_RE } from '@/lib/classroom-recordings'
+import { isClassroomVideoUrl } from '@/lib/classroom-video-url'
 import { formatWait, loadReplyTimes, type ReplyTimes } from '@/lib/reply-times'
 
 /**
@@ -129,7 +130,7 @@ export async function buildWeeklySummary(
     let logged = 0
     for (const l of lessons) {
         const url: string = l.video_url || ''
-        const classroomVideo = /r2\.dev|r2\.cloudflarestorage/i.test(url)
+        const classroomVideo = isClassroomVideoUrl(url)
         if (url) {
             if (classroomVideo) videos.classroom++
             else if (/dropbox/i.test(url)) videos.zoom++
