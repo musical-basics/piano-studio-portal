@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
 import { differenceInMinutes, addDays, format } from 'date-fns'
 import { dueNotice, neverNotified, NOTICE_FLAG_COLUMNS, type NoticeKey } from '@/lib/reminder-policy'
 import { resolveNotificationEmail } from '@/lib/notification-email'
@@ -14,6 +13,7 @@ import {
 import { STUDIO_TZ } from '@/lib/studio-timezone'
 import { formatLessonTimeForFamily } from '@/lib/family-time'
 import { familyLessonLinks } from '@/lib/lesson-venue'
+import { lessonReminderEmail, reminderDayLabel } from '@/lib/family-emails'
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,14 +32,6 @@ const LATE_THRESHOLD_MINUTES = 45
 // Delivering a notice a few minutes past its trigger point is just the cron's
 // resolution. Beyond this it was genuinely recovered from an outage.
 const RECOVERY_THRESHOLD_MINUTES = 90
-
-/** How to describe the lesson's timing, from the ACTUAL minutes remaining. */
-function describeWhen(diffMinutes: number, timeLabel: string, dayLabel: string) {
-    if (diffMinutes <= 25) return { phrase: 'about to begin', variant: '15m' as const }
-    if (diffMinutes <= 720) return { phrase: `today at ${timeLabel}`, variant: '12h' as const }
-    if (diffMinutes <= 1500) return { phrase: `tomorrow at ${timeLabel}`, variant: '24h' as const }
-    return { phrase: `on ${dayLabel} at ${timeLabel}`, variant: '48h' as const }
-}
 
 export const GET = withCronRun('reminders', handle)
 
@@ -136,9 +128,7 @@ async function handle(request: Request) {
             // What the family reads: "5:30pm EST (2:30pm your time)" when their own
             // zone is set and differs (Lionel's #729). timeLabel stays for the alerts.
             const familyTimeLabel = formatLessonTimeForFamily(lesson.date, lesson.time, lesson.profiles?.timezone)
-            const dayLabel = new Date(`${lesson.date}T00:00:00`).toLocaleDateString('en-US', {
-                weekday: 'long', month: 'long', day: 'numeric',
-            })
+            const dayLabel = reminderDayLabel(lesson.date)
             const who = lesson.profiles?.name || lesson.student_id
 
             // The one way a reminder can still be lost outright: the scheduler was
@@ -159,13 +149,17 @@ async function handle(request: Request) {
 
             // Wording follows the real time remaining, not the notice key: a
             // recovered 24h notice must not tell someone "see you tomorrow"
-            // about a lesson starting in an hour.
-            const { phrase, variant } = describeWhen(diffMinutes, familyTimeLabel, dayLabel)
-            const subject = diffMinutes <= 25
-                ? 'Lesson Starting Soon!'
-                : confirmNudge
-                    ? `Please confirm your lesson ${phrase}`
-                    : `Reminder: your lesson ${phrase}`
+            // about a lesson starting in an hour. Subject and body come from
+            // lib/family-emails.ts, shared with the /admin/emails samples page.
+            const email = lessonReminderEmail({
+                diffMinutes,
+                timeLabel: familyTimeLabel,
+                dayLabel,
+                studentName: lesson.profiles.name,
+                links,
+                confirmNudge,
+            })
+            const { variant } = email
 
             const recipientEmail = resolveNotificationEmail(lesson.profiles)
             if (!recipientEmail) {
@@ -181,21 +175,8 @@ async function handle(request: Request) {
             const { error: emailError } = await resend.emails.send({
                 from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                 to: recipientEmail,
-                subject,
-                react: LessonReminderEmail({
-                    studentName: lesson.profiles.name || 'Student',
-                    time: familyTimeLabel,
-                    zoomLink: links.zoomLink,
-                    classroomLink: links.classroomLink,
-                    venue: links.venue,
-                    variant,
-                    dayLabel,
-                    confirmNudge,
-                    // The imminent notice's own copy tells them to check audio
-                    // and click through, which is worth more than restating the
-                    // time. Everything else gets the accurate phrasing.
-                    whenPhrase: diffMinutes <= 25 ? undefined : phrase,
-                }),
+                subject: email.subject,
+                react: email.react,
             })
 
             if (!emailError) {

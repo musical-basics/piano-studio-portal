@@ -885,6 +885,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                                     Jobs
                                 </a>
                             </Button>
+                            <Button variant="outline" asChild><a href="/admin/emails" className="gap-2"><Mail className="h-4 w-4" />Emails</a></Button>
                             <Button variant="outline" asChild>
                                 <a href="/admin/reviews" className="gap-2">
                                     <Star className="h-4 w-4" />

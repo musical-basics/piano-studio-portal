@@ -6,6 +6,7 @@ import Stripe from 'stripe'
 import { Resend } from 'resend'
 import { recordBillingTransaction, consumeAccountCreditForCheckoutCore } from '@/lib/core/billing'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
+import { renewalReceiptEmail } from '@/lib/family-emails'
 import { PLAN_EVENT_TYPES, planEventFromStripe, processPlanEvent } from '@/lib/plan-payment-alerts'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -614,31 +615,13 @@ async function notifyRenewalSuccess({ studentName, studentEmail, creditsAdded, n
     // 2. Email to student (receipt)
     if (studentEmail) {
         try {
+            // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+            const receipt = renewalReceiptEmail({ studentName, creditsAdded, newTotal, amountPaid, date, appUrl })
             await resend.emails.send({
                 from: 'Piano Studio <notifications@updates.musicalbasics.com>',
                 to: studentEmail,
-                subject: `Your subscription renewed — ${creditsAdded} credits added!`,
-                html: `
-                    <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 20px;">
-                        <h2 style="font-size: 20px; margin: 0 0 16px; color: #1a1a1a;">
-                            Subscription Renewed 🎹
-                        </h2>
-                        <p style="font-size: 15px; color: #555; margin: 0 0 16px;">
-                            Hi ${studentName}, your subscription has renewed and your credits have been added!
-                        </p>
-                        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Amount Charged:</strong> $${amountPaid.toFixed(2)}</p>
-                            <p style="font-size: 15px; color: #555; margin: 0 0 8px;"><strong>Credits Added:</strong> ${creditsAdded}</p>
-                            <p style="font-size: 15px; color: #555; margin: 0;"><strong>Your Credit Balance:</strong> ${newTotal}</p>
-                        </div>
-                        <a href="${appUrl}/student" style="display: inline-block; background: #111; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                            Book a Lesson →
-                        </a>
-                        <p style="font-size: 12px; color: #888; margin-top: 24px;">
-                            Date: ${date} • This is a receipt for your subscription renewal.
-                        </p>
-                    </div>
-                `,
+                subject: receipt.subject,
+                html: receipt.html,
             })
             console.log(`[Webhook] Student renewal receipt sent to ${studentEmail}`)
         } catch (e) {

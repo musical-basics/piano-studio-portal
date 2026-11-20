@@ -401,19 +401,21 @@ export async function updateAssignmentNote(
             const resource = resourceRes.data
 
             if (student?.email && resource) {
-                const { AssignmentNoteEmail } = await import('@/components/emails/assignment-note-email')
+                // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                const { practiceInstructionsEmail } = await import('@/lib/family-emails')
+                const email = practiceInstructionsEmail({
+                    studentName: student.name || 'Student',
+                    resourceTitle: resource.title,
+                    notes: notes,
+                    teacherName: teacher?.name || 'Your Teacher',
+                    studioName: teacher?.studio_name || 'Lionel Yu Piano Studio'
+                })
 
                 await resend.emails.send({
                     from: `${teacher?.studio_name || 'Piano Studio'} <notifications@updates.musicalbasics.com>`,
                     to: resolveNotificationEmail(student) as string,
-                    subject: `New practice instructions: ${resource.title}`,
-                    react: AssignmentNoteEmail({
-                        studentName: student.name || 'Student',
-                        resourceTitle: resource.title,
-                        notes: notes,
-                        teacherName: teacher?.name || 'Your Teacher',
-                        studioName: teacher?.studio_name || 'Lionel Yu Piano Studio'
-                    })
+                    subject: email.subject,
+                    react: email.react,
                 })
                 console.log(`Assignment note email sent to ${student.email} for "${resource.title}"`)
             }

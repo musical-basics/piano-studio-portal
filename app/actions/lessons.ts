@@ -281,43 +281,22 @@ export async function logPastLesson(
     if (resend) {
         (async () => {
             try {
-                // Dynamic import to avoid client bundler issues
-                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
-
-                // Format date nicely
-                const dateObj = new Date(`${date}T00:00:00`)
-                const formattedDate = dateObj.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
+                // Dynamic import to avoid client bundler issues. Subject and body
+                // from lib/family-emails.ts (shared with /admin/emails).
+                const { lessonNotesEmail } = await import('@/lib/family-emails')
+                const email = lessonNotesEmail({
+                    date,
+                    time: formatLessonTimeForFamily(date, time, student.timezone),
+                    studentName: student.name,
+                    notes,
+                    sheetMusicUrl,
                 })
-
-                // Extract sheet music filename from URL
-                let sheetMusicFileName: string | undefined
-                if (sheetMusicUrl) {
-                    try {
-                        const url = new URL(sheetMusicUrl)
-                        const pathname = decodeURIComponent(url.pathname)
-                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
-                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
-                    } catch {
-                        sheetMusicFileName = 'Sheet Music.pdf'
-                    }
-                }
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: student.email,
-                    subject: `Lesson Notes: ${formattedDate}`,
-                    react: LessonLoggedEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDate,
-                        time: formatLessonTimeForFamily(date, time, student.timezone),
-                        notes: notes,
-                        sheetMusicUrl: sheetMusicUrl || undefined,
-                        sheetMusicFileName
-                    })
+                    subject: email.subject,
+                    react: email.react,
                 })
                 console.log('logPastLesson: Email sent to', student.email)
             } catch (emailError) {
@@ -590,44 +569,23 @@ export async function updateLesson(
                     return
                 }
 
-                // Dynamic import to avoid client bundler issues
-                const { LessonLoggedEmail } = await import('@/components/emails/lesson-logged-email')
-
-                // Format date
-                const dateObj = new Date(`${lesson.date}T00:00:00`)
-                const formattedDate = dateObj.toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric'
+                // Dynamic import to avoid client bundler issues. Subject and body
+                // from lib/family-emails.ts (shared with /admin/emails).
+                const { lessonNotesEmail } = await import('@/lib/family-emails')
+                const email = lessonNotesEmail({
+                    date: lesson.date,
+                    time: lesson.time ? formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone) : undefined,
+                    studentName: student.name,
+                    notes,
+                    sheetMusicUrl,
+                    updated: true,
                 })
-
-                // Extract sheet music filename from URL
-                let sheetMusicFileName: string | undefined
-                if (sheetMusicUrl) {
-                    try {
-                        const url = new URL(sheetMusicUrl)
-                        const pathname = decodeURIComponent(url.pathname)
-                        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
-                        // Remove timestamp prefix if present
-                        sheetMusicFileName = filename.replace(/^\d{10,}_/, '')
-                    } catch {
-                        sheetMusicFileName = 'Sheet Music.pdf'
-                    }
-                }
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: studentEmail,
-                    subject: `Lesson Notes Updated: ${formattedDate}`,
-                    react: LessonLoggedEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDate,
-                        time: lesson.time ? formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone) : undefined,
-                        notes: notes,
-                        sheetMusicUrl: sheetMusicUrl || undefined,
-                        sheetMusicFileName
-                    })
+                    subject: email.subject,
+                    react: email.react,
                 })
                 console.log('updateLesson: Email sent to', studentEmail)
             } catch (emailError) {

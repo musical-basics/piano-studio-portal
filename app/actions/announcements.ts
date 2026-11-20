@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { announcementEmail } from '@/lib/family-emails'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -162,20 +163,15 @@ export async function sendAnnouncement(
                 const studioName = adminProfile?.studio_name || 'Lionel Yu Piano Studio'
                 const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
 
+                // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                const email = announcementEmail({ subject, body, portalUrl })
                 const emailPayloads = students
                     .filter(s => s.email)
                     .map(s => ({
                         from: `${studioName} <notifications@updates.musicalbasics.com>`,
                         to: s.email,
-                        subject: `📢 ${subject}`,
-                        html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                            <h2 style="color: #333;">📢 ${subject}</h2>
-                            <p style="color: #555; white-space: pre-wrap; line-height: 1.6;">${body}</p>
-                            <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-                            <p style="color: #999; font-size: 14px;">
-                                View in your portal: <a href="${portalUrl}/student" style="color: #4f46e5;">Student Dashboard</a>
-                            </p>
-                        </div>`
+                        subject: email.subject,
+                        html: email.html
                     }))
 
                 console.log(`[Announcement] Sending ${emailPayloads.length} individual emails to:`, emailPayloads.map(e => e.to))

@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
-import LessonReminderEmail from '@/components/emails/LessonReminderEmail'
+import { describeTimeRemaining, manualReminderEmail } from '@/lib/family-emails'
 import { differenceInMinutes, format } from 'date-fns'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { STUDIO_TZ } from '@/lib/studio-timezone'
@@ -41,22 +41,7 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
 
     // Calculate total minutes difference
     const totalMinutes = differenceInMinutes(lessonDate, now)
-    const hours = Math.floor(totalMinutes / 60)
-    const mins = totalMinutes % 60
-
-    let durationString = ""
-    if (hours > 0) durationString += `${hours} hour${hours > 1 ? 's' : ''}`
-    if (hours > 0 && mins > 0) durationString += " and "
-    if (mins > 0) durationString += `${mins} minute${mins > 1 ? 's' : ''}`
-    if (totalMinutes <= 0) durationString = "just a few moments"
-
-    // 2. Prepare Email Subject based on variant
-    const subjects = {
-        '24h': 'Reminder: Piano Lesson Tomorrow',
-        '2h': 'Reminder: Lesson starts in 2 hours',
-        '15m': 'Join Now: Piano Lesson Starting!',
-        'exact': `Lesson coming up in exactly ${durationString}`
-    }
+    const durationString = describeTimeRemaining(totalMinutes)
 
     try {
         // 3. Send Email
@@ -81,20 +66,21 @@ export async function sendManualReminder(lessonId: string, variant: '24h' | '2h'
         // A classroom student (#980) gets the classroom link instead of Zoom.
         const links = familyLessonLinks(lesson.student, lesson.zoom_link || lesson.student.zoom_link) // Fallback to student's default link
 
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const email = manualReminderEmail({
+            variant,
+            durationString,
+            studentName: lesson.student.name,
+            // "5:30pm EST (2:30pm your time)" when the family's zone is set (Lionel's #729).
+            timeLabel: formatLessonTimeForFamily(lesson.date, lesson.time, lesson.student.timezone),
+            links,
+        })
+
         const { data: emailData, error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: resolveNotificationEmail(lesson.student) as string,
-            subject: subjects[variant],
-            react: LessonReminderEmail({
-                studentName: lesson.student.name,
-                // "5:30pm EST (2:30pm your time)" when the family's zone is set (Lionel's #729).
-                time: formatLessonTimeForFamily(lesson.date, lesson.time, lesson.student.timezone),
-                zoomLink: links.zoomLink,
-                classroomLink: links.classroomLink,
-                venue: links.venue,
-                variant: variant === 'exact' ? 'exact' : variant,
-                exactDuration: durationString
-            })
+            subject: email.subject,
+            react: email.react,
         })
 
         if (emailError) {

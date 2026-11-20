@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { Resend } from "resend"
 import { revalidatePath } from "next/cache"
 import { getInquiryAdmin, sendInquiryReplyCore } from "@/lib/core/inquiries"
+import { auditionAccountEmail } from "@/lib/family-emails"
 import type { Inquiry, InquiryMessage } from "@/types/admin"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -258,24 +259,13 @@ export async function approveProspect(leadId: string) {
     // Email the prospect their login details.
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.musicalbasics.com'}/login`
     try {
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const welcome = auditionAccountEmail({ fullName: lead.full_name, email: lead.email, loginUrl, tempPassword })
         await resend.emails.send({
             from: 'Lionel Yu Piano Studio <system@updates.musicalbasics.com>',
             to: lead.email,
-            subject: 'Your audition account is ready',
-            html: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Welcome, ${lead.full_name}!</h2>
-                    <p>Thanks for your interest in lessons. I've set up an account for you so you can prepare for your audition.</p>
-                    <p>Sign in to view the camera and Zoom setup instructions, see your audition meeting time, and message me directly.</p>
-                    <div style="background-color: #f4f4f4; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <p><strong>Login:</strong> <a href="${loginUrl}">${loginUrl}</a></p>
-                        <p><strong>Email:</strong> ${lead.email}</p>
-                        <p><strong>Temporary password:</strong> ${tempPassword}</p>
-                    </div>
-                    <p>Please change your password after signing in for the first time.</p>
-                    <p>See you soon,<br/>Lionel</p>
-                </div>
-            `
+            subject: welcome.subject,
+            html: welcome.html
         })
     } catch (emailError) {
         console.error('Prospect welcome email error:', emailError)

@@ -5,10 +5,8 @@ import { studioNow, studioToday, studioTzAbbr, studioWallClockToISO } from '@/li
 import { formatLessonTimeForFamily } from '@/lib/family-time'
 import { familyLessonLinks } from '@/lib/lesson-venue'
 import { LessonScheduledEmail } from '@/components/emails/lesson-scheduled-email'
-import { LessonCanceledEmail } from '@/components/emails/lesson-canceled-email'
 import { LessonCanceledAdminEmail } from '@/components/emails/lesson-canceled-admin-email'
-import { LessonRescheduledEmail } from '@/components/emails/lesson-rescheduled-email'
-import { LessonLoggedEmail } from '@/components/emails/lesson-logged-email'
+import { lessonCanceledEmail, lessonDateLong, lessonNotesEmail, lessonRescheduledEmail, lessonScheduledEmail } from '@/lib/family-emails'
 import { createGoogleCalendarEvent, deleteGoogleCalendarEvent, updateGoogleCalendarEvent } from '@/lib/google-calendar'
 import { createAdminClient, type DbClient } from '@/lib/supabase/admin'
 import { sendMessageCore } from '@/lib/core/messages'
@@ -21,13 +19,8 @@ import { actorForCompletedSource, recordLessonEvent, type LessonEventContext } f
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
-function formatDateLong(date: string) {
-    return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-    })
-}
+/** "December 3, 2026": shared with the family emails (lib/family-emails.ts). */
+const formatDateLong = lessonDateLong
 
 /** "4:45pm EST": a stored studio time with the zone label for that date. */
 function formatStudioTime(time: string, date?: string) {
@@ -36,28 +29,6 @@ function formatStudioTime(time: string, date?: string) {
     const ap = hn >= 12 ? 'pm' : 'am'
     const h12 = hn % 12 || 12
     return `${h12}:${m}${ap} ${studioTzAbbr(date)}`
-}
-
-function formatDateWithWeekday(date: string) {
-    return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-    })
-}
-
-function sheetMusicFileName(sheetMusicUrl?: string | null) {
-    if (!sheetMusicUrl) return undefined
-
-    try {
-        const url = new URL(sheetMusicUrl)
-        const pathname = decodeURIComponent(url.pathname)
-        const filename = pathname.split('/').pop() || 'Sheet Music.pdf'
-        return filename.replace(/^\d{10,}_/, '')
-    } catch {
-        return 'Sheet Music.pdf'
-    }
 }
 
 async function sendAutoScheduledLessonEmail({
@@ -109,21 +80,21 @@ async function sendAutoScheduledLessonEmail({
         const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
         // A classroom student (#980) is given the classroom link instead of Zoom.
         const links = familyLessonLinks(student, zoomLink)
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const familyEmail = lessonScheduledEmail({
+            studentName: student.name,
+            date: formattedDate,
+            time: familyTime,
+            duration,
+            links,
+            studioName,
+        })
 
         await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: studentEmail,
-            subject: `Lesson Scheduled for ${student.name} on ${formattedDate} at ${familyTime}`,
-            react: LessonScheduledEmail({
-                studentName: student.name || 'Student',
-                date: formattedDate,
-                time: familyTime,
-                duration,
-                zoomLink: links.zoomLink,
-                classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
-                recipientName: student.name || 'Student',
-                studioName,
-            }),
+            subject: familyEmail.subject,
+            react: familyEmail.react,
         })
 
         if (adminData?.email) {
@@ -179,20 +150,20 @@ async function sendLessonLoggedEmail({
             return
         }
 
-        const formattedDate = formatDateWithWeekday(date)
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const email = lessonNotesEmail({
+            date,
+            time: time ? formatLessonTimeForFamily(date, time, student.timezone) : undefined,
+            studentName: student.name,
+            notes,
+            sheetMusicUrl,
+        })
 
         await resend.emails.send({
             from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
             to: studentEmail,
-            subject: `Lesson Notes: ${formattedDate}`,
-            react: LessonLoggedEmail({
-                studentName: student.name || 'Student',
-                date: formattedDate,
-                time: time ? formatLessonTimeForFamily(date, time, student.timezone) : undefined,
-                notes,
-                sheetMusicUrl: sheetMusicUrl || undefined,
-                sheetMusicFileName: sheetMusicFileName(sheetMusicUrl),
-            }),
+            subject: email.subject,
+            react: email.react,
         })
     } catch (emailError) {
         console.error('sendLessonLoggedEmail failed (non-blocking):', emailError)
@@ -827,21 +798,21 @@ export async function scheduleLessonCore({
             const familyTime = formatLessonTimeForFamily(date, time, student.timezone)
             // A classroom student (#980) is given the classroom link instead of Zoom.
             const links = familyLessonLinks(student, zoomLink)
+            // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+            const familyEmail = lessonScheduledEmail({
+                studentName: student.name,
+                date: formattedDate,
+                time: familyTime,
+                duration,
+                links,
+                studioName,
+            })
 
             await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
                 to: scheduledStudentEmail,
-                subject: `Lesson Scheduled for ${student.name} on ${formattedDate} at ${familyTime}`,
-                react: LessonScheduledEmail({
-                    studentName: student.name || 'Student',
-                    date: formattedDate,
-                    time: familyTime,
-                    duration,
-                    zoomLink: links.zoomLink,
-                    classroomLink: links.venue === 'classroom' ? links.classroomLink : null,
-                    recipientName: student.name || 'Student',
-                    studioName,
-                }),
+                subject: familyEmail.subject,
+                react: familyEmail.react,
             })
 
             if (adminProfile?.email) {
@@ -1101,21 +1072,22 @@ export async function rescheduleLessonCore({
                 const oldTimeStr = formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone)
                 const newDateStr = formatDateLong(newDate)
                 const newTimeStr = formatLessonTimeForFamily(newDate, newTime, student.timezone)
+                // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                const email = lessonRescheduledEmail({
+                    studentName: student.name,
+                    oldDate: oldDateStr,
+                    oldTime: oldTimeStr,
+                    newDate: newDateStr,
+                    newTime: newTimeStr,
+                    newDuration,
+                    studioName,
+                })
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
                     to: studentEmail,
-                    subject: `Lesson Rescheduled: ${newDateStr} at ${newTimeStr}`,
-                    react: LessonRescheduledEmail({
-                        studentName: student.name || 'Student',
-                        oldDate: oldDateStr,
-                        oldTime: oldTimeStr,
-                        newDate: newDateStr,
-                        newTime: newTimeStr,
-                        newDuration,
-                        recipientName: student.name || 'Student',
-                        studioName,
-                    }),
+                    subject: email.subject,
+                    react: email.react,
                 })
             }
         } catch (emailError) {
@@ -1235,18 +1207,19 @@ export async function cancelLessonCore({ client, actorId, actorRole, lessonId, n
                 const formattedDate = formatDateLong(lesson.date)
                 // The family's own clock too (#929): "5:30pm EST (2:30pm your time)".
                 const formattedTime = formatLessonTimeForFamily(lesson.date, lesson.time, student.timezone)
+                // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                const email = lessonCanceledEmail({
+                    studentName: student.name,
+                    date: formattedDate,
+                    time: formattedTime,
+                    studioName,
+                })
 
                 await resend.emails.send({
                     from: `${studioName} <notifications@updates.musicalbasics.com>`,
                     to: studentEmail,
-                    subject: `Lesson Canceled: ${formattedDate} at ${formattedTime}`,
-                    react: LessonCanceledEmail({
-                        studentName: student.name || 'Student',
-                        date: formattedDate,
-                        time: formattedTime,
-                        recipientName: student.name || 'Student',
-                        studioName,
-                    }),
+                    subject: email.subject,
+                    react: email.react,
                 })
             }
         } catch (emailError) {

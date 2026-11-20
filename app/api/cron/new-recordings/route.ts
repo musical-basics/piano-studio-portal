@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Dropbox } from 'dropbox'
 import { Resend } from 'resend'
-import NewRecordingEmail from '@/components/emails/new-recording-email'
-import { formatRecordingName } from '@/lib/format-recording-name'
+import { newRecordingsEmail } from '@/lib/family-emails'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { withCronRun } from '@/lib/cron-runs'
@@ -120,32 +119,21 @@ async function handle(request: Request) {
                 `[Cron/new-recordings] ${newFiles.length} new file(s) for ${student.name} — sending email to ${student.email}`
             )
 
-            // Format file info for email
-            const formattedFiles = newFiles.map((f: any) => {
-                const formattedName = formatRecordingName(f.name)
-                const date = new Date(f.client_modified).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                })
-                return { name: f.name, formattedName, date }
+            // Subject and body (file names and dates too) from
+            // lib/family-emails.ts, shared with /admin/emails.
+            const email = newRecordingsEmail({
+                studentName: student.name || 'Student',
+                files: newFiles,
+                dashboardUrl,
+                studioName,
             })
 
             // Send email
             const { error: emailError } = await resend.emails.send({
                 from: `${studioName} <notifications@updates.musicalbasics.com>`,
                 to: resolveNotificationEmail(student) as string,
-                subject:
-                    newFiles.length === 1
-                        ? 'New lesson recording available 🎹'
-                        : `${newFiles.length} new lesson recordings available 🎹`,
-                react: NewRecordingEmail({
-                    studentName: student.name || 'Student',
-                    newFiles: formattedFiles,
-                    dashboardUrl,
-                    studioName,
-                }),
+                subject: email.subject,
+                react: email.react,
             })
 
             if (emailError) {

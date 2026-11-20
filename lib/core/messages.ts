@@ -1,6 +1,6 @@
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
-import { MessageNotification } from '@/components/emails/message-notification'
+import { messageNotificationEmail } from '@/lib/family-emails'
 import type { DbClient } from '@/lib/supabase/admin'
 import type { Message, MessageAttachment, MessageReplyContext } from '@/lib/supabase/database.types'
 import { isReactionEmoji, REACTION_EMOJIS } from '@/lib/chat-reactions'
@@ -107,18 +107,20 @@ export async function sendMessageCore({
                 // They need the whole message for that, not a teaser.
                 const isFamily = recipientProfile?.role === 'student' || recipientProfile?.role === 'prospect'
                 const replyTo = isFamily ? replyAddressForStudent(recipientId) : null
+                // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+                const email = messageNotificationEmail({
+                    senderName: finalSenderName,
+                    content,
+                    recipientName: recipientProfile.name || 'Student',
+                    canReplyByEmail: Boolean(replyTo),
+                })
 
                 await resend.emails.send({
                     from: 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>',
                     to: recipientEmail,
                     ...(replyTo ? { replyTo } : {}),
-                    subject: `New message from ${finalSenderName}`,
-                    react: MessageNotification({
-                        senderName: finalSenderName,
-                        messageContent: replyTo || content.length <= 200 ? content : content.substring(0, 200) + '...',
-                        recipientName: recipientProfile.name || 'Student',
-                        canReplyByEmail: Boolean(replyTo),
-                    }),
+                    subject: email.subject,
+                    react: email.react,
                 })
             } catch (emailError) {
                 console.error('sendMessageCore email failed (non-blocking):', emailError)

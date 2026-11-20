@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import RecordingReadyEmail from '@/components/emails/recording-ready-email'
+import { recordingReadyEmail } from '@/lib/family-emails'
 import { resolveNotificationEmail } from '@/lib/notification-email'
 import type { DbClient } from '@/lib/supabase/admin'
 
@@ -39,27 +39,20 @@ export async function notifyRecordingReady(
         const studioName = (admin?.studio_name as string) || 'Lionel Yu Piano Studio'
         const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'}/student`
 
-        const formattedDate = lessonDate
-            ? new Date(`${lessonDate}T12:00:00Z`).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                  timeZone: 'UTC',
-              })
-            : undefined
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const email = recordingReadyEmail({
+            studentName: (student.name as string) || 'Student',
+            lessonDate,
+            dashboardUrl,
+            studioName,
+        })
 
         const { error: emailError } = await resend.emails.send({
             from: `${studioName} <notifications@updates.musicalbasics.com>`,
             to: studentEmail,
             ...(admin?.email ? { replyTo: admin.email as string } : {}),
-            subject: 'Your lesson recording is ready 🎹',
-            react: RecordingReadyEmail({
-                studentName: (student.name as string) || 'Student',
-                lessonDate: formattedDate,
-                dashboardUrl,
-                studioName,
-            }),
+            subject: email.subject,
+            react: email.react,
         })
 
         if (emailError) {

@@ -1,6 +1,7 @@
 import type { Resend } from 'resend'
 import type { DbClient } from '@/lib/supabase/admin'
 import type { InquiryMessage } from '@/types/admin'
+import { inquiryReplyEmail } from '@/lib/family-emails'
 
 export async function getInquiryAdmin(client: DbClient) {
     const { data: { user }, error } = await client.auth.getUser()
@@ -56,12 +57,14 @@ export async function sendInquiryReplyCore({ client, emails, inquiryId, content,
     }
 
     try {
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const reply = inquiryReplyEmail(body)
         const { data, error } = await emails.send({
             from: 'Lionel Yu <system@updates.musicalbasics.com>',
             to: lead.email,
             replyTo: auth.admin.email,
-            subject: 'Re: Piano Lesson Inquiry',
-            text: body,
+            subject: reply.subject,
+            text: reply.text,
         }, { idempotencyKey: `inquiry-reply/${inquiryId}/${requestId}` })
         if (error || !data) {
             console.error('Inquiry reply email rejected:', error)

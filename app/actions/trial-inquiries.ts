@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { Resend } from "resend"
-import { TrialInquiryAutoResponse } from "@/components/emails/trial-inquiry-autoresponse"
+import { trialRequestReplyEmail } from "@/lib/family-emails"
 import { MIN_STUDENT_AGE } from "@/lib/studio-policy"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -119,12 +119,14 @@ export async function submitTrialInquiry(input: TrialInquiryInput) {
         })
 
         const firstName = name.split(" ")[0] || name
+        // Subject and body from lib/family-emails.ts (shared with /admin/emails).
+        const reply = trialRequestReplyEmail({ firstName, studioName })
         await resend.emails.send({
             from: `Lionel Yu <system@updates.musicalbasics.com>`,
             to: email,
             replyTo: adminEmail,
-            subject: "Got it. I'll be in touch within 48 hours.",
-            react: TrialInquiryAutoResponse({ firstName, studioName }),
+            subject: reply.subject,
+            react: reply.react,
         })
 
         return { success: true }
