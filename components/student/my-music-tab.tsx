@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { getMyMusic } from "@/app/actions/my-music"
 import { downloadAttachment } from "@/lib/download-attachment"
 import type { MusicPiece, MusicSource, OtherFile } from "@/lib/my-music"
+import { trackRollout } from "@/lib/rollout-track"
 
 /** A search box only helps once the list is long. */
 const SEARCH_FROM = 7
@@ -30,6 +31,7 @@ function FileActions({ url, fileName, title }: { url: string; fileName: string; 
     const [saving, setSaving] = useState(false)
     const save = async () => {
         setSaving(true)
+        trackRollout("my_music", "downloaded")
         try {
             await downloadAttachment(url, fileName)
         } finally {
@@ -39,7 +41,7 @@ function FileActions({ url, fileName, title }: { url: string; fileName: string; 
     return (
         <div className="flex gap-2 shrink-0">
             <Button variant="outline" size="sm" asChild>
-                <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${title}`}>
+                <a href={url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${title}`} onClick={() => trackRollout("my_music", "opened")}>
                     <ExternalLink className="h-4 w-4 mr-1.5" />
                     Open
                 </a>
@@ -183,7 +185,11 @@ export function MyMusicTab({ teacherName = "Your teacher" }: { teacherName?: str
                             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                             <Input
                                 value={query}
-                                onChange={(e) => setQuery(e.target.value)}
+                                onChange={(e) => {
+                                    setQuery(e.target.value)
+                                    // One "searched" per visit: typing is many keystrokes, one use.
+                                    if (e.target.value.trim()) trackRollout("my_music", "searched", { once: true })
+                                }}
                                 placeholder="Find a piece"
                                 aria-label="Find a piece"
                                 className="pl-9"

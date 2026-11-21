@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server"
 import { StudentDashboard } from "@/components/student/student-dashboard"
 import { getStudentEvents } from "@/app/actions/events"
 import { getLatestAnnouncement } from "@/app/actions/announcements"
+import { getStudentResources, type Resource } from "@/app/actions/resources"
+import { rolloutFlags } from "@/lib/rollouts-server"
 import { getImpersonationTarget } from "@/app/actions/impersonate"
 import { ImpersonationBanner } from "@/components/admin/impersonation-banner"
 import { buildLessonHistory, type LessonAttendance } from "@/lib/lesson-history"
@@ -37,6 +39,11 @@ export default async function StudentPage({
 
   // The effective user ID: impersonated student (if admin is previewing) or the real user
   const effectiveUserId = impersonatingId ?? user.id
+
+  // Protocol 1.20 rollouts (lib/rollouts.ts): which version of each big new
+  // family feature this student sees. Half the families get the new one, by a
+  // stable hash; an admin preview always shows the new one.
+  const rollouts = await rolloutFlags(effectiveUserId, { preview: Boolean(impersonatingId) })
 
   // Fetch profile data (the student's profile, or the admin's own if not impersonating)
   const { data: profile, error: profileError } = await supabase
@@ -100,7 +107,10 @@ export default async function StudentPage({
     lessonIds.length
       ? admin.from("zoom_lesson_attendance").select("lesson_id, kind, student_seconds").in("lesson_id", lessonIds)
       : Promise.resolve({ data: [] as any[] }),
-    admin.from("lesson_transcripts").select("lesson_id").eq("student_id", effectiveUserId).not("lesson_id", "is", null),
+    // Transcripts only for the half in that rollout; the other half sees History without them.
+    rollouts.history_transcripts
+      ? admin.from("lesson_transcripts").select("lesson_id").eq("student_id", effectiveUserId).not("lesson_id", "is", null)
+      : Promise.resolve({ data: [] as any[] }),
   ])
   const attendance: Record<string, LessonAttendance> = {}
   for (const a of attendanceRows || []) attendance[a.lesson_id] = { kind: a.kind ?? null, studentSeconds: a.student_seconds ?? null }
@@ -175,8 +185,13 @@ export default async function StudentPage({
     .is("deleted_at", null)
 
   // Fetch events scoped to the effective user. Library files load in the My
-  // music tab when it opens (#1083).
+  // music tab when it opens (#1083); the half still on the old Downloads tab
+  // gets its assigned files here, as before.
   const { upcoming: upcomingEvents } = await getStudentEvents()
+  let resources: Resource[] = []
+  if (!rollouts.my_music) {
+    resources = (await getStudentResources()).resources
+  }
   const latestAnnouncement = await getLatestAnnouncement(effectiveUserId)
 
   return (
@@ -202,6 +217,8 @@ export default async function StudentPage({
         moveStates={moveStates}
         isAdminPreview={Boolean(impersonatingId)}
         initialTab={initialTab}
+        rollouts={rollouts}
+        resources={resources}
       />
     </>
   )

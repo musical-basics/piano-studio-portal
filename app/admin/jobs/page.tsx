@@ -9,6 +9,8 @@ import { formatStudioTime } from "@/lib/backup-watchdog"
 import { GROUP_TITLES, loadScheduledJobs, type JobGroup, type JobStatus, type JobView } from "@/lib/scheduled-jobs"
 import { RunMarks } from "./run-marks"
 import { RunNow } from "./run-now"
+import { TestsCard } from "./tests-card"
+import { loadRolloutReport, type RolloutReport } from "@/lib/core/tests-report"
 
 export const dynamic = "force-dynamic"
 // "Run now" (#1076) runs a job inside this page's server action: give it the
@@ -115,13 +117,17 @@ export default async function ScheduledJobsPage() {
     if (profile?.role !== "admin") redirect("/student")
 
     const now = new Date()
-    let jobs: JobView[] = []
-    let loadError: string | null = null
-    try {
-        jobs = await loadScheduledJobs(createAdminClient(), now)
-    } catch (e) {
-        loadError = e instanceof Error ? e.message : String(e)
-    }
+    const admin = createAdminClient()
+    const [jobsRead, testsRead] = await Promise.allSettled([
+        loadScheduledJobs(admin, now),
+        // Protocol 1.20 tests: rollouts of family portal changes (lib/core/tests-report.ts).
+        loadRolloutReport(admin),
+    ])
+    const why = (r: PromiseRejectedResult) => (r.reason instanceof Error ? r.reason.message : String(r.reason))
+    const jobs: JobView[] = jobsRead.status === "fulfilled" ? jobsRead.value : []
+    const loadError: string | null = jobsRead.status === "rejected" ? why(jobsRead) : null
+    const tests: RolloutReport | null = testsRead.status === "fulfilled" ? testsRead.value : null
+    const testsError: string | null = testsRead.status === "rejected" ? why(testsRead) : null
 
     const groups = (Object.keys(GROUP_TITLES) as JobGroup[])
         .map(group => ({ group, jobs: jobs.filter(j => j.group === group) }))
@@ -148,6 +154,12 @@ export default async function ScheduledJobsPage() {
                 keeps its quiet runs once an hour). Run now starts a job straight
                 away; one that can email families asks first.
             </p>
+
+            {tests ? (
+                <TestsCard report={tests} />
+            ) : (
+                <p className="text-sm text-red-700 dark:text-red-400">Couldn&apos;t load the Tests card: {testsError}</p>
+            )}
 
             {loadError ? (
                 <Card>

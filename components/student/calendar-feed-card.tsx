@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { getMyCalendarFeed, resetMyCalendarFeed, type CalendarFeedLinks } from "@/app/actions/calendar-feed"
+import { trackRollout } from "@/lib/rollout-track"
 
 export function CalendarFeedCard({ isPreview = false }: { isPreview?: boolean }) {
     const { toast } = useToast()
@@ -23,6 +24,7 @@ export function CalendarFeedCard({ isPreview = false }: { isPreview?: boolean })
     const [resetting, setResetting] = useState(false)
 
     const open = async () => {
+        trackRollout("calendar_feed", "set_up")
         setLoading(true)
         const res = await getMyCalendarFeed()
         setLoading(false)
@@ -35,6 +37,7 @@ export function CalendarFeedCard({ isPreview = false }: { isPreview?: boolean })
 
     const copy = async () => {
         if (!links) return
+        trackRollout("calendar_feed", "copied")
         try {
             await navigator.clipboard.writeText(links.feedUrl)
             toast({ title: "Link copied", description: "Paste it into your calendar app's \"subscribe\" or \"from URL\" option." })
@@ -46,6 +49,7 @@ export function CalendarFeedCard({ isPreview = false }: { isPreview?: boolean })
     }
 
     const reset = async () => {
+        trackRollout("calendar_feed", "reset")
         setResetting(true)
         const res = await resetMyCalendarFeed()
         setResetting(false)
@@ -86,10 +90,10 @@ export function CalendarFeedCard({ isPreview = false }: { isPreview?: boolean })
                     <div className="space-y-3" data-testid="calendar-feed-links">
                         <div className="flex flex-wrap gap-2">
                             <Button size="sm" asChild>
-                                <a href={links.webcalUrl}>iPhone, iPad or Mac</a>
+                                <a href={links.webcalUrl} onClick={() => trackRollout("calendar_feed", "apple")}>iPhone, iPad or Mac</a>
                             </Button>
                             <Button size="sm" variant="outline" asChild>
-                                <a href={links.googleUrl} target="_blank" rel="noopener noreferrer">Google Calendar</a>
+                                <a href={links.googleUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackRollout("calendar_feed", "google")}>Google Calendar</a>
                             </Button>
                             <Button size="sm" variant="outline" onClick={copy}>
                                 <Copy className="h-3.5 w-3.5 mr-1.5" />

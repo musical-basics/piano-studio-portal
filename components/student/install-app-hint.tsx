@@ -16,6 +16,7 @@ import { useEffect, useState } from "react"
 import { Share, Smartphone, X } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { trackRollout } from "@/lib/rollout-track"
 
 const DISMISSED_KEY = "studio-install-hint-dismissed"
 
@@ -77,6 +78,7 @@ export function InstallAppHint() {
         if (!p || runningInstalled() || wasDismissed()) return
         setPlatform(p)
         setVisible(true)
+        trackRollout("install_tip", "shown", { once: true, idle: true })
         if (stashedPrompt) setInstallEvent(stashedPrompt)
 
         const onInstalled = () => setVisible(false)
@@ -90,6 +92,7 @@ export function InstallAppHint() {
 
     const dismiss = () => {
         setVisible(false)
+        trackRollout("install_tip", "dismissed")
         try {
             window.localStorage.setItem(DISMISSED_KEY, "1")
         } catch {
@@ -99,6 +102,7 @@ export function InstallAppHint() {
 
     const install = async () => {
         if (!installEvent) return
+        trackRollout("install_tip", "install_tapped")
         try {
             await installEvent.prompt()
             const choice = await installEvent.userChoice

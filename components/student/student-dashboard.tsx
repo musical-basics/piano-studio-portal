@@ -46,7 +46,11 @@ import { LATE_CANCEL_WINDOW_HOURS } from "@/lib/billing-policy"
 import { RecordingConsentDialog } from "./recording-consent-dialog"
 import { PracticeTab } from "./practice-tab"
 import { MyMusicTab } from "./my-music-tab"
-import { FileMusic } from "lucide-react"
+import { DownloadsTab } from "./downloads-tab"
+import type { Resource } from "@/app/actions/resources"
+import { ALL_NEW, type RolloutFlags } from "@/lib/rollouts"
+import { trackRollout } from "@/lib/rollout-track"
+import { FileMusic, FileText } from "lucide-react"
 import { CancellationModal } from "./cancellation-modal"
 import { MoveRequestDialog, MoveRequestStatus } from "./move-request"
 import type { FamilyMoveState } from "@/lib/core/move-requests"
@@ -130,9 +134,16 @@ export interface StudentDashboardProps {
     isAdminPreview?: boolean
     /** The tab to open on, from ?tab= ("history" #936, "music" #1083). */
     initialTab?: "history" | "music"
+    /**
+     * Protocol 1.20 rollouts (lib/rollouts.ts): true = this family sees the new
+     * version of that feature, false = the old one. Left out: all new.
+     */
+    rollouts?: RolloutFlags
+    /** Assigned library files, for the old Downloads tab (families not in the My music rollout). */
+    resources?: Resource[]
 }
 
-export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab }: StudentDashboardProps) {
+export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studioName = "Piano Studio", teacherName, events = [], latestAnnouncement, unreadCount = 0, history, markersByLesson = {}, homeworkTicks = [], movableLessons = [], moveStates = {}, isAdminPreview = false, initialTab, rollouts = ALL_NEW, resources = [] }: StudentDashboardProps) {
     const { toast } = useToast()
 
     // Classroom link. A classroom student (#980, profiles.lesson_venue) gets it
@@ -156,7 +167,9 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
     // Real unread count, seeded from the server render. The badge used to be
     // hardcoded to 1, so the portal claimed a new message forever.
-    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : initialTab === "music" ? "music" : "lessons")
+    // The My music link (?tab=music) opens the old Downloads tab for the half still on it.
+    const musicTab = rollouts.my_music ? "music" : "downloads"
+    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : initialTab === "music" ? musicTab : "lessons")
     const [unreadMessages, setUnreadMessages] = useState(unreadCount)
 
     // Subscription state drives the renewal banner. `undefined` means "not looked
@@ -197,11 +210,32 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
         setUnreadMessages(unreadCount)
     }, [unreadCount])
 
+    // Protocol 1.20 usage record (lib/rollout-track.ts): opening the My music
+    // (or old Downloads) tab and the History tab, once per visit. Never waits.
+    const trackTab = (tab: string) => {
+        if (tab === "music" || tab === "downloads") trackRollout("my_music", "tab_opened", { once: true, idle: true })
+        else if (tab === "history") trackRollout("history_transcripts", "history_opened", { once: true, idle: true })
+    }
+    const changeTab = (tab: string) => {
+        setActiveTab(tab)
+        trackTab(tab)
+    }
+
     // Opened from the monthly statement's "History tab" link (?tab=history):
     // the tabs sit below the balance cards, so bring them into view once.
     useEffect(() => {
         if (initialTab === "history" && history) {
             document.getElementById("student-tabs")?.scrollIntoView({ block: "start" })
+        }
+        trackTab(activeTab)
+        // The portal opened from a phone's home screen (#1081): counted in both
+        // halves of the home-screen tip test, since the icon works for everyone.
+        try {
+            if (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true) {
+                trackRollout("install_tip", "home_screen_visit", { once: true, idle: true })
+            }
+        } catch {
+            // no display-mode support: nothing to count
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
@@ -572,8 +606,8 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
 
             <main className="container mx-auto px-4 py-8 space-y-8">
 
-                {/* #1081: home-screen tip, phones only */}
-                {!isAdminPreview && <InstallAppHint />}
+                {/* #1081: home-screen tip, phones only (half the families, protocol 1.20) */}
+                {!isAdminPreview && rollouts.install_tip && <InstallAppHint />}
 
                 {/* Confirmation Banner */}
                 {nextLesson?.id && !confirmationStatus && (
@@ -854,8 +888,8 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                     </CardContent>
                 </Card>
 
-                {/* #1082: private calendar feed of this family's lessons */}
-                <CalendarFeedCard isPreview={isAdminPreview} />
+                {/* #1082: private calendar feed of this family's lessons (half the families, protocol 1.20) */}
+                {rollouts.calendar_feed && <CalendarFeedCard isPreview={isAdminPreview} />}
 
                 {/* Upcoming Events (recitals etc.): visible to every invited student,
                     with a clear confirmed/unconfirmed attendance state */}
@@ -993,7 +1027,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                 <div className="grid lg:grid-cols-3 gap-8">
                     {/* My Library */}
                     <div className="lg:col-span-2 space-y-6">
-                        <Tabs id="student-tabs" value={activeTab} onValueChange={setActiveTab} className="w-full scroll-mt-4">
+                        <Tabs id="student-tabs" value={activeTab} onValueChange={changeTab} className="w-full scroll-mt-4">
                             <TabsList className={`grid w-full ${history ? "grid-cols-7" : "grid-cols-6"} mb-6`}>
                                 <TabsTrigger value="lessons" className="gap-2">
                                     <Music className="h-4 w-4" />
@@ -1013,10 +1047,17 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                     <Video className="h-4 w-4" />
                                     <span className="hidden sm:inline">Practice</span>
                                 </TabsTrigger>
-                                <TabsTrigger value="music" className="gap-2">
-                                    <FileMusic className="h-4 w-4" />
-                                    <span className="hidden sm:inline">My music</span>
-                                </TabsTrigger>
+                                {rollouts.my_music ? (
+                                    <TabsTrigger value="music" className="gap-2">
+                                        <FileMusic className="h-4 w-4" />
+                                        <span className="hidden sm:inline">My music</span>
+                                    </TabsTrigger>
+                                ) : (
+                                    <TabsTrigger value="downloads" className="gap-2">
+                                        <FileText className="h-4 w-4" />
+                                        <span className="hidden sm:inline">Downloads</span>
+                                    </TabsTrigger>
+                                )}
                                 <TabsTrigger value="tutorials" className="gap-2">
                                     <PlayCircle className="h-4 w-4" />
                                     <span className="hidden sm:inline">Tutorials</span>
@@ -1278,10 +1319,17 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
                                 {activeTab === "practice" && <PracticeTab />}
                             </TabsContent>
 
-                            {/* #1083: every piece of sheet music sent to the family (replaced Downloads) */}
-                            <TabsContent value="music" className="space-y-4">
-                                {activeTab === "music" && <MyMusicTab teacherName={teacherName} />}
-                            </TabsContent>
+                            {/* #1083: every piece of sheet music sent to the family. Half the
+                                families (protocol 1.20); the other half keep the old Downloads tab. */}
+                            {rollouts.my_music ? (
+                                <TabsContent value="music" className="space-y-4">
+                                    {activeTab === "music" && <MyMusicTab teacherName={teacherName} />}
+                                </TabsContent>
+                            ) : (
+                                <TabsContent value="downloads" className="space-y-4">
+                                    <DownloadsTab resources={resources} onDownload={() => trackRollout("my_music", "downloaded")} />
+                                </TabsContent>
+                            )}
 
                             <TabsContent value="tutorials" className="space-y-4">
                                 <div className="flex items-center justify-between mb-4">

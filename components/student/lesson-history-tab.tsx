@@ -11,6 +11,7 @@ import type { BalanceChange, LessonHistory, LessonHistoryRow, LessonHistoryStatu
 import type { RecordingMarker } from "@/lib/recording-markers"
 import { clockTime, highlightParts, queryTerms, type TranscriptSegment } from "@/lib/transcript-search"
 import { getMyLessonTranscript, searchMyTranscripts, type MyTranscriptHit } from "@/app/actions/my-transcripts"
+import { trackRollout } from "@/lib/rollout-track"
 
 /**
  * "Lesson history" (#737): the family's own lessons, built on the server
@@ -113,7 +114,10 @@ function TranscriptPanel({
             .then((res) => {
                 if (!alive) return
                 if ("error" in res) setError(res.error)
-                else setSegments(res.segments)
+                else {
+                    setSegments(res.segments)
+                    trackRollout("history_transcripts", "transcript_opened", { idle: true })
+                }
             })
             .catch(() => alive && setError("The transcript did not load, try again"))
         return () => { alive = false }
@@ -138,7 +142,10 @@ function TranscriptPanel({
                             <button
                                 type="button"
                                 disabled={!onSeek}
-                                onClick={() => onSeek?.(s.s)}
+                                onClick={() => {
+                                    onSeek?.(s.s)
+                                    trackRollout("history_transcripts", "line_played")
+                                }}
                                 className="w-full text-left px-3 py-1.5 flex gap-3 hover:bg-muted/50 disabled:hover:bg-transparent disabled:cursor-default"
                             >
                                 <span className="text-xs text-muted-foreground tabular-nums w-12 shrink-0 pt-0.5">{clockTime(s.s)}</span>
@@ -173,6 +180,7 @@ function TranscriptSearch({
         setError(null)
         try {
             const res = await searchMyTranscripts(q)
+            trackRollout("history_transcripts", "searched")
             if ("error" in res) { setError(res.error); setAnswer(null) }
             else setAnswer({ q, results: res.results.filter((r) => rowsById.has(r.lessonId)) })
         } catch {
@@ -223,7 +231,10 @@ function TranscriptSearch({
                                                 <button
                                                     type="button"
                                                     className="w-full text-left flex gap-3 rounded px-2 py-1 hover:bg-muted/50"
-                                                    onClick={() => onOpen(row, h.s, terms)}
+                                                    onClick={() => {
+                                                        onOpen(row, h.s, terms)
+                                                        trackRollout("history_transcripts", "line_played")
+                                                    }}
                                                 >
                                                     <span className="text-xs text-muted-foreground tabular-nums w-12 shrink-0 pt-0.5">{clockTime(h.s)}</span>
                                                     <span className="min-w-0"><Highlighted text={h.t} terms={terms} /></span>
