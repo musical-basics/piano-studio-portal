@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { logAuthEvent } from '@/lib/logger'
+import { afterSignIn } from '@/lib/safe-next'
 
 export async function login(formData: FormData) {
     const supabase = await createClient()
@@ -35,13 +36,9 @@ export async function login(formData: FormData) {
 
         revalidatePath('/', 'layout')
 
-        if (profile?.role === 'admin') {
-            redirect('/admin')
-        } else if (profile?.role === 'prospect') {
-            redirect('/prospect')
-        } else {
-            redirect('/student')
-        }
+        // #1925: back to the page they came for (a chat opened from an email),
+        // else their home: the admin to /admin, families to /student.
+        redirect(afterSignIn(formData.get('next'), profile?.role))
     }
 
     revalidatePath('/', 'layout')

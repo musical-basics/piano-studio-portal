@@ -35,16 +35,19 @@ export async function updateSession(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    // If you want to protect routes, uncomment and modify the following:
-    // if (
-    //   !user &&
-    //   !request.nextUrl.pathname.startsWith('/login') &&
-    //   !request.nextUrl.pathname.startsWith('/auth')
-    // ) {
-    //   const url = request.nextUrl.clone()
-    //   url.pathname = '/login'
-    //   return NextResponse.redirect(url)
-    // }
+    // #1925: a signed-out visit to an admin or family page (say the chat link in
+    // a new-message email) goes to sign-in with the page remembered, so after
+    // signing in they land on it, not on the default page.
+    const path = request.nextUrl.pathname
+    if (!user && (path === '/admin' || path.startsWith('/admin/') || path === '/student' || path.startsWith('/student/'))) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        url.search = ''
+        url.searchParams.set('next', path + request.nextUrl.search)
+        const redirect = NextResponse.redirect(url)
+        supabaseResponse.cookies.getAll().forEach(c => redirect.cookies.set(c))
+        return redirect
+    }
 
     return supabaseResponse
 }

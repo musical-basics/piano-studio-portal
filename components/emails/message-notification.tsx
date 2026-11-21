@@ -16,6 +16,8 @@ interface MessageNotificationProps {
     recipientName: string
     /** Replies to this email are posted back into the portal chat. */
     canReplyByEmail?: boolean
+    /** Where View Message opens (#1925): the family's Messages tab, or the chat in admin. */
+    viewPath?: string
 }
 
 export function MessageNotification({
@@ -23,6 +25,7 @@ export function MessageNotification({
     messageContent,
     recipientName,
     canReplyByEmail = false,
+    viewPath = '/login',
 }: MessageNotificationProps) {
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -47,7 +50,7 @@ export function MessageNotification({
                                 ? 'You can reply to this email to answer. Your reply goes straight to the studio portal chat. You can also log in to your portal to view and reply.'
                                 : 'Log in to your Lionel Yu Piano Studio portal to view and reply to this message.'}
                         </Text>
-                        <Button style={button} href={`${loginUrl}/login`}>
+                        <Button style={button} href={`${loginUrl}${viewPath}`}>
                             View Message
                         </Button>
                     </Section>

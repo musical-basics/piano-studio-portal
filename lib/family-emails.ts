@@ -297,12 +297,14 @@ export function lessonNotesEmail({ date, time, studentName, notes, sheetMusicUrl
 // ------------------------------------------------- messages, practice ---
 
 /** "New message from ...": every portal chat message a family is sent (lib/core/messages.ts). */
-export function messageNotificationEmail({ senderName, content, recipientName, canReplyByEmail }: {
+export function messageNotificationEmail({ senderName, content, recipientName, canReplyByEmail, viewPath }: {
     senderName: string
     content: string
     recipientName: string
     /** Replies come back into the chat, so the whole message is shown. */
     canReplyByEmail: boolean
+    /** Where View Message opens (#1925); the sign-in page when left out. */
+    viewPath?: string
 }) {
     return {
         subject: `New message from ${senderName}`,
@@ -311,6 +313,7 @@ export function messageNotificationEmail({ senderName, content, recipientName, c
             messageContent: canReplyByEmail || content.length <= 200 ? content : content.substring(0, 200) + '...',
             recipientName,
             canReplyByEmail,
+            viewPath,
         }),
     }
 }

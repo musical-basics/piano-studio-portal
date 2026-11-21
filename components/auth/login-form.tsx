@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Music, Lock, Mail, AlertCircle } from "lucide-react"
 import { login } from "@/app/login/actions"
 
-export function LoginForm() {
+/** next: the page to open after sign-in (from /login?next=..., #1925); checked again on the server. */
+export function LoginForm({ next }: { next?: string } = {}) {
     const [error, setError] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false)
 
@@ -68,6 +69,7 @@ export function LoginForm() {
 
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-6">
+                        {next && <input type="hidden" name="next" value={next} />}
                         {error && (
                             <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 rounded-md">
                                 <AlertCircle className="h-4 w-4" />

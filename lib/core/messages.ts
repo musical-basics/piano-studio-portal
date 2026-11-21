@@ -113,6 +113,10 @@ export async function sendMessageCore({
                     content,
                     recipientName: recipientProfile.name || 'Student',
                     canReplyByEmail: Boolean(replyTo),
+                    // #1925: one tap opens the message itself. A family lands on
+                    // their Messages tab; Lionel lands on that family's chat in admin.
+                    // Signed out, the sign-in page brings them back here after.
+                    viewPath: isFamily ? '/student?tab=messages' : `/admin?chat=${senderId}`,
                 })
 
                 await resend.emails.send({

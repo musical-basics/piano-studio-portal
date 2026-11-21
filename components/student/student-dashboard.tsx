@@ -133,7 +133,7 @@ export interface StudentDashboardProps {
     /** An admin is previewing this student: a request can't be sent as them. */
     isAdminPreview?: boolean
     /** The tab to open on, from ?tab= ("history" #936, "music" #1083). */
-    initialTab?: "history" | "music"
+    initialTab?: "history" | "music" | "messages"
     /**
      * Protocol 1.20 rollouts (lib/rollouts.ts): true = this family sees the new
      * version of that feature, false = the old one. Left out: all new.
@@ -169,7 +169,7 @@ export function StudentDashboard({ profile, lessons, nextLesson, zoomLink, studi
     // hardcoded to 1, so the portal claimed a new message forever.
     // The My music link (?tab=music) opens the old Downloads tab for the half still on it.
     const musicTab = rollouts.my_music ? "music" : "downloads"
-    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : initialTab === "music" ? musicTab : "lessons")
+    const [activeTab, setActiveTab] = useState<string>(initialTab === "history" && history ? "history" : initialTab === "music" ? musicTab : initialTab === "messages" ? "messages" : "lessons")
     const [unreadMessages, setUnreadMessages] = useState(unreadCount)
 
     // Subscription state drives the renewal banner. `undefined` means "not looked

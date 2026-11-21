@@ -228,12 +228,17 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
 
     // Links from the studio emails (#793): /admin?day=YYYY-MM-DD opens the
     // Today tab on that day's schedule, where the lesson and its buttons are.
+    // #1925: /admin?chat=<student id> (the "View Message" button in the
+    // new-message email) opens that family's chat straight away.
     React.useEffect(() => {
-        const day = new URLSearchParams(window.location.search).get('day')
+        const params = new URLSearchParams(window.location.search)
+        const day = params.get('day')
         if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
             setActiveTab("dashboard")
             showScheduleForDate(day)
         }
+        const chat = params.get('chat')
+        if (chat && /^[0-9a-f-]{36}$/i.test(chat)) handleJumpToMessage(chat)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 

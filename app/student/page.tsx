@@ -23,7 +23,8 @@ export default async function StudentPage({
   // ?tab=history opens the History tab (the monthly statement email links there, #936);
   // ?tab=music opens My music (#1083).
   const askedTab = (await searchParams)?.tab
-  const initialTab = askedTab === "history" || askedTab === "music" ? askedTab : undefined
+  // ?tab=messages opens Messages (the new-message email button, #1925).
+  const initialTab = askedTab === "history" || askedTab === "music" || askedTab === "messages" ? askedTab : undefined
 
   const supabase = await createClient()
 
