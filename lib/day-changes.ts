@@ -276,6 +276,11 @@ export function creditSource(source: string | null, note: string | null, delta: 
     if (s === 'admin adjustment') return { who: 'you', words: n ? `adjustment: ${n}` : 'adjustment' }
     if (s === 'monthly plan' || s === 'lesson package') return { who: 'the family', words: `payment (${s})` }
     if (/^monthly plan renewal/i.test(s)) return { who: 'the portal on its own', words: 'plan renewal payment' }
+    if (s === 'auto-refill') {
+        return n === 'auto-refill started'
+            ? { who: 'the family', words: 'payment (auto-refill started)' }
+            : { who: 'the portal on its own', words: 'auto-refill payment (lessons ran out)' }
+    }
     if (/^log undone: /i.test(s)) return { who: 'you', words: `log undone: ${s.replace(/^log undone: /i, '')}` }
     if (/^unlogged lesson logged late/i.test(s)) return { who: 'you', words: s }
     if (/^no-show undone: /i.test(s)) return { who: 'you', words: `no-show undone: ${s.replace(/^no-show undone: /i, '')}` }

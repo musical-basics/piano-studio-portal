@@ -39,6 +39,8 @@ const EXPECTED: Record<string, string[]> = {
     'new-message': ['New message from Professor Lionel Yu'],
     'announcement': ['📢 Winter recital on December 19'],
     'renewal-receipt': ['Your subscription renewed: 4 credits added!'],
+    'auto-refill-charged': ['4 lessons added (auto-refill)'],
+    'auto-refill-declined': ["Your auto-refill didn't go through", 'Your auto-refill is still waiting for a card'],
     'monthly-statement': ['Your November lesson summary'],
     'trial-reply': ["Got it. I'll be in touch within 48 hours."],
     'audition-account': ['Your audition account is ready'],

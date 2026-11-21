@@ -9,6 +9,7 @@ import {
     type RolloutFeature,
     type RolloutKey,
     type RolloutStage,
+    TEST_STUDENT_ID,
 } from '@/lib/rollouts'
 import { batchCounts, dbStore, KIND_LABEL, type BatchCounts, type StagedStatus } from '@/lib/staged-send'
 
@@ -140,6 +141,57 @@ export async function loadRolloutReport(client: DbClient): Promise<RolloutReport
         }
     })
     return { rows, activeFamilies: active.length, error }
+}
+
+// ------------------------------------------------------- auto-refill ---
+
+/** The auto-refill test's money record (#1477): who is on it and every refill, no names. */
+export type AutoRefillReport = {
+    familiesOn: number
+    familiesOff: number
+    /** Refill charges of real families (not the first purchase, not the test student). */
+    counts: { paid: number; declined: number; waiting: number; retriedPaid: number }
+    /** The first real refill charge, the one protocol 1.20 asks to watch. */
+    firstReal: { at: string; status: string; attempts: number } | null
+    /** Newest first. */
+    recent: { id: string; at: string; kind: 'start' | 'refill'; status: string; amountCents: number; attempts: number; test: boolean }[]
+    error: string | null
+}
+
+export async function loadAutoRefillReport(client: DbClient, limit = 8): Promise<AutoRefillReport> {
+    const empty: AutoRefillReport = { familiesOn: 0, familiesOff: 0, counts: { paid: 0, declined: 0, waiting: 0, retriedPaid: 0 }, firstReal: null, recent: [], error: null }
+    try {
+        const { data: plans, error: plansError } = await client.from('auto_refill_plans').select('student_id, status')
+        if (plansError) throw new Error(plansError.message)
+        const { data: rows, error: rowsError } = await client
+            .from('auto_refills')
+            .select('id, student_id, kind, status, amount_cents, attempts, created_at, paid_at')
+            .order('created_at', { ascending: true })
+            .limit(5000)
+        if (rowsError) throw new Error(rowsError.message)
+        const real = (plans ?? []).filter((p: any) => p.student_id !== TEST_STUDENT_ID)
+        const refills = (rows ?? []) as any[]
+        const realRefills = refills.filter(r => r.kind === 'refill' && r.student_id !== TEST_STUDENT_ID)
+        const first = realRefills[0]
+        return {
+            familiesOn: real.filter((p: any) => p.status === 'on').length,
+            familiesOff: real.filter((p: any) => p.status === 'off').length,
+            counts: {
+                paid: realRefills.filter(r => r.status === 'paid').length,
+                declined: realRefills.filter(r => r.status === 'failed').length,
+                waiting: realRefills.filter(r => r.status === 'due' || r.status === 'charging').length,
+                retriedPaid: realRefills.filter(r => r.status === 'paid' && r.attempts > 1).length,
+            },
+            firstReal: first ? { at: first.paid_at ?? first.created_at, status: first.status, attempts: first.attempts } : null,
+            recent: refills.slice(-limit).reverse().map(r => ({
+                id: r.id, at: r.paid_at ?? r.created_at, kind: r.kind, status: r.status, amountCents: r.amount_cents, attempts: r.attempts,
+                test: r.student_id === TEST_STUDENT_ID,
+            })),
+            error: null,
+        }
+    } catch (e) {
+        return { ...empty, error: e instanceof Error ? e.message : String(e) }
+    }
 }
 
 // ------------------------------------------------- staged bulk emails ---

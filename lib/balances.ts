@@ -22,6 +22,8 @@ export type PaymentInfo =
     | { kind: 'ended'; endedAt: string | null; how: 'canceled' | 'unpaid' | 'paused' }
     /** Never had a plan (or never paid by card). */
     | { kind: 'none' }
+    /** On auto-refill (#1477): charged only when their lessons run out. */
+    | { kind: 'auto_refill'; credits: number; priceCents: number; declined: boolean }
     /** Stripe failed or was too slow for this family. */
     | { kind: 'unknown'; error: string }
 
@@ -151,6 +153,12 @@ export function paymentWords(p: PaymentInfo, today: string = studioToday()): { t
         }
         case 'none':
             return { text: 'No plan', marker: 'No autopay', tone: 'muted' }
+        case 'auto_refill':
+            return {
+                text: `Auto-refill: ${p.credits} for ${dollars(p.priceCents)} when out`,
+                marker: p.declined ? 'Refill declined' : null,
+                tone: p.declined ? 'warn' : 'ok',
+            }
         case 'unknown':
             return { text: 'Stripe did not answer', marker: null, tone: 'muted' }
     }

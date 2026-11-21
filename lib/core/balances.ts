@@ -44,6 +44,23 @@ export function withTimeout<T>(work: Promise<T>, ms: number, what: string): Prom
     return Promise.race([work, late]).finally(() => clearTimeout(timer))
 }
 
+/** Families with auto-refill on, and whether a refill is declined. Never throws: the page works without it. */
+async function autoRefillStates(client: DbClient, ids: string[]): Promise<Map<string, PaymentInfo>> {
+    const out = new Map<string, PaymentInfo>()
+    try {
+        const { data: plans, error } = await client.from('auto_refill_plans').select('student_id, credits, price_cents').eq('status', 'on').in('student_id', ids)
+        if (error || !plans?.length) return out
+        const { data: failed } = await client.from('auto_refills').select('student_id').eq('status', 'failed').in('student_id', ids)
+        const declined = new Set((failed ?? []).map((r: any) => r.student_id as string))
+        for (const p of plans as any[]) {
+            out.set(p.student_id, { kind: 'auto_refill', credits: Number(p.credits), priceCents: Number(p.price_cents), declined: declined.has(p.student_id) })
+        }
+    } catch (e) {
+        console.error('[loadBalances] auto-refill read failed:', e instanceof Error ? e.message : e)
+    }
+    return out
+}
+
 async function paymentFor(customerId: string, reader: StripeReader): Promise<PaymentInfo> {
     const info = paymentFromSubscriptions(await reader.listSubscriptions(customerId))
     if (info.kind !== 'autopay' || !reader.nextInvoiceAmount) return info
@@ -111,13 +128,15 @@ export async function loadBalances(
         }
     }))
 
+    // Auto-refill (#1477) is in the portal's own tables, not a Stripe plan.
+    const refill = await autoRefillStates(client, ids)
     const rows: BalanceRow[] = students.map((s, i) => ({
         studentId: s.id,
         name: s.name || 'Unnamed student',
         credits: Number(s.credits) || 0,
         lastLesson: last.get(s.id) ?? null,
         nextLesson: next.get(s.id) ?? null,
-        payment: payments[i],
+        payment: refill.has(s.id) && payments[i].kind !== 'autopay' ? refill.get(s.id)! : payments[i],
     }))
     return sortBalances(rows, DEFAULT_SORT.key, DEFAULT_SORT.dir)
 }

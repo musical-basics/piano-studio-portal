@@ -43,6 +43,7 @@ export const JOB_ROUTES: Record<string, () => Promise<{ GET: Handler }>> = {
     'classroom-thumbnails': () => import('@/app/api/cron/classroom-thumbnails/route'),
     'capture-payments': () => import('@/app/api/cron/capture-payments/route'),
     'plan-payment-check': () => import('@/app/api/cron/plan-payment-check/route'),
+    'auto-refill': () => import('@/app/api/cron/auto-refill/route'),
     'classroom-server-watch': () => import('@/app/api/cron/classroom-server-watch/route'),
     'classroom-alone': () => import('@/app/api/cron/classroom-alone/route'),
     'backup-watchdog': () => import('@/app/api/cron/backup-watchdog/route'),

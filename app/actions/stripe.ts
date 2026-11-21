@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveEffectiveUserId } from '@/lib/impersonate'
 import { stripe, getOrCreateStripeCustomer, getAccountCreditCents } from '@/lib/stripe'
 import { NO_SUBSCRIPTION, summarizeSubscriptions, type SubscriptionSummary } from '@/lib/subscription-summary'
@@ -56,6 +57,15 @@ export async function createCheckoutSession(pricingPointId: string) {
             )
             if (hasRunningSubscription) {
                 return { error: 'You already have an active subscription, so this purchase would create a duplicate and charge you twice. If you want to change your plan, please message me and I will sort it out.' }
+            }
+            // #1477: never a monthly plan and auto-refill at once.
+            const { data: autoRefill } = await createAdminClient()
+                .from('auto_refill_plans')
+                .select('status')
+                .eq('student_id', user.id)
+                .maybeSingle()
+            if (autoRefill?.status === 'on') {
+                return { error: 'You are on auto-refill, so a monthly plan would charge you twice. Turn auto-refill off in Settings first if you would like the monthly plan instead.' }
             }
 
             sessionParams = {

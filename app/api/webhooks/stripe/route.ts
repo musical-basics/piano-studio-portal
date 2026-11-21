@@ -8,6 +8,9 @@ import { recordBillingTransaction, consumeAccountCreditForCheckoutCore } from '@
 import { STUDIO_TZ } from '@/lib/studio-timezone'
 import { renewalReceiptEmail } from '@/lib/family-emails'
 import { PLAN_EVENT_TYPES, planEventFromStripe, processPlanEvent } from '@/lib/plan-payment-alerts'
+import { autoRefillDeps } from '@/lib/auto-refill-server'
+import { completeCheckout, reconcilePaymentIntent } from '@/lib/auto-refill'
+import { recordRolloutEventFor } from '@/lib/rollouts-server'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-11-17.clover' as any,
@@ -106,8 +109,18 @@ export async function POST(req: Request) {
                     }
                 }
 
+                // CASE 0: Auto-refill (#1477): turned on, or a new card after a
+                // decline. Idempotent (lib/auto-refill.ts), so a retried webhook
+                // or the family's return page can never add the lessons twice;
+                // an error here fails the webhook so Stripe retries it.
+                if (type === 'auto_refill_start' || type === 'auto_refill_card') {
+                    const deps = autoRefillDeps(supabaseAdmin as any)
+                    const info = await deps.stripe.getCheckout(session.id)
+                    const res = await completeCheckout(deps, info)
+                    console.log(`[Webhook] auto-refill checkout ${session.id}: ${res.action} (${res.message})`)
+                }
                 // CASE A: Balance Payment
-                if (type === 'balance_payment') {
+                else if (type === 'balance_payment') {
                     const amountPaidCents = Number(session.metadata?.amountPaid || 0)
                     const amountPaid = amountPaidCents / 100
 
@@ -182,6 +195,9 @@ export async function POST(req: Request) {
                         // #939: the family's History tab says what the lessons were for.
                         await labelLedgerChange(supabaseAdmin as any, userId, oldCredits, newBalance,
                             session.mode === 'subscription' ? 'monthly plan' : 'lesson package')
+                        // Protocol 1.20: what families buy, in both halves of the
+                        // auto-refill test (Tests card). Never throws.
+                        await recordRolloutEventFor('auto_refill', userId, session.mode === 'subscription' ? 'monthly_chosen' : 'package_chosen')
                     }
 
                     // The checkout took account credit off the price; use it up now.
@@ -334,6 +350,17 @@ export async function POST(req: Request) {
             notifyAdminOfPendingCapture(paymentIntent).catch(err => {
                 console.error('[Webhook] Failed to notify admin:', err)
             })
+        }
+
+        // 3b. Auto-refill charges (#1477). The cron records each charge as it
+        // makes it; this only matters if the endpoint is subscribed to
+        // payment_intent.succeeded and a run died before recording one.
+        if (event.type === 'payment_intent.succeeded') {
+            const pi = event.data.object as Stripe.PaymentIntent
+            if (pi.metadata?.type === 'auto_refill') {
+                const outcome = await reconcilePaymentIntent(autoRefillDeps(supabaseAdmin as any), pi.id, pi.metadata?.refillId ?? null)
+                console.log(`[Webhook] auto-refill payment ${pi.id}: ${outcome}`)
+            }
         }
 
         // 4. Plan payment watch (#984): failed twice in a row, or ended unpaid.

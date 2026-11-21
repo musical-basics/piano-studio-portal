@@ -112,6 +112,27 @@ export const ROLLOUT_FEATURES = {
         },
         passive: ['shown'],
     },
+    auto_refill: {
+        key: 'auto_refill',
+        label: 'Auto-refill plan',
+        newArm: 'Auto-refill offered next to the monthly plan when buying',
+        oldArm: 'The monthly plan and lesson packages only',
+        // A way to pay: when the stage can't be read, offer nothing new and
+        // charge no refill (lib/auto-refill.ts). Off also pauses refill charges.
+        fallback: 'off',
+        actions: {
+            opened: 'buy window opened',
+            offered: 'auto-refill shown',
+            chosen: 'auto-refill chosen',
+            monthly_chosen: 'monthly plan chosen',
+            package_chosen: 'package bought',
+            refill_charged: 'refill charged',
+            refill_charged_retry: 'refill charged on a retry',
+            refill_declined: 'refill declined',
+            turned_off: 'turned off',
+        },
+        passive: ['opened', 'offered', 'monthly_chosen', 'package_chosen'],
+    },
 } satisfies Record<string, RolloutFeature>
 
 export type RolloutKey = keyof typeof ROLLOUT_FEATURES

@@ -439,6 +439,79 @@ export function renewalReceiptEmail({ studentName, creditsAdded, newTotal, amoun
     }
 }
 
+// ----------------------------------------------------------- auto-refill ---
+
+function refillPrice(cents: number): string {
+    return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
+}
+
+function escapeText(s: string): string {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+const REFILL_P = 'font-size: 15px; color: #333; line-height: 1.5; margin: 0 0 14px;'
+const REFILL_BUTTON = 'display: inline-block; background: #111; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;'
+
+/**
+ * Auto-refill charged (#1477): the family's lessons ran out and their card
+ * paid for the next ones. Only the approved wording's facts (lessons, price,
+ * card), no balance and no payment math (Lionel's rule for payment messages).
+ */
+export function autoRefillChargedEmail({ firstName, credits, priceCents, cardLast4, creditUsedCents, settingsUrl }: {
+    firstName: string
+    credits: number
+    priceCents: number
+    cardLast4: string | null
+    /** Dollar account credit used on it (said as "was used", never as a new total). */
+    creditUsedCents: number
+    settingsUrl: string
+}) {
+    const card = cardLast4 ? `your card ending ${escapeText(cardLast4)}` : 'your card'
+    return {
+        subject: `${credits} lessons added (auto-refill)`,
+        html: `
+<div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px 20px;">
+    <p style="${REFILL_P}">Hi ${escapeText(firstName)},</p>
+    <p style="${REFILL_P}">Your lessons ran out, so auto-refill added ${credits} lessons for ${refillPrice(priceCents)}, charged to ${card}.${creditUsedCents > 0 ? ` Your ${refillPrice(creditUsedCents)} account credit was used on it.` : ''}</p>
+    <p style="${REFILL_P}">Your card is charged only when your lessons run out, never on a schedule. Turn it off anytime in Settings.</p>
+    <a href="${settingsUrl}" style="${REFILL_BUTTON}">Settings</a>
+</div>`,
+    }
+}
+
+/**
+ * Auto-refill declined (#1277): a link to fix the card and pay; lessons keep
+ * going. `final` is the last automatic try.
+ */
+export function autoRefillDeclinedEmail({ firstName, credits, priceCents, cardLast4, nextTry, settingsUrl, final }: {
+    firstName: string
+    credits: number
+    priceCents: number
+    cardLast4: string | null
+    /** "Mon, Nov 24": when the card is tried again; null when it won't be. */
+    nextTry: string | null
+    settingsUrl: string
+    final: boolean
+}) {
+    const card = cardLast4 ? `your card ending ${escapeText(cardLast4)}` : 'your card'
+    const tried = final
+        ? `We tried ${card} again for your auto-refill (${credits} lessons for ${refillPrice(priceCents)}) and it was declined again, so we have stopped trying.`
+        : `Your lessons ran out, so we tried to add ${credits} lessons for ${refillPrice(priceCents)} with ${card}, but it was declined.`
+    const next = nextTry
+        ? `Your lessons keep going as usual. Please update your card, or we will try it again on ${escapeText(nextTry)}.`
+        : 'Your lessons keep going as usual. Please update your card so your lessons can be added.'
+    return {
+        subject: final ? 'Your auto-refill is still waiting for a card' : "Your auto-refill didn't go through",
+        html: `
+<div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px 20px;">
+    <p style="${REFILL_P}">Hi ${escapeText(firstName)},</p>
+    <p style="${REFILL_P}">${tried}</p>
+    <p style="${REFILL_P}">${next}</p>
+    <a href="${settingsUrl}" style="${REFILL_BUTTON}">Update my card and pay</a>
+</div>`,
+    }
+}
+
 // --------------------------------------------------------- announcements ---
 
 type AnnouncementProfile = {

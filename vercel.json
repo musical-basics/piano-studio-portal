@@ -85,6 +85,10 @@
             "schedule": "40 * * * *"
         },
         {
+            "path": "/api/cron/auto-refill",
+            "schedule": "7,22,37,52 * * * *"
+        },
+        {
             "path": "/api/cron/weekly-summary",
             "schedule": "30 13 * * 1"
         },

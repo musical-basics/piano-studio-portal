@@ -3,6 +3,7 @@ import {
     armFor,
     fallbackStages,
     flagsFor,
+    isRolloutAction,
     loadRolloutStages,
     type RolloutArm,
     type RolloutFlags,
@@ -33,6 +34,25 @@ export async function rolloutArm(feature: RolloutKey, studentId: string, opts: {
 /** True when this student sees the new version of `feature`. An admin preview always does. */
 export async function inRollout(feature: RolloutKey, studentId: string, opts: { preview?: boolean } = {}): Promise<boolean> {
     return (await rolloutArm(feature, studentId, opts)) === 'new'
+}
+
+/**
+ * Records a family's action from the server (a Stripe webhook, a cron), where
+ * there is no signed-in family: the Tests card's usage record, with the arm
+ * the family is in now. Students only. Never throws.
+ */
+export async function recordRolloutEventFor(feature: RolloutKey, studentId: string, action: string): Promise<void> {
+    try {
+        if (!isRolloutAction(feature, action)) return
+        const client = createAdminClient()
+        const { data: p } = await client.from('profiles').select('role').eq('id', studentId).maybeSingle()
+        if (p?.role !== 'student') return
+        const arm = await rolloutArm(feature, studentId)
+        const { error } = await client.from('portal_rollout_events').insert({ feature, student_id: studentId, arm, action })
+        if (error) console.error('[rollouts] server event write failed:', error.message)
+    } catch (e) {
+        console.error('[rollouts] server event write threw:', e instanceof Error ? e.message : e)
+    }
 }
 
 /** Every feature's flag for one student, for the family portal page. */

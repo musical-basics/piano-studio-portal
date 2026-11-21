@@ -10,6 +10,7 @@ import { getStudentPanel } from "@/app/actions/student-panel"
 import type { PanelLesson, PanelLessonState, StudentPanelData } from "@/lib/core/student-panel"
 import type { StudentRoster } from "@/types/admin"
 import { StudentProfileSheet } from "./student-profile-sheet"
+import { AutoRefillAdminSection } from "./auto-refill-admin"
 
 /**
  * #1087: tap a student's name anywhere in admin to see their lessons, lessons
@@ -288,6 +289,8 @@ function StudentPanelSheet({
                                     </ul>
                                 )}
                             </Section>
+
+                            <AutoRefillAdminSection studentId={shown.student.id} />
 
                             <Section title="Recent lessons">
                                 {shown.recent.length === 0 ? (

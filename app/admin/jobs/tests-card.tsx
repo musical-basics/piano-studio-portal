@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { saveRolloutResult, setRolloutStage } from "@/app/actions/rollouts"
 import { ROLLOUT_STAGES, STAGE_LABEL, type RolloutArm, type RolloutStage } from "@/lib/rollouts"
 import { STUDIO_TZ } from "@/lib/studio-timezone"
-import type { ArmUsage, RolloutReport, RolloutReportRow } from "@/lib/core/tests-report"
+import type { ArmUsage, AutoRefillReport, RolloutReport, RolloutReportRow } from "@/lib/core/tests-report"
 
 // The Tests card (protocol 1.20, "start small and feel the way"): each big
 // family portal change on a half split, old against new, with how families
@@ -145,6 +145,55 @@ function RolloutRow({ row }: { row: RolloutReportRow }) {
             <UsageLine arm="old" label={row.oldArm} families={row.families.old} usage={row.usage.old} stage={stage} />
             <ResultNote label={row.label} saved={row.result} savedAt={row.resultAt} onSave={text => saveRolloutResult(row.key, text)} />
         </li>
+    )
+}
+
+const REFILL_STATUS: Record<string, string> = {
+    due: "ran out, charging soon",
+    charging: "charging",
+    failed: "declined",
+    paid: "paid",
+    skipped: "skipped (lessons back above 0)",
+    cancelled: "cancelled",
+}
+
+/** The auto-refill test's money record (#1477), under its rollout row: families on it and every refill, no names. */
+export function AutoRefillRecord({ report }: { report: AutoRefillReport }) {
+    const c = report.counts
+    return (
+        <div className="space-y-1 rounded-md border p-3 text-sm" data-testid="auto-refill-record">
+            <p className="font-medium">Auto-refill record</p>
+            {report.error ? (
+                <p className="text-red-700 dark:text-red-400">Couldn&apos;t read it ({report.error}).</p>
+            ) : (
+                <>
+                    <p className="text-muted-foreground">
+                        {plural(report.familiesOn, "family", "families")} on auto-refill
+                        {report.familiesOff ? `, ${report.familiesOff} turned it off` : ""}. Refills: {c.paid} paid
+                        {c.retriedPaid ? ` (${c.retriedPaid} on a retry)` : ""}, {c.declined} declined and waiting
+                        {c.waiting ? `, ${c.waiting} being charged` : ""}.
+                    </p>
+                    <p>
+                        <span className="font-medium">First real refill: </span>
+                        {report.firstReal
+                            ? `${day(report.firstReal.at)}, ${REFILL_STATUS[report.firstReal.status] ?? report.firstReal.status}${report.firstReal.attempts > 1 ? ` (try ${report.firstReal.attempts})` : ""}.`
+                            : <span className="text-muted-foreground">none yet. It shows here when a family&apos;s lessons first run out.</span>}
+                    </p>
+                    {report.recent.length > 0 && (
+                        <ul className="space-y-0.5 text-xs text-muted-foreground">
+                            {report.recent.map(r => (
+                                <li key={r.id}>
+                                    {day(r.at)}: {r.kind === "start" ? "first lessons at sign-up" : "refill"}, {REFILL_STATUS[r.status] ?? r.status}
+                                    {r.status === "paid" ? `, $${(r.amountCents / 100).toFixed(2)}` : ""}
+                                    {r.kind === "refill" && r.attempts > 1 ? `, try ${r.attempts}` : ""}
+                                    {r.test ? " (test student)" : " (a family)"}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </>
+            )}
+        </div>
     )
 }
 

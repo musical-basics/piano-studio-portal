@@ -112,7 +112,7 @@ export function BalancesTable({
                                 <span className={PAYMENT_TONE[pay.tone]}>{pay.text}</span>
                                 {pay.marker && (
                                     <Badge
-                                        variant={row.payment.kind === "autopay" ? "destructive" : "outline"}
+                                        variant={row.payment.kind === "autopay" || row.payment.kind === "auto_refill" ? "destructive" : "outline"}
                                         className="ml-2 align-middle"
                                     >
                                         {pay.marker}

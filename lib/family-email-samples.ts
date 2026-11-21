@@ -8,6 +8,8 @@ import { buildStatement } from '@/lib/monthly-statements'
 import {
     announcementEmail,
     auditionAccountEmail,
+    autoRefillChargedEmail,
+    autoRefillDeclinedEmail,
     describeTimeRemaining,
     inquiryReplyEmail,
     lessonCanceledEmail,
@@ -409,6 +411,33 @@ export async function buildFamilyEmailSamples(): Promise<FamilyEmail[]> {
             samples: [fromHtml(renewalReceiptEmail({
                 studentName: STUDENT, creditsAdded: 4, newTotal: 5, amountPaid: 240, date: 'December 1, 2026', appUrl,
             }))],
+        },
+        {
+            id: 'auto-refill-charged',
+            group: 'Billing',
+            name: 'Auto-refill: lessons added',
+            when: "Each time a family on auto-refill runs out of lessons and their card is charged for the next ones (about 15 to 30 minutes after the lesson that ran them out is logged).",
+            who: 'The family. You get your own notice (not shown).',
+            note: 'Auto-refill is on a half split (the Tests card on the jobs page). No balance or payment math, only the approved wording.',
+            samples: [fromHtml(autoRefillChargedEmail({
+                firstName: FIRST, credits: 4, priceCents: 16500, cardLast4: '4242', creditUsedCents: 0, settingsUrl: `${appUrl}/student/settings#auto-refill`,
+            }))],
+        },
+        {
+            id: 'auto-refill-declined',
+            group: 'Billing',
+            name: 'Auto-refill: card declined',
+            when: 'When an auto-refill charge is declined (lessons keep going). The card is tried again every 3 days, 3 tries in all; the family gets this at the first decline and once more at the last.',
+            who: 'The family. You get an email at every decline (not shown).',
+            note: 'The button opens Settings, where updating the card pays the waiting refill straight away.',
+            samples: [
+                fromHtml(autoRefillDeclinedEmail({
+                    firstName: FIRST, credits: 4, priceCents: 16500, cardLast4: '4242', nextTry: 'Mon, Dec 7', settingsUrl: `${appUrl}/student/settings#auto-refill`, final: false,
+                }), 'First decline'),
+                fromHtml(autoRefillDeclinedEmail({
+                    firstName: FIRST, credits: 4, priceCents: 16500, cardLast4: '4242', nextTry: null, settingsUrl: `${appUrl}/student/settings#auto-refill`, final: true,
+                }), 'Last try'),
+            ],
         },
         {
             id: 'monthly-statement',

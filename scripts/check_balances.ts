@@ -80,6 +80,8 @@ async function main() {
     assert.deepEqual(paymentWords({ ...(auto as any), pastDue: true }, today).marker, 'Past due: last payment failed')
     assert.deepEqual(paymentWords({ kind: 'ended', endedAt: '2026-10-03T12:00:00Z', how: 'canceled' }, today), { text: 'Plan ended Sat, Oct 3', marker: 'No autopay', tone: 'warn' })
     assert.deepEqual(paymentWords({ kind: 'none' }, today), { text: 'No plan', marker: 'No autopay', tone: 'muted' })
+    assert.deepEqual(paymentWords({ kind: 'auto_refill', credits: 4, priceCents: 16500, declined: false }, today), { text: 'Auto-refill: 4 for $165 when out', marker: null, tone: 'ok' })
+    assert.equal(paymentWords({ kind: 'auto_refill', credits: 4, priceCents: 22500, declined: true }, today).marker, 'Refill declined')
     assert.equal(paymentWords({ kind: 'ending', endingAt: '2026-12-15T05:00:00Z' }, today).marker, 'No more payments')
     assert.equal(paymentWords({ kind: 'unknown', error: 'x' }, today).text, 'Stripe did not answer')
 

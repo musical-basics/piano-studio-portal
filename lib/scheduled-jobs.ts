@@ -355,6 +355,36 @@ export const PORTAL_JOBS: JobInfo[] = [
         ].filter(Boolean).join(', '),
     },
     {
+        job: 'auto-refill',
+        name: 'Auto-refill',
+        what: "For families on auto-refill: when a lesson runs their lessons out, charges their saved card for their monthly lessons (after the lesson's 10-minute Undo), retries a declined card 3 days later and emails them and you. Never charges one run-out twice. Paused while its test is off on the Tests card above.",
+        group: 'payments',
+        summarize: b => {
+            if (b?.paused) return `Paused (test is off)${b?.waiting ? `, ${plural(b.waiting, 'refill')} waiting` : ''}`
+            const paid = Number(b?.paid) || 0
+            const declined = Number(b?.declined) || 0
+            const found = len(b?.found)
+            if (!paid && !declined && !found) return b?.waiting ? `${plural(b.waiting, 'refill')} waiting` : 'Nothing to charge'
+            return [
+                found ? `${plural(found, 'family', 'families')} ran out` : '',
+                paid ? `${plural(paid, 'refill')} charged` : '',
+                declined ? `${plural(declined, 'card')} declined, emailed` : '',
+            ].filter(Boolean).join(', ')
+        },
+        quiet: b => !len(b?.found) && !Number(b?.paid) && !Number(b?.declined) && !len(b?.recovered),
+        runNow: {
+            confirm: "This charges any family on auto-refill whose lessons ran out more than 12 minutes ago (or whose declined card is due a retry), and emails that family and you, the same as its next run (within 15 minutes) would. A run-out is never charged twice.",
+            preview: b => {
+                if (b?.paused) return 'A check just now: the auto-refill test is off, so it would charge nothing.'
+                const start = len(b?.wouldStart)
+                const charge = len(b?.wouldCharge)
+                return start || charge
+                    ? `A check just now: ${plural(start, 'family', 'families')} just ran out, ${plural(charge, 'refill')} ready to charge.`
+                    : 'A check just now: nobody on auto-refill is out of lessons, so it would charge nothing.'
+            },
+        },
+    },
+    {
         job: 'classroom-server-watch',
         name: 'Classroom server check',
         what: "Checks the classroom's own call server is answering and emails you if it stops. Off until the classroom moves to it.",
