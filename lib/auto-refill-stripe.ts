@@ -236,8 +236,9 @@ export function realStripe(): LayerWithCustomer {
                     }
                 }
                 if (err?.type === 'StripeInvalidRequestError' && !p.paymentIntentId && err?.code !== 'idempotency_key_in_use') {
-                    // Stripe refused the request outright (the card was removed, ...): nothing was charged.
-                    return { status: 'declined', paymentIntentId: null, message: err?.message ?? 'Stripe refused the charge', code: err?.code ?? null }
+                    // Stripe refused the request outright: nothing was charged,
+                    // and it is not the family's card, so only the studio hears.
+                    return { status: 'refused', paymentIntentId: null, message: err?.message ?? 'Stripe refused the charge', code: err?.code ?? null }
                 }
                 throw e
             }
@@ -271,6 +272,8 @@ export type FakeOptions = {
     accountCreditCents?: number
     /** Make charge() throw (an unknown outcome). */
     throwOnCharge?: boolean
+    /** Stripe turns the request down (not a card decline). */
+    refuse?: boolean
 }
 
 export type FakeCall = { op: string; args: Record<string, unknown> }
@@ -354,6 +357,7 @@ export function fakeStripe(opts: FakeOptions = {}): LayerWithCustomer & { calls:
         async charge(p) {
             calls.push({ op: 'charge', args: { ...p } })
             if (opts.throwOnCharge) throw new Error('network went away')
+            if (opts.refuse) return { status: 'refused', paymentIntentId: null, message: 'Invalid parameter', code: 'parameter_invalid' }
             const id = p.paymentIntentId ?? `pi_fake_${p.refillId}`
             const prev = charges.get(id)
             if (prev?.status === 'succeeded') throw new Error('fake Stripe: this PaymentIntent already succeeded')

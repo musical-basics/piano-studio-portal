@@ -71,7 +71,14 @@ export async function startAutoRefill(): Promise<{ url?: string; error?: string 
         })
         return { url }
     } catch (e) {
-        console.error('[auto-refill] start failed:', e instanceof Error ? e.message : e)
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('[auto-refill] start failed:', msg)
+        // A family tried to turn it on and could not: the studio should know.
+        await autoRefillDeps().notify.studio({
+            subject: 'Auto-refill: a family could not start the checkout',
+            lines: [`Student id: ${who.userId}`, `Error: ${msg.replace(/[<>&]/g, ' ')}`],
+            footer: 'Auto-refill (#1477). The family saw "Could not start the checkout".',
+        }).catch(() => {})
         return { error: 'Could not start the checkout. Please try again, or message your teacher.' }
     }
 }

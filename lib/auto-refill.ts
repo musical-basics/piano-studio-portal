@@ -250,7 +250,8 @@ export function chargeAmount(priceCents: number, accountCreditCents: number): { 
 // ------------------------------------------------------------- the deps ---
 
 export type ChargeResult = {
-    status: 'succeeded' | 'declined' | 'requires_action' | 'processing' | 'canceled'
+    /** 'refused': Stripe turned the request down (not a card decline): only the studio is told. */
+    status: 'succeeded' | 'declined' | 'requires_action' | 'processing' | 'canceled' | 'refused'
     paymentIntentId: string | null
     /** Stripe's decline message and code, for the studio email. */
     message?: string | null
@@ -619,6 +620,22 @@ async function failed(
         updated_at: new Date(now).toISOString(),
     })
     if (!done) return { outcome: 'busy', refill }
+
+    if (result.status === 'refused') {
+        // Not the family's card: Stripe turned the request down (a setting or
+        // a portal bug). Only the studio hears; it is tried again on schedule.
+        await deps.notify.studio({
+            subject: `Auto-refill: Stripe refused the charge (not a card decline): ${familyLabel(family)}`,
+            lines: [
+                `Family: ${familyLabel(family)}`,
+                `${done.credits} lessons for ${money(done.price_cents)}, card ending ${plan.card_last4 ?? 'unknown'}`,
+                `Stripe said: ${esc(reason)}`,
+                `Nothing was charged and the family was not emailed. Try ${attempts} of ${MAX_ATTEMPTS}. ${retry ? `Next try: ${dayWords(retry)}.` : 'No more automatic tries.'}`,
+            ],
+            footer: 'Auto-refill (#1477). This needs a look in the code or the Stripe settings, not the family.',
+        })
+        return { outcome: 'declined', refill: done, detail: reason }
+    }
     await deps.notify.track(done.student_id, 'refill_declined')
 
     const first = attempts === 1

@@ -550,6 +550,18 @@ async function main() {
         assert.equal([...u.db.refills.values()][0].last_error, 'no saved card (no_card)')
         assert.equal(charges(u.stripe).length, 0)
 
+        // Stripe refuses the request (not the card): only the studio hears.
+        const w = setup({ refuse: true })
+        w.db.addFamily(A, 1)
+        w.db.addPlan(A, { armed_at: new Date(T0 - HOUR).toISOString() })
+        lesson(w, A)
+        w.clock.now += 13 * MIN
+        await runAutoRefill(w.deps)
+        assert.equal([...w.db.refills.values()][0].status, 'failed')
+        assert.equal(w.familyEmails.length, 0, 'the family is not told their card was declined')
+        assert.ok(w.studioEmails[0].subject.includes('Stripe refused the charge'))
+        assert.deepEqual(w.tracked, [])
+
         const v = setup()
         v.db.addFamily(A, 1, { status: 'inactive' })
         v.db.addPlan(A, { armed_at: new Date(T0 - HOUR).toISOString() })
