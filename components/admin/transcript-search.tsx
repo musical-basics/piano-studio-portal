@@ -18,6 +18,7 @@ import {
 } from "@/lib/transcript-search"
 import { studioToday } from "@/lib/studio-timezone"
 import { StudentLink } from "@/components/admin/student-panel"
+import { RecordingSourceLabel } from "@/components/admin/recording-source-label"
 
 // Lionel's #954: find every lesson where a word came up ("octave", "Grieg",
 // "pedal"), from the transcripts the Mac writes overnight (#953). Each line
@@ -52,7 +53,11 @@ function Highlighted({ text, terms }: { text: string; terms: string[] }) {
     )
 }
 
-type Playing = { result: TranscriptSearchResult; seconds: number }
+/** A transcript to open at a moment: a search result, or a row of the Recordings list (#1916). */
+export type TranscriptPlaying = {
+    result: Pick<TranscriptSearchResult, "id" | "studentName" | "recordedOn">
+    seconds: number
+}
 
 export function TranscriptSearch() {
     const [query, setQuery] = useState("")
@@ -61,7 +66,7 @@ export function TranscriptSearch() {
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const [expanded, setExpanded] = useState<Set<string>>(new Set())
-    const [playing, setPlaying] = useState<Playing | null>(null)
+    const [playing, setPlaying] = useState<TranscriptPlaying | null>(null)
 
     const terms = useMemo(() => queryTerms(searched), [searched])
 
@@ -139,6 +144,7 @@ export function TranscriptSearch() {
                                                     {" "}· {dayLabel(r.recordedOn)}{r.lessonTime ? `, ${timeLabel(r.lessonTime)}` : ""}
                                                     {r.durationSeconds ? ` · ${Math.round(r.durationSeconds / 60)} min` : ""}
                                                 </span>
+                                                <RecordingSourceLabel source={r.source} className="ml-2 align-middle" />
                                             </p>
                                             <p className="text-xs text-muted-foreground">
                                                 {r.hitCount} {r.hitCount === 1 ? "mention" : "mentions"}
@@ -184,7 +190,7 @@ export function TranscriptSearch() {
 }
 
 /** The recording at the chosen moment, with its whole transcript to jump around in. */
-function TranscriptPlayer({ playing, terms, onClose }: { playing: Playing | null; terms: string[]; onClose: () => void }) {
+export function TranscriptPlayer({ playing, terms, onClose }: { playing: TranscriptPlaying | null; terms: string[]; onClose: () => void }) {
     const [opened, setOpened] = useState<OpenedTranscript | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [seek, setSeek] = useState<{ seconds: number; key: number } | null>(null)

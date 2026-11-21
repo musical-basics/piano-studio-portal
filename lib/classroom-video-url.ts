@@ -28,6 +28,17 @@ export function isClassroomVideoUrl(url: string | null | undefined): boolean {
     return /dropbox/i.test(url) && CLASSROOM_COPY_IN_LINK_RE.test(lastPart(url))
 }
 
+/**
+ * True for a transcript (lesson_transcripts.dropbox_path, #953) of a classroom
+ * video: its Dropbox copy ("... - Classroom Lesson.mp4") or a recording of the
+ * old in-browser classroom recorder (.webm parts in "New Platform Recordings").
+ * Anything else in a student's folder is a Zoom recording.
+ */
+export function isClassroomTranscriptPath(path: string | null | undefined): boolean {
+    if (!path) return false
+    return CLASSROOM_COPY_IN_LINK_RE.test(path.split('/').pop() || '') || /\/new platform recordings\//i.test(path) || /\.webm$/i.test(path)
+}
+
 /** True while the video is still on R2. */
 export function isR2VideoUrl(url: string | null | undefined): boolean {
     return !!url && R2_HOST_RE.test(url)

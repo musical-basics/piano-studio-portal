@@ -356,13 +356,16 @@ function lessonRef(lesson: { id: string; date: string; time: string }): LessonRe
     return { lessonId: lesson.id, date: lesson.date, time: String(lesson.time).slice(0, 5) }
 }
 
-export async function listClassroomRecordingsForAdmin(client?: DbClient, limit = 300): Promise<AdminRecordingRow[]> {
+/** sinceIso: only recordings saved from then on (the Recordings view's last 90 days, #1916). */
+export async function listClassroomRecordingsForAdmin(client?: DbClient, limit = 300, sinceIso?: string): Promise<AdminRecordingRow[]> {
     const supabase = client ?? createAdminClient()
 
-    const { data: rows, error } = await supabase
+    let listQuery = supabase
         .from('classroom_recordings')
         .select('id, student_id, url, created_at, size_bytes, r2_key, thumbnail_key')
         .eq('kind', LESSON_KIND)
+    if (sinceIso) listQuery = listQuery.gte('created_at', sinceIso)
+    const { data: rows, error } = await listQuery
         .order('created_at', { ascending: false })
         .limit(limit)
     if (error) throw new Error(`classroom_recordings query failed: ${error.message}`)

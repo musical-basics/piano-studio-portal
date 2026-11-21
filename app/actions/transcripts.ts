@@ -49,25 +49,43 @@ export async function openLessonTranscript(id: string): Promise<OpenedTranscript
         .eq('id', id)
         .maybeSingle()
     if (error || !row) return { error: 'That transcript is gone' }
+    const { url, playError } = await transcribedRecordingLink(row)
+    return { url, segments: (row.segments ?? []) as TranscriptSegment[], playError }
+}
 
-    // The very recording that was transcribed, so the times line up: the
-    // meeting's video, else the audio itself. The lesson's own link is the
-    // fallback (it may be a different copy of the same lesson).
-    let url: string | null = null
-    let playError: string | null = null
+/**
+ * Just the link that plays a transcribed recording (the Recordings view, #1916,
+ * for a recording on no lesson's video): no transcript text.
+ */
+export async function transcriptRecordingLink(id: string): Promise<{ url: string } | { error: string }> {
+    const denied = await requireAdmin()
+    if (denied) return { error: denied }
+    if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return { error: 'Unknown recording' }
+    const { data: row, error } = await createAdminClient()
+        .from('lesson_transcripts')
+        .select('dropbox_path, video_path, lesson_id')
+        .eq('id', id)
+        .maybeSingle()
+    if (error || !row) return { error: 'That recording is gone' }
+    const { url, playError } = await transcribedRecordingLink(row)
+    return url ? { url } : { error: playError || 'No recording to play' }
+}
+
+/**
+ * The very recording that was transcribed, so the times line up: the meeting's
+ * video, else the audio itself (a Dropbox link valid for 4 hours). The lesson's
+ * own link is the fallback (it may be a different copy of the same lesson).
+ */
+async function transcribedRecordingLink(row: { dropbox_path: string; video_path: string | null; lesson_id: string | null }): Promise<{ url: string | null; playError: string | null }> {
     try {
         const res = await getDropboxClient().filesGetTemporaryLink({ path: row.video_path || row.dropbox_path })
-        url = res.result.link
+        return { url: res.result.link, playError: null }
     } catch (err: any) {
-        playError = 'The recording is no longer in Dropbox'
         console.error('[transcripts] no Dropbox link:', err?.error?.error_summary || err?.message || err)
         if (row.lesson_id) {
-            const { data: lesson } = await admin.from('lessons').select('video_url').eq('id', row.lesson_id).maybeSingle()
-            if (lesson?.video_url) {
-                url = lesson.video_url as string
-                playError = null
-            }
+            const { data: lesson } = await createAdminClient().from('lessons').select('video_url').eq('id', row.lesson_id).maybeSingle()
+            if (lesson?.video_url) return { url: lesson.video_url as string, playError: null }
         }
+        return { url: null, playError: 'The recording is no longer in Dropbox' }
     }
-    return { url, segments: (row.segments ?? []) as TranscriptSegment[], playError }
 }

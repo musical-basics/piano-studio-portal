@@ -1,4 +1,5 @@
 import type { DbClient } from '@/lib/supabase/admin'
+import { isClassroomTranscriptPath } from '@/lib/classroom-video-url'
 
 /**
  * Searching lesson transcripts (Lionel's #954). The Mac writes a transcript of
@@ -26,6 +27,8 @@ export type TranscriptSearchResult = {
     /** "18:30" when the lesson is known. */
     lessonTime: string | null
     durationSeconds: number | null
+    /** Which recorder made it, by its Dropbox file (the admin Recordings view's label, #1916). */
+    source: 'classroom' | 'zoom'
     /** The matching lines, in order (at most 30). */
     hits: TranscriptSegment[]
     hitCount: number
@@ -56,6 +59,7 @@ export async function searchTranscriptsCore(client: DbClient, query: string): Pr
         student_folder: string | null
         recorded_on: string | null
         lesson_id: string | null
+        dropbox_path: string | null
         duration_seconds: number | null
         hits: TranscriptSegment[] | null
         hit_count: number | null
@@ -84,6 +88,7 @@ export async function searchTranscriptsCore(client: DbClient, query: string): Pr
             lessonId: r.lesson_id,
             lessonTime: r.lesson_id ? (timeOf.get(r.lesson_id)?.slice(0, 5) ?? null) : null,
             durationSeconds: r.duration_seconds,
+            source: isClassroomTranscriptPath(r.dropbox_path) ? 'classroom' : 'zoom',
             hits: r.hits ?? [],
             hitCount: r.hit_count ?? 0,
         })),

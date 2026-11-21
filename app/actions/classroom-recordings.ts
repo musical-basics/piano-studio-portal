@@ -5,22 +5,11 @@ import { requireAdmin } from '@/lib/require-admin'
 import {
     attachRecordingToLessonByHand,
     deleteNoShowRecording,
-    listClassroomRecordingsForAdmin,
     type AdminRecordingRow,
 } from '@/lib/classroom-recordings'
 
+// The list itself is the Recordings view's (app/actions/admin-recordings.ts, #1916).
 export type { AdminRecordingRow }
-
-/** Admin "Classroom recordings" tab: every recording, newest first, with where it went. */
-export async function getClassroomRecordings(): Promise<{ rows: AdminRecordingRow[] } | { error: string }> {
-    const denied = await requireAdmin()
-    if (denied) return { error: denied }
-    try {
-        return { rows: await listClassroomRecordingsForAdmin() }
-    } catch (err: any) {
-        return { error: err?.message || 'Could not load the recordings' }
-    }
-}
 
 /** One-click attach: sets the lesson's video only (no logging, no credits, no email). */
 export async function attachClassroomRecording(recordingId: string, lessonId: string) {

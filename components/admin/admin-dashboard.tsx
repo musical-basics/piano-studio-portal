@@ -39,8 +39,7 @@ import { DashboardTab } from "@/components/admin/dashboard-tab"
 import { MissedLessonDialog } from "@/components/admin/missed-lesson-dialog"
 import { RunningLateDialog } from "@/components/admin/running-late-dialog"
 import { UndoLogDialog } from "@/components/admin/undo-log-dialog"
-import { ClassroomRecordingsTab } from "@/components/admin/classroom-recordings-tab"
-import { TranscriptSearch } from "@/components/admin/transcript-search"
+import { RecordingsTab } from "@/components/admin/recordings-tab"
 import { PracticeVideosTab } from "@/components/admin/practice-videos-tab"
 import { BalancesTab } from "@/components/admin/balances-tab"
 import { ChangesTab } from "@/components/admin/changes-tab"
@@ -949,7 +948,7 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         </TabsTrigger>
                         <TabsTrigger value="recordings" className="gap-2">
                             <Film className="h-4 w-4" />
-                            <span className="hidden sm:inline">Classroom recordings</span>
+                            <span className="hidden sm:inline">Recordings</span>
                         </TabsTrigger>
                         <TabsTrigger value="practice" className="gap-2 relative">
                             <Video className="h-4 w-4" />
@@ -1087,11 +1086,9 @@ export function AdminDashboard({ admin, scheduledLessons, completedLessons, stud
                         />
                     </TabsContent>
 
-                    {/* Classroom (LiveKit) recordings and the lesson each went on */}
+                    {/* #1916: classroom and Zoom recordings in one view, with the transcript search on top */}
                     <TabsContent value="recordings" className="space-y-4">
-                        {/* #954: search what was said in every lesson (transcripts made on the Mac, #953) */}
-                        {activeTab === "recordings" && <TranscriptSearch />}
-                        <ClassroomRecordingsTab
+                        <RecordingsTab
                             onOpenDay={(date) => {
                                 showScheduleForDate(date)
                                 setActiveTab("dashboard")
