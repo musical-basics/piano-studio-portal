@@ -10,7 +10,8 @@ import { GROUP_TITLES, loadScheduledJobs, type JobGroup, type JobStatus, type Jo
 import { RunMarks } from "./run-marks"
 import { RunNow } from "./run-now"
 import { TestsCard } from "./tests-card"
-import { loadRolloutReport, type RolloutReport } from "@/lib/core/tests-report"
+import { StagedSendsList } from "./staged-sends-list"
+import { loadRolloutReport, loadStagedReport, type RolloutReport } from "@/lib/core/tests-report"
 
 export const dynamic = "force-dynamic"
 // "Run now" (#1076) runs a job inside this page's server action: give it the
@@ -118,11 +119,14 @@ export default async function ScheduledJobsPage() {
 
     const now = new Date()
     const admin = createAdminClient()
-    const [jobsRead, testsRead] = await Promise.allSettled([
+    const [jobsRead, testsRead, stagedRead] = await Promise.allSettled([
         loadScheduledJobs(admin, now),
-        // Protocol 1.20 tests: rollouts of family portal changes (lib/core/tests-report.ts).
+        // Protocol 1.20 tests: rollouts of family portal changes and staged
+        // family bulk emails (lib/core/tests-report.ts).
         loadRolloutReport(admin),
+        loadStagedReport(admin),
     ])
+    const staged = stagedRead.status === "fulfilled" ? stagedRead.value : { rows: [], error: "could not load" }
     const why = (r: PromiseRejectedResult) => (r.reason instanceof Error ? r.reason.message : String(r.reason))
     const jobs: JobView[] = jobsRead.status === "fulfilled" ? jobsRead.value : []
     const loadError: string | null = jobsRead.status === "rejected" ? why(jobsRead) : null
@@ -156,7 +160,9 @@ export default async function ScheduledJobsPage() {
             </p>
 
             {tests ? (
-                <TestsCard report={tests} />
+                <TestsCard report={tests}>
+                    <StagedSendsList rows={staged.rows} error={staged.error} />
+                </TestsCard>
             ) : (
                 <p className="text-sm text-red-700 dark:text-red-400">Couldn&apos;t load the Tests card: {testsError}</p>
             )}

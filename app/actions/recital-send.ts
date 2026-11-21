@@ -5,11 +5,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { Resend } from 'resend'
 import { revalidatePath } from 'next/cache'
 import {
-    emptySendLog,
     type AudienceMember,
     type ProgramEntry,
     type RecitalSendLog,
 } from '@/lib/recital-send'
+import { readRecitalLog as readLog, writeRecitalLog as writeLog } from '@/lib/recital-send-log'
+import { dbStore, resendDeps } from '@/lib/staged-send'
+import { startEmailStagedSend } from '@/lib/staged-send-runner'
 
 // Server actions for the /admin/recital-send review page. Everything the page
 // shows is exactly what these actions send: subjects and bodies come from the
@@ -17,13 +19,18 @@ import {
 // escapes, linkifies, and wraps them in the studio email chrome.
 //
 // Send state persists in the private `studio_private` storage bucket at
-// recital/{eventId}/send-log.json (service-role only). We use storage instead
-// of a table because prod schema migrations can't be applied from the app.
+// recital/{eventId}/send-log.json (service-role only, lib/recital-send-log.ts).
+// We use storage instead of a table because prod schema migrations can't be
+// applied from the app.
+//
+// Since protocol 1.20 a send to more than one family is staged
+// (lib/staged-send.ts): a preview copy to the studio inbox, the first 3, and
+// the rest after the first 3 are delivered (24 hours later, or 3 hours before
+// the recital starts if that is sooner). The rest show as queued in the log.
 
 const FROM = 'Lionel Yu Piano Studio <notifications@updates.musicalbasics.com>'
-const BUCKET = 'studio_private'
-
-const logPath = (eventId: string) => `recital/${eventId}/send-log.json`
+/** The rest of a staged recital send goes out no later than this long before the start. */
+const RECITAL_REST_MARGIN_HOURS = 3
 
 async function requireAdmin(): Promise<{ error: string } | { userId: string }> {
     const supabase = await createClient()
@@ -38,29 +45,6 @@ async function requireAdmin(): Promise<{ error: string } | { userId: string }> {
     return { userId: user.id }
 }
 
-async function readLog(eventId: string): Promise<RecitalSendLog> {
-    const admin = createAdminClient()
-    const { data } = await admin.storage.from(BUCKET).download(logPath(eventId))
-    if (!data) return emptySendLog()
-    try {
-        const parsed = JSON.parse(await data.text())
-        return { ...emptySendLog(), ...parsed }
-    } catch {
-        return emptySendLog()
-    }
-}
-
-async function writeLog(eventId: string, log: RecitalSendLog): Promise<void> {
-    const admin = createAdminClient()
-    const { error } = await admin.storage
-        .from(BUCKET)
-        .upload(logPath(eventId), JSON.stringify(log, null, 2), {
-            contentType: 'application/json',
-            upsert: true,
-        })
-    if (error) throw new Error(`send-log write failed: ${error.message}`)
-}
-
 export type RecitalSendActionResult = {
     error?: string
     success?: boolean
@@ -68,6 +52,11 @@ export type RecitalSendActionResult = {
     sentCount?: number
     skipped?: number
     results?: Record<string, string>
+    /** A staged send (protocol 1.20): how many wait for the first batch, and until when. */
+    queuedCount?: number
+    restDueAt?: string | null
+    /** Why a staged send stopped at once (nothing more goes out until "Send the rest now"). */
+    stopped?: string | null
 }
 
 export async function getRecitalSendLog(eventId: string): Promise<RecitalSendActionResult> {
@@ -131,9 +120,10 @@ export type RecitalSendItem = {
 }
 
 /**
- * Send the reviewed emails via one Resend batch call. Skips any key already
- * marked sent in the log (double-click / double-tab protection); pass nothing
- * twice unless the log entry was cleared.
+ * Send the reviewed emails. Skips any key already marked sent (or queued by a
+ * staged send) in the log (double-click / double-tab protection); pass
+ * nothing twice unless the log entry was cleared. One email goes straight out;
+ * more than one is a bulk send and is staged (protocol 1.20).
  */
 export async function sendRecitalEmails(eventId: string, items: RecitalSendItem[]): Promise<RecitalSendActionResult> {
     const gate = await requireAdmin()
@@ -150,22 +140,53 @@ export async function sendRecitalEmails(eventId: string, items: RecitalSendItem[
     }
 
     const log = await readLog(eventId)
-    const toSend = valid.filter(i => !log.sent[i.key])
+    const toSend = valid.filter(i => !log.sent[i.key] && !log.queued?.[i.key])
     const skipped = valid.length - toSend.length
     if (toSend.length === 0) {
-        return { error: 'All of these were already sent (see the sent log).', log }
+        return { error: 'All of these were already sent or are queued (see the sent log).', log }
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lessons.musicalbasics.com'
+    const htmlFor = (i: RecitalSendItem) => renderBodyHtml(
+        i.body,
+        i.trackPublicId ? `${appUrl}/api/recital-track?e=${eventId}&p=${i.trackPublicId}` : undefined
+    )
+
+    if (toSend.length > 1) {
+        // Protocol 1.20: preview to the studio inbox, the first 3 now, the rest
+        // once those are delivered (and before the recital).
+        const admin = createAdminClient()
+        const { data: ev } = await admin.from('events').select('start_time, title').eq('id', eventId).maybeSingle()
+        const start = ev?.start_time ? Date.parse(ev.start_time) : NaN
+        const deadline = Number.isFinite(start) ? new Date(start - RECITAL_REST_MARGIN_HOURS * 3_600_000) : null
+        const outcome = await startEmailStagedSend({ store: dbStore(admin), deps: resendDeps(admin) }, {
+            kind: 'recital',
+            ref: `${eventId}/${Date.now()}`,
+            label: `${ev?.title || 'Recital'}: ${toSend[0].subject}`,
+            recipients: toSend.map(i => ({ key: i.key, to: i.to, email: { from: FROM, subject: i.subject, html: htmlFor(i) } })),
+            deadline,
+            context: { eventId },
+        })
+        revalidatePath('/admin/recital-send')
+        revalidatePath('/admin/jobs')
+        const fresh = await readLog(eventId)
+        if (outcome.stopped) return { error: `${outcome.stopped} See the Tests card on the Jobs page.`, log: fresh, stopped: outcome.stopped }
+        return {
+            success: true,
+            sentCount: outcome.firstSent,
+            skipped,
+            queuedCount: outcome.restCount,
+            restDueAt: outcome.restDueAt,
+            log: fresh,
+        }
+    }
+
     const resend = new Resend(process.env.RESEND_API_KEY)
     const payloads = toSend.map(i => ({
         from: FROM,
         to: i.to,
         subject: i.subject,
-        html: renderBodyHtml(
-            i.body,
-            i.trackPublicId ? `${appUrl}/api/recital-track?e=${eventId}&p=${i.trackPublicId}` : undefined
-        ),
+        html: htmlFor(i),
     }))
 
     const { data, error } = await resend.batch.send(payloads)

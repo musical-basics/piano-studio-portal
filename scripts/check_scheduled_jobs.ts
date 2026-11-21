@@ -202,6 +202,8 @@ async function main() {
 
     let preview = await previewJobRunCore('monthly-statements', { now: quiet, handler: fake({ month: '2026-10', wouldSend: 2, alreadySent: 30 }) })
     assert.equal(preview.text, 'A check just now: 2 families would get the October statement (30 already have it).')
+    preview = await previewJobRunCore('monthly-statements', { now: quiet, handler: fake({ month: '2026-11', wouldSend: 10, alreadySent: 0, staged: { firstBatch: ['a', 'b', 'c'], rest: [] } }) })
+    assert.equal(preview.text, 'A check just now: 10 families would get the November statement (0 already have it): 3 now, the other 7 after 24 hours if those are delivered.', 'staged (protocol 1.20)')
     assert.equal(new URL(seen.at(-1)!.url).searchParams.get('dry'), '1', 'the check is a dry run')
     preview = await previewJobRunCore('classroom-recordings', { now: quiet, handler: fake({ result: { attached: [{}], logged: [] }, attendance: { lessons: [{ action: 'would log' }, { action: 'not logged' }] } }) })
     assert.equal(preview.text, 'A check just now: 1 recording to attach and 1 lesson to log.')

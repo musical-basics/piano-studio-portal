@@ -253,6 +253,8 @@ export type FamilyResult = {
     subject?: string
     text?: string
     html?: string
+    /** Resend's id for a statement that went out (the staged send checks its delivery). */
+    resendId?: string | null
 }
 
 export type StatementRun = {
@@ -287,18 +289,22 @@ type LessonRow = { id: string; student_id: string; date: string; time: string; d
  * Builds (and unless dryRun, sends) every family's statement for `month`.
  * `only` limits the run to one student; in a dry run it may be any student
  * (the test account included), but a real send still needs an active family.
- * `withHtml` adds each email's HTML to the result (dry runs).
+ * `ids` limits it to these active families (the first batch of a staged send,
+ * protocol 1.20: lib/staged-send-runner.ts). `withHtml` adds each email's
+ * HTML to the result (dry runs).
  */
 export async function runMonthlyStatements(
     client: DbClient,
-    { month, dryRun, only, withHtml = false, now = new Date() }: { month: string; dryRun: boolean; only?: string | null; withHtml?: boolean; now?: Date },
+    { month, dryRun, only, ids: onlyIds, withHtml = false, now = new Date() }: { month: string; dryRun: boolean; only?: string | null; ids?: string[] | null; withHtml?: boolean; now?: Date },
 ): Promise<StatementRun> {
     const off = statementsOff()
     const run: StatementRun = { month, dryRun, off, sent: 0, wouldSend: 0, alreadySent: 0, skipped: 0, failed: 0, families: [] }
     if (off && !dryRun) return run
+    if (onlyIds && !onlyIds.length) return run
 
     let q = client.from('profiles').select('*').eq('role', 'student')
     q = only ? q.eq('id', only) : q.eq('status', 'active')
+    if (onlyIds) q = q.in('id', onlyIds)
     const { data: profiles, error: profilesError } = await q.order('name')
     if (profilesError) throw new Error(`profiles query failed: ${profilesError.message}`)
     const students = (profiles || []) as Record<string, any>[]
@@ -467,6 +473,8 @@ export async function runMonthlyStatements(
                 .update({ sent_at: new Date().toISOString(), resend_id: data?.id ?? null })
                 .eq('student_id', s.id).eq('month', month)
             result.status = 'sent'
+            result.resendId = data?.id ?? null
+            result.to = to
             run.sent++
         } catch (e: any) {
             await client.from('monthly_statements_sent').update({ error: String(e?.message || e) }).eq('student_id', s.id).eq('month', month)

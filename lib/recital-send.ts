@@ -44,6 +44,20 @@ export type RecitalSendLog = {
     sent: Record<string, SentRecord>
     /** Keyed by reminder key ('2h', '15m'). */
     reminders: Record<string, ReminderRecord>
+    /**
+     * Emails of a staged "Send all" (protocol 1.20, lib/staged-send.ts) still
+     * waiting for the first batch to be delivered, by recipient key. Each moves
+     * to `sent` when it goes out.
+     */
+    queued?: Record<string, QueuedRecord>
+}
+
+export type QueuedRecord = {
+    at: string
+    /** The staged_sends row. */
+    stagedId: string
+    /** When the rest is due to go (ISO), if known. */
+    dueAt: string | null
 }
 
 export function emptySendLog(): RecitalSendLog {

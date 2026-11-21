@@ -176,24 +176,57 @@ export const PORTAL_JOBS: JobInfo[] = [
     {
         job: 'monthly-statements',
         name: 'Monthly family statements',
-        what: "On the 1st, emails each active family a short summary of last month: lessons held, lessons left, and the next payment date if they're on a plan. Never twice in a month.",
+        what: "On the 1st, emails each active family a short summary of last month: lessons held, lessons left, and the next payment date if they're on a plan. Never twice in a month. It starts small (protocol 1.20): a preview copy to you, the first 3 families, the rest 24 hours later once those are delivered (Staged family emails).",
         group: 'lessons',
         summarize: b => {
             if (b?.off) return 'Off (MONTHLY_STATEMENTS=off), nothing sent'
+            if (b?.staged?.held) return 'Already started this month, waiting for the staged send'
             const sent = Number(b?.sent) || 0
             const parts = [sent ? `${plural(sent, 'family', 'families')} emailed` : 'No statements sent']
+            if (Number(b?.staged?.rest) > 0) parts.push(`the other ${b.staged.rest} after 24 hours if delivered`)
+            if (b?.staged?.stopped) parts.push('stopped (see the Tests card)')
             if (b?.alreadySent) parts.push(`${b.alreadySent} already had theirs`)
             if (b?.failed) parts.push(`${b.failed} failed`)
             return parts.join(', ')
         },
         runNow: {
-            confirm: "This emails last month's statement to each active family that does not have theirs yet. A family never gets two for the same month.",
+            confirm: "This starts last month's statements for the active families that do not have theirs yet: a preview copy to you, the first 3 families now, and the rest 24 hours later if those 3 are delivered. A family never gets two for the same month.",
             preview: b => {
                 if (b?.off) return 'Statements are switched off (MONTHLY_STATEMENTS=off), so it would send nothing.'
                 const n = Number(b?.wouldSend) || 0
+                const first = Array.isArray(b?.staged?.firstBatch) ? b.staged.firstBatch.length : Math.min(n, 3)
                 return n
-                    ? `A check just now: ${plural(n, 'family', 'families')} would get the ${monthName(b?.month)} statement (${Number(b?.alreadySent) || 0} already have it).`
+                    ? `A check just now: ${plural(n, 'family', 'families')} would get the ${monthName(b?.month)} statement (${Number(b?.alreadySent) || 0} already have it)` +
+                      (n > first ? `: ${first} now, the other ${n - first} after 24 hours if those are delivered.` : '.')
                     : `A check just now: no family is waiting for the ${monthName(b?.month)} statement, so it would send nothing.`
+            },
+        },
+    },
+    {
+        job: 'staged-sends',
+        name: 'Staged family emails',
+        what: "Family bulk emails (statements, announcements, recital emails) start with a preview copy to you and 3 families. This checks Resend's delivery reports for those 3: a bounce or complaint stops the send and emails you why; after 24 hours (sooner before a recital), all 3 delivered sends the rest. The record is on the Tests card above.",
+        group: 'lessons',
+        summarize: b => {
+            const sent = len(b?.restSent)
+            const stopped = len(b?.stopped)
+            const looked = Number(b?.looked) || 0
+            if (!sent && !stopped && !len(b?.unstuck)) return looked ? `${plural(looked, 'send')} open, nothing due` : 'Nothing waiting'
+            return [
+                sent ? `Sent the rest of ${plural(sent, 'send')}` : '',
+                stopped ? `stopped ${plural(stopped, 'send')}, emailed you` : '',
+                len(b?.unstuck) ? `${plural(len(b.unstuck), 'send')} cut off partway` : '',
+            ].filter(Boolean).join(', ')
+        },
+        quiet: b => !len(b?.restSent) && !len(b?.stopped) && !len(b?.unstuck),
+        runNow: {
+            confirm: 'This sends the rest of any staged family email that is due and whose first 3 were delivered (the same as its next run, within 15 minutes), and stops any whose first 3 bounced. Nothing is sent twice.',
+            preview: b => {
+                const sends = Array.isArray(b?.sends) ? b.sends : []
+                const due = sends.filter((x: any) => x?.due)
+                return sends.length
+                    ? `A check just now: ${plural(sends.length, 'staged send')} open, ${due.length} due now.`
+                    : 'A check just now: no staged send is waiting, so it would do nothing.'
             },
         },
     },

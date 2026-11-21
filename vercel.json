@@ -61,6 +61,10 @@
             "schedule": "0 15 1 * *"
         },
         {
+            "path": "/api/cron/staged-sends",
+            "schedule": "*/15 * * * *"
+        },
+        {
             "path": "/api/cron/backup-watchdog",
             "schedule": "0 14 * * *"
         },

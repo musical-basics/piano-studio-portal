@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { saveRolloutResult, setRolloutStage } from "@/app/actions/rollouts"
 import { ROLLOUT_STAGES, STAGE_LABEL, type RolloutArm, type RolloutStage } from "@/lib/rollouts"
+import { STUDIO_TZ } from "@/lib/studio-timezone"
 import type { ArmUsage, RolloutReport, RolloutReportRow } from "@/lib/core/tests-report"
 
 // The Tests card (protocol 1.20, "start small and feel the way"): each big
@@ -16,7 +17,7 @@ import type { ArmUsage, RolloutReport, RolloutReportRow } from "@/lib/core/tests
 
 function day(iso: string | null): string {
     if (!iso) return "not recorded"
-    return new Date(iso).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" })
+    return new Date(iso).toLocaleDateString("en-US", { timeZone: STUDIO_TZ, month: "short", day: "numeric", year: "numeric" })
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {

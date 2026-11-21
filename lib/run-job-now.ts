@@ -33,6 +33,7 @@ export const JOB_ROUTES: Record<string, () => Promise<{ GET: Handler }>> = {
     'weekly-digest': () => import('@/app/api/cron/weekly-digest/route'),
     'credit-check': () => import('@/app/api/cron/credit-check/route'),
     'monthly-statements': () => import('@/app/api/cron/monthly-statements/route'),
+    'staged-sends': () => import('@/app/api/cron/staged-sends/route'),
     'new-recordings': () => import('@/app/api/cron/new-recordings/route'),
     'organize-recordings': () => import('@/app/api/cron/organize-recordings/route'),
     'backfill-recordings': () => import('@/app/api/cron/backfill-recordings/route'),

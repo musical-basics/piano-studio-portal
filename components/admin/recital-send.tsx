@@ -192,6 +192,8 @@ export function RecitalSend({ event, students, initialLog }: {
             include: o.include ?? true,
             edited: o.subject !== undefined || o.body !== undefined || o.to !== undefined,
             sent: log.sent[c.key] || null,
+            // Waiting in a staged send (protocol 1.20) for the first 3 to be delivered.
+            queued: log.sent[c.key] ? null : (log.queued?.[c.key] ?? null),
         }
     }
     const setOverride = (key: string, patch: CardOverride) =>
@@ -218,7 +220,7 @@ export function RecitalSend({ event, students, initialLog }: {
         if (res.log) setLog(res.log)
     }
 
-    const pendingIncluded = cards.filter(c => cardState(c).include && !cardState(c).sent)
+    const pendingIncluded = cards.filter(c => cardState(c).include && !cardState(c).sent && !cardState(c).queued)
     const unscheduledReminderKeys = (fromLog: RecitalSendLog) => reminderPlan
         .filter(r => new Date(r.scheduledFor) > new Date() && !(fromLog.reminders[r.key] && !fromLog.reminders[r.key].canceledAt))
         .map(r => r.key)
@@ -227,11 +229,18 @@ export function RecitalSend({ event, students, initialLog }: {
         const reminderNote = unscheduledReminderKeys(log).length > 0
             ? ` The ${unscheduledReminderKeys(log).length} unscheduled reminder emails will be scheduled too.`
             : ''
-        if (!window.confirm(`Send ${pendingIncluded.length} emails now? Already-sent and excluded recipients are skipped.${reminderNote}`)) return
+        const staged = pendingIncluded.length > 1
+            ? ' They go out small first: a preview copy to you, the first 3 now, and the rest once those 3 are delivered (within 24 hours, and at the latest 3 hours before the recital).'
+            : ''
+        if (!window.confirm(`Send ${pendingIncluded.length} emails? Already-sent and excluded recipients are skipped.${staged}${reminderNote}`)) return
         setBusyKey('all', true)
         const res = await sendRecitalEmails(event.id, pendingIncluded.map(toItem))
         setBusyKey('all', false)
         if (res.error) toast({ variant: 'destructive', title: 'Send failed', description: res.error })
+        else if (res.queuedCount) toast({
+            title: 'First 3 sent',
+            description: `${res.sentCount} sent and a preview copy to you. The other ${res.queuedCount} go out ${res.restDueAt ? `around ${new Date(res.restDueAt).toLocaleString('en-US', { timeZone: STUDIO_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' })} ${studioTzAbbr(new Date(res.restDueAt))}` : 'later'} once those are delivered, or sooner with "Send the rest now" on the Jobs page.${res.skipped ? ` ${res.skipped} already sent were skipped.` : ''}`,
+        })
         else toast({ title: 'Sent', description: `${res.sentCount} emails sent${res.skipped ? `, ${res.skipped} already sent were skipped` : ''}.` })
         if (res.log) setLog(res.log)
         // Reminders are part of the send: schedule any that are still missing,
@@ -524,9 +533,14 @@ export function RecitalSend({ event, students, initialLog }: {
                                                         Sent {new Date(st.sent.at).toLocaleTimeString('en-US', { timeZone: STUDIO_TZ, hour: 'numeric', minute: '2-digit' })} {studioTzAbbr(new Date(st.sent.at))}
                                                     </Badge>
                                                 )}
+                                                {st.queued && (
+                                                    <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-300">
+                                                        Queued{st.queued.dueAt ? ` for ${new Date(st.queued.dueAt).toLocaleString('en-US', { timeZone: STUDIO_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' })} ${studioTzAbbr(new Date(st.queued.dueAt))}` : ''}, after the first 3 are delivered
+                                                    </Badge>
+                                                )}
                                                 <div className="ml-auto flex items-center gap-2">
                                                     <Label className="text-xs text-muted-foreground">Include</Label>
-                                                    <Switch checked={st.include} onCheckedChange={v => setOverride(c.key, { include: v })} disabled={!!st.sent} />
+                                                    <Switch checked={st.include} onCheckedChange={v => setOverride(c.key, { include: v })} disabled={!!st.sent || !!st.queued} />
                                                 </div>
                                             </div>
                                             <p className="text-xs text-muted-foreground">{c.subtitle}</p>
@@ -535,25 +549,25 @@ export function RecitalSend({ event, students, initialLog }: {
                                             )}
                                             <div className="grid gap-1.5">
                                                 <Label className="text-xs">To</Label>
-                                                <Input value={st.to} onChange={e => setOverride(c.key, { to: e.target.value })} disabled={!!st.sent} />
+                                                <Input value={st.to} onChange={e => setOverride(c.key, { to: e.target.value })} disabled={!!st.sent || !!st.queued} />
                                             </div>
                                             <div className="grid gap-1.5">
                                                 <Label className="text-xs">Subject</Label>
-                                                <Input value={st.subject} onChange={e => setOverride(c.key, { subject: e.target.value })} disabled={!!st.sent} />
+                                                <Input value={st.subject} onChange={e => setOverride(c.key, { subject: e.target.value })} disabled={!!st.sent || !!st.queued} />
                                             </div>
                                             <div className="grid gap-1.5">
                                                 <Label className="text-xs">Body</Label>
                                                 <Textarea rows={Math.min(16, st.body.split('\n').length + 1)} value={st.body}
-                                                    onChange={e => setOverride(c.key, { body: e.target.value })} disabled={!!st.sent} />
+                                                    onChange={e => setOverride(c.key, { body: e.target.value })} disabled={!!st.sent || !!st.queued} />
                                             </div>
                                             <div className="flex gap-2">
-                                                {!st.sent && (
+                                                {!st.sent && !st.queued && (
                                                     <Button size="sm" onClick={() => handleSendOne(c)} disabled={busy[c.key] || !st.include}>
                                                         {busy[c.key] ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
                                                         Send this email
                                                     </Button>
                                                 )}
-                                                {st.edited && !st.sent && (
+                                                {st.edited && !st.sent && !st.queued && (
                                                     <Button variant="ghost" size="sm" onClick={() => resetOverride(c.key)}>
                                                         <RotateCcw className="h-4 w-4 mr-1" /> Reset to template
                                                     </Button>

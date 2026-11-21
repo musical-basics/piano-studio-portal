@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { announcementEmail, announcementRecipients } from '@/lib/family-emails'
+import { dbStore, resendDeps } from '@/lib/staged-send'
+import { startEmailStagedSend } from '@/lib/staged-send-runner'
+import { STUDIO_TZ, studioTzAbbr } from '@/lib/studio-timezone'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
@@ -83,6 +86,12 @@ export async function saveAnnouncementDraft(
 
 /**
  * Send an announcement. Creates or updates the record, sets status='sent', triggers emails.
+ *
+ * The emails go out small first (protocol 1.20, lib/staged-send.ts): a preview
+ * copy to the studio inbox, the first 3 families, and the rest 24 hours later
+ * once Resend reports those 3 delivered with no bounce or complaint. One
+ * email per address (siblings sharing a parent's address get one). The same
+ * announcement is never emailed twice. One family: sent straight away.
  */
 export async function sendAnnouncement(
     subject: string,
@@ -149,7 +158,8 @@ export async function sendAnnouncement(
 
     // Send individual emails per student (AWAITED, not fire-and-forget)
     let optedOut = 0
-    if (resend && studentIds.length > 0) {
+    let emailNote = ''
+    if (studentIds.length > 0) {
         try {
             console.log(`[Announcement] Starting email send for ${studentIds.length} students`)
 
@@ -171,25 +181,39 @@ export async function sendAnnouncement(
                 const email = announcementEmail({ subject, body, portalUrl })
                 const recipients = announcementRecipients(students)
                 optedOut = recipients.optedOut
-                const emailPayloads = recipients.to.map(to => ({
-                    from: `${studioName} <notifications@updates.musicalbasics.com>`,
-                    to,
-                    subject: email.subject,
-                    html: email.html
-                }))
+                const from = `${studioName} <notifications@updates.musicalbasics.com>`
+                const addresses = [...new Map(recipients.to.map(a => [a.trim().toLowerCase(), a.trim()])).values()]
 
-                console.log(`[Announcement] Sending ${emailPayloads.length} individual emails (${recipients.optedOut} opted out, ${recipients.noAddress} without an address) to:`, emailPayloads.map(e => e.to))
+                console.log(`[Announcement] ${addresses.length} addresses (${recipients.optedOut} opted out, ${recipients.noAddress} without an address)`)
 
-                if (emailPayloads.length > 0) {
-                    const batchResult = await resend.batch.send(emailPayloads)
-                    console.log(`[Announcement] Batch result:`, JSON.stringify(batchResult))
+                if (addresses.length > 1 && announcementId) {
+                    const outcome = await startEmailStagedSend({ store: dbStore(adminDb), deps: resendDeps(adminDb) }, {
+                        kind: 'announcement',
+                        ref: announcementId,
+                        label: subject,
+                        recipients: addresses.map(a => ({ key: `addr:${a.toLowerCase()}`, to: [a], email: { from, subject: email.subject, html: email.html } })),
+                    })
+                    const due = outcome.restDueAt
+                        ? `${new Date(outcome.restDueAt).toLocaleString('en-US', { timeZone: STUDIO_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' })} ${studioTzAbbr(new Date(outcome.restDueAt))}`
+                        : null
+                    emailNote = outcome.conflict
+                        ? ' This announcement was already being emailed, so no new emails went out.'
+                        : outcome.stopped
+                            ? ` The emails stopped: ${outcome.stopped} See the Tests card on the Jobs page.`
+                            : outcome.restCount
+                                ? ` Emailed a preview copy to you and the first ${outcome.firstSent} families; the other ${outcome.restCount} get it${due ? ` around ${due}` : ' later'} once those are delivered (or sooner from the Tests card on the Jobs page).`
+                                : ` Emailed a preview copy to you and all ${outcome.firstSent} families.`
+                    console.log(`[Announcement] staged: first ${outcome.firstSent} sent, ${outcome.restCount} waiting${outcome.stopped ? `, stopped: ${outcome.stopped}` : ''}`)
+                } else if (addresses.length === 1 && resend) {
+                    const { error } = await resend.emails.send({ from, to: addresses[0], subject: email.subject, html: email.html })
+                    if (error) console.error('[Announcement] Email send failed:', error)
                 }
             }
         } catch (emailError) {
             console.error('[Announcement] Email send failed:', emailError)
         }
     } else {
-        console.log(`[Announcement] Skipping emails: resend=${!!resend}, studentIds.length=${studentIds.length}`)
+        console.log('[Announcement] Skipping emails: no students')
     }
 
     revalidatePath('/admin')
@@ -198,7 +222,8 @@ export async function sendAnnouncement(
     return {
         success: true,
         message: `Announcement sent to ${studentIds.length} student${studentIds.length === 1 ? '' : 's'}.` +
-            (optedOut > 0 ? ` ${optedOut} turned off announcement emails, so they see it in the portal only.` : '')
+            (optedOut > 0 ? ` ${optedOut} turned off announcement emails, so they see it in the portal only.` : '') +
+            emailNote
     }
 }
 

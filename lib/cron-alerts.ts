@@ -152,7 +152,8 @@ export async function writeHeartbeat(
     }
 }
 
-async function studioInbox(client: DbClient): Promise<string> {
+/** The studio inbox: the admin profile's email (the support address when it can't be read). */
+export async function studioInbox(client: DbClient): Promise<string> {
     try {
         const { data } = await client
             .from('profiles')

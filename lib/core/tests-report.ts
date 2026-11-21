@@ -10,6 +10,7 @@ import {
     type RolloutKey,
     type RolloutStage,
 } from '@/lib/rollouts'
+import { batchCounts, dbStore, KIND_LABEL, type BatchCounts, type StagedStatus } from '@/lib/staged-send'
 
 /**
  * The Tests card on /admin/jobs (protocol 1.20): every rollout of a family
@@ -139,4 +140,57 @@ export async function loadRolloutReport(client: DbClient): Promise<RolloutReport
         }
     })
     return { rows, activeFamilies: active.length, error }
+}
+
+// ------------------------------------------------- staged bulk emails ---
+
+/** One staged family bulk email on the Tests card (lib/staged-send.ts). Counts only, no addresses. */
+export type StagedSendRow = {
+    id: string
+    kind: string
+    label: string
+    createdAt: string
+    status: StagedStatus
+    previewSentAt: string | null
+    firstSentAt: string | null
+    restDueAt: string | null
+    restSentAt: string | null
+    restSentBy: 'schedule' | 'hand' | null
+    first: BatchCounts
+    rest: BatchCounts
+    stopReason: string | null
+    result: string | null
+    resultAt: string | null
+    /** "Send the rest now" applies: waiting or stopped, with emails not sent yet. */
+    canSendRest: boolean
+}
+
+export async function loadStagedReport(client: DbClient, limit = 8): Promise<{ rows: StagedSendRow[]; error: string | null }> {
+    try {
+        const recs = await dbStore(client).recent(limit)
+        return {
+            error: null,
+            rows: recs.map(r => ({
+                id: r.id,
+                kind: KIND_LABEL[r.kind] ?? r.kind,
+                label: r.label,
+                createdAt: r.created_at,
+                status: r.status,
+                previewSentAt: r.preview_sent_at,
+                firstSentAt: r.first_sent_at,
+                restDueAt: r.rest_due_at,
+                restSentAt: r.rest_sent_at,
+                restSentBy: r.rest_sent_by,
+                first: batchCounts(r.items, 'first'),
+                rest: batchCounts(r.items, 'rest'),
+                stopReason: r.stop_reason,
+                result: r.result,
+                resultAt: r.result_at,
+                canSendRest: (r.status === 'waiting' || r.status === 'stopped') &&
+                    r.items.some(it => it.status === 'pending' || it.status === 'failed'),
+            })),
+        }
+    } catch (e) {
+        return { rows: [], error: e instanceof Error ? e.message : String(e) }
+    }
 }
